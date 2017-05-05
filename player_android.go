@@ -202,7 +202,7 @@ func NewPlayer(sampleRate, channelNum, bytesPerSample int) (*Player, error) {
 		if msg := C.initAudioTrack(C.uintptr_t(vm), C.uintptr_t(env),
 			C.int(sampleRate), C.int(channelNum), C.int(bytesPerSample),
 			&audioTrack, &bufferSize); msg != nil {
-			return errors.New("driver: " + C.GoString(msg))
+			return errors.New("oto: " + C.GoString(msg))
 		}
 		p.audioTrack = audioTrack
 		p.bufferSize = int(bufferSize)

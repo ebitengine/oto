@@ -62,7 +62,7 @@ func NewPlayer(sampleRate, channelNum, bytesPerSample int) (*Player, error) {
 		class = js.Global.Get("webkitAudioContext")
 	}
 	if class == js.Undefined {
-		return nil, errors.New("driver: audio couldn't be initialized")
+		return nil, errors.New("oto: audio couldn't be initialized")
 	}
 	p := &Player{
 		sampleRate:     sampleRate,

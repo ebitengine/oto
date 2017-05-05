@@ -53,27 +53,27 @@ func alFormat(channelNum, bytesPerSample int) openal.Format {
 	case channelNum == 2 && bytesPerSample == 2:
 		return openal.FormatStereo16
 	}
-	panic(fmt.Sprintf("driver: invalid channel num (%d) or bytes per sample (%d)", channelNum, bytesPerSample))
+	panic(fmt.Sprintf("oto: invalid channel num (%d) or bytes per sample (%d)", channelNum, bytesPerSample))
 }
 
 func NewPlayer(sampleRate, channelNum, bytesPerSample int) (*Player, error) {
 	d := openal.OpenDevice("")
 	if d == nil {
-		return nil, fmt.Errorf("driver: OpenDevice must not return nil")
+		return nil, fmt.Errorf("oto: OpenDevice must not return nil")
 	}
 	c := d.CreateContext()
 	if c == nil {
-		return nil, fmt.Errorf("driver: CreateContext must not return nil")
+		return nil, fmt.Errorf("oto: CreateContext must not return nil")
 	}
 	// Don't check openal.Err until making the current context is done.
 	// Linux might fail this check even though it succeeds (hajimehoshi/ebiten#204).
 	c.Activate()
 	if err := openal.Err(); err != nil {
-		return nil, fmt.Errorf("driver: Activate: %v", err)
+		return nil, fmt.Errorf("oto: Activate: %v", err)
 	}
 	s := openal.NewSource()
 	if err := openal.Err(); err != nil {
-		return nil, fmt.Errorf("driver: NewSource: %v", err)
+		return nil, fmt.Errorf("oto: NewSource: %v", err)
 	}
 	p := &Player{
 		alDevice:   d,
@@ -98,14 +98,14 @@ func NewPlayer(sampleRate, channelNum, bytesPerSample int) (*Player, error) {
 
 func (p *Player) Write(data []byte) (int, error) {
 	if err := openal.Err(); err != nil {
-		return 0, fmt.Errorf("driver: starting Proceed: %v", err)
+		return 0, fmt.Errorf("oto: starting Proceed: %v", err)
 	}
 	processedNum := p.alSource.BuffersProcessed()
 	if 0 < processedNum {
 		bufs := make([]openal.Buffer, processedNum)
 		p.alSource.UnqueueBuffers(bufs)
 		if err := openal.Err(); err != nil {
-			return 0, fmt.Errorf("driver: UnqueueBuffers: %v", err)
+			return 0, fmt.Errorf("oto: UnqueueBuffers: %v", err)
 		}
 		p.alBuffers = append(p.alBuffers, bufs...)
 	}
@@ -119,14 +119,14 @@ func (p *Player) Write(data []byte) (int, error) {
 	buf.SetData(p.alFormat, data, int32(p.sampleRate))
 	p.alSource.QueueBuffer(buf)
 	if err := openal.Err(); err != nil {
-		return 0, fmt.Errorf("driver: QueueBuffer: %v", err)
+		return 0, fmt.Errorf("oto: QueueBuffer: %v", err)
 	}
 
 	if p.alSource.State() == openal.Stopped || p.alSource.State() == openal.Initial {
 		p.alSource.Rewind()
 		p.alSource.Play()
 		if err := openal.Err(); err != nil {
-			return 0, fmt.Errorf("driver: Rewind or Play: %v", err)
+			return 0, fmt.Errorf("oto: Rewind or Play: %v", err)
 		}
 	}
 
@@ -135,7 +135,7 @@ func (p *Player) Write(data []byte) (int, error) {
 
 func (p *Player) Close() error {
 	if err := openal.Err(); err != nil {
-		return fmt.Errorf("driver: starting Close: %v", err)
+		return fmt.Errorf("oto: starting Close: %v", err)
 	}
 	if p.isClosed {
 		return nil
@@ -151,7 +151,7 @@ func (p *Player) Close() error {
 	p.alDevice.CloseDevice()
 	p.isClosed = true
 	if err := openal.Err(); err != nil {
-		return fmt.Errorf("driver: CloseDevice: %v", err)
+		return fmt.Errorf("oto: CloseDevice: %v", err)
 	}
 	runtime.SetFinalizer(p, nil)
 	return nil

@@ -48,17 +48,17 @@ func alFormat(channelNum, bytesPerSample int) uint32 {
 	case channelNum == 2 && bytesPerSample == 2:
 		return al.FormatStereo16
 	}
-	panic(fmt.Sprintf("driver: invalid channel num (%d) or bytes per sample (%d)", channelNum, bytesPerSample))
+	panic(fmt.Sprintf("oto: invalid channel num (%d) or bytes per sample (%d)", channelNum, bytesPerSample))
 }
 
 func NewPlayer(sampleRate, channelNum, bytesPerSample int) (*Player, error) {
 	var p *Player
 	if err := al.OpenDevice(); err != nil {
-		return nil, fmt.Errorf("driver: OpenAL initialization failed: %v", err)
+		return nil, fmt.Errorf("oto: OpenAL initialization failed: %v", err)
 	}
 	s := al.GenSources(1)
 	if e := al.Error(); e != 0 {
-		return nil, fmt.Errorf("driver: al.GenSources error: %d", e)
+		return nil, fmt.Errorf("oto: al.GenSources error: %d", e)
 	}
 	p = &Player{
 		alSource:   s[0],
@@ -82,14 +82,14 @@ func NewPlayer(sampleRate, channelNum, bytesPerSample int) (*Player, error) {
 
 func (p *Player) Write(data []byte) (int, error) {
 	if err := al.Error(); err != 0 {
-		return 0, fmt.Errorf("driver: before proceed: %d", err)
+		return 0, fmt.Errorf("oto: before proceed: %d", err)
 	}
 	processedNum := p.alSource.BuffersProcessed()
 	if 0 < processedNum {
 		bufs := make([]al.Buffer, processedNum)
 		p.alSource.UnqueueBuffers(bufs...)
 		if err := al.Error(); err != 0 {
-			return 0, fmt.Errorf("driver: Unqueue in process: %d", err)
+			return 0, fmt.Errorf("oto: Unqueue in process: %d", err)
 		}
 		p.alBuffers = append(p.alBuffers, bufs...)
 	}
@@ -103,14 +103,14 @@ func (p *Player) Write(data []byte) (int, error) {
 	buf.BufferData(p.alFormat, data, int32(p.sampleRate))
 	p.alSource.QueueBuffers(buf)
 	if err := al.Error(); err != 0 {
-		return 0, fmt.Errorf("driver: Queue in process: %d", err)
+		return 0, fmt.Errorf("oto: Queue in process: %d", err)
 	}
 
 	if p.alSource.State() == al.Stopped || p.alSource.State() == al.Initial {
 		al.RewindSources(p.alSource)
 		al.PlaySources(p.alSource)
 		if err := al.Error(); err != 0 {
-			return 0, fmt.Errorf("driver: PlaySource in process: %d", err)
+			return 0, fmt.Errorf("oto: PlaySource in process: %d", err)
 		}
 	}
 
@@ -119,7 +119,7 @@ func (p *Player) Write(data []byte) (int, error) {
 
 func (p *Player) Close() error {
 	if err := al.Error(); err != 0 {
-		return fmt.Errorf("driver: error before closing: %d", err)
+		return fmt.Errorf("oto: error before closing: %d", err)
 	}
 	if p.isClosed {
 		return nil
@@ -134,7 +134,7 @@ func (p *Player) Close() error {
 	}
 	p.isClosed = true
 	if err := al.Error(); err != 0 {
-		return fmt.Errorf("driver: error after closing: %d", err)
+		return fmt.Errorf("oto: error after closing: %d", err)
 	}
 	runtime.SetFinalizer(p, nil)
 	return nil

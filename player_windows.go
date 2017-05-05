@@ -50,18 +50,18 @@ func newHeader(waveOut C.HWAVEOUT, bufferSize int) (*header, error) {
 		},
 	}
 	if err := C.waveOutPrepareHeader(waveOut, &h.waveHdr, C.sizeOfWavehdr); err != C.MMSYSERR_NOERROR {
-		return nil, fmt.Errorf("driver: waveOutPrepareHeader error: %d", err)
+		return nil, fmt.Errorf("oto: waveOutPrepareHeader error: %d", err)
 	}
 	return h, nil
 }
 
 func (h *header) Write(waveOut C.HWAVEOUT, data []byte) error {
 	if len(data) != h.bufferSize {
-		return errors.New("driver: len(data) must equal to h.bufferSize")
+		return errors.New("oto: len(data) must equal to h.bufferSize")
 	}
 	C.memcpy(h.buffer, unsafe.Pointer(&data[0]), C.size_t(h.bufferSize))
 	if err := C.waveOutWrite(waveOut, &h.waveHdr, C.sizeOfWavehdr); err != C.MMSYSERR_NOERROR {
-		return fmt.Errorf("driver: waveOutWriter error: %d", err)
+		return fmt.Errorf("oto: waveOutWriter error: %d", err)
 	}
 	return nil
 }
@@ -88,7 +88,7 @@ func NewPlayer(sampleRate, channelNum, bytesPerSample int) (*Player, error) {
 	}
 	var w C.HWAVEOUT
 	if err := C.waveOutOpen(&w, C.WAVE_MAPPER, &f, 0, 0, C.CALLBACK_NULL); err != C.MMSYSERR_NOERROR {
-		return nil, fmt.Errorf("driver: waveOutOpen error: %d", err)
+		return nil, fmt.Errorf("oto: waveOutOpen error: %d", err)
 	}
 	p := &Player{
 		out:     w,
