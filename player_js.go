@@ -95,7 +95,7 @@ func toLR(data []byte) ([]int16, []int16) {
 	return l, r
 }
 
-func (p *Player) Proceed(data []byte) error {
+func (p *Player) Write(data []byte) (int, error) {
 	p.bufferedData = append(p.bufferedData, data...)
 	c := int64(p.context.Get("currentTime").Float() * float64(p.sampleRate))
 	if p.positionInSamples+positionDelay < c {
@@ -123,7 +123,7 @@ func (p *Player) Proceed(data []byte) error {
 		p.positionInSamples += int64(len(il))
 		p.bufferedData = p.bufferedData[dataSize:]
 	}
-	return nil
+	return len(data), nil
 }
 
 func (p *Player) Close() error {

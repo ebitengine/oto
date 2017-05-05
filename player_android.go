@@ -249,19 +249,19 @@ func (p *Player) loop() {
 	}
 }
 
-func (p *Player) Proceed(data []byte) error {
+func (p *Player) Write(data []byte) (int, error) {
 	p.buffer = append(p.buffer, data...)
 	if len(p.buffer) < p.bufferSize {
-		return nil
+		return len(data), nil
 	}
 	buf := p.buffer[:p.bufferSize]
 	select {
 	case p.chBuffer <- buf:
 	case err := <-p.chErr:
-		return err
+		return 0, err
 	}
 	p.buffer = p.buffer[p.bufferSize:]
-	return nil
+	return len(data), nil
 }
 
 func (p *Player) Close() error {

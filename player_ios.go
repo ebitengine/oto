@@ -80,41 +80,41 @@ func NewPlayer(sampleRate, channelNum, bytesPerSample int) (*Player, error) {
 	return p, nil
 }
 
-func (p *Player) Proceed(data []byte) error {
+func (p *Player) Write(data []byte) (int, error) {
 	if err := al.Error(); err != 0 {
-		return fmt.Errorf("driver: before proceed: %d", err)
+		return 0, fmt.Errorf("driver: before proceed: %d", err)
 	}
 	processedNum := p.alSource.BuffersProcessed()
 	if 0 < processedNum {
 		bufs := make([]al.Buffer, processedNum)
 		p.alSource.UnqueueBuffers(bufs...)
 		if err := al.Error(); err != 0 {
-			return fmt.Errorf("driver: Unqueue in process: %d", err)
+			return 0, fmt.Errorf("driver: Unqueue in process: %d", err)
 		}
 		p.alBuffers = append(p.alBuffers, bufs...)
 	}
 
 	if len(p.alBuffers) == 0 {
 		// This can happen (hajimehoshi/ebiten#207)
-		return nil
+		return 0, nil
 	}
 	buf := p.alBuffers[0]
 	p.alBuffers = p.alBuffers[1:]
 	buf.BufferData(p.alFormat, data, int32(p.sampleRate))
 	p.alSource.QueueBuffers(buf)
 	if err := al.Error(); err != 0 {
-		return fmt.Errorf("driver: Queue in process: %d", err)
+		return 0, fmt.Errorf("driver: Queue in process: %d", err)
 	}
 
 	if p.alSource.State() == al.Stopped || p.alSource.State() == al.Initial {
 		al.RewindSources(p.alSource)
 		al.PlaySources(p.alSource)
 		if err := al.Error(); err != 0 {
-			return fmt.Errorf("driver: PlaySource in process: %d", err)
+			return 0, fmt.Errorf("driver: PlaySource in process: %d", err)
 		}
 	}
 
-	return nil
+	return len(data), nil
 }
 
 func (p *Player) Close() error {

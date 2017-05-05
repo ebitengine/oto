@@ -105,10 +105,10 @@ func NewPlayer(sampleRate, channelNum, bytesPerSample int) (*Player, error) {
 	return p, nil
 }
 
-func (p *Player) Proceed(data []byte) error {
+func (p *Player) Write(data []byte) (int, error) {
 	p.buffer = append(p.buffer, data...)
 	if bufferSize > len(p.buffer) {
-		return nil
+		return len(data), nil
 	}
 	headerToWrite := (*header)(nil)
 	for _, h := range p.headers {
@@ -120,13 +120,13 @@ func (p *Player) Proceed(data []byte) error {
 	}
 	if headerToWrite == nil {
 		// This can happen (hajimehoshi/ebiten#207)
-		return nil
+		return len(data), nil
 	}
 	if err := headerToWrite.Write(p.out, p.buffer[:bufferSize]); err != nil {
-		return err
+		return 0, err
 	}
 	p.buffer = p.buffer[bufferSize:]
-	return nil
+	return len(data), nil
 }
 
 func (p *Player) Close() error {
