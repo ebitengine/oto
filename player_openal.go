@@ -57,7 +57,7 @@ func alFormat(channelNum, bytesPerSample int) openal.Format {
 }
 
 func NewPlayer(sampleRate, channelNum, bytesPerSample int) (*Player, error) {
-	d := openal.OpenDevice("")
+	d := openal.OpenDevice(openal.GetString(openal.DefaultDeviceSpecifier))
 	if d == nil {
 		return nil, fmt.Errorf("oto: OpenDevice must not return nil")
 	}
