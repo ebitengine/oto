@@ -93,6 +93,9 @@ func NewPlayer(sampleRate, channelNum, bytesPerSample int) (*Player, error) {
 		p.alBuffers = append(p.alBuffers, b)
 	}
 	p.alSource.Play()
+	if err := openal.Err(); err != nil {
+		return nil, fmt.Errorf("oto: Play: %v", err)
+	}
 	return p, nil
 }
 
