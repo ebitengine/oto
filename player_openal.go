@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// +build darwin linux
+// +build darwin freebsd linux
 // +build !js
 // +build !android
 // +build !ios
