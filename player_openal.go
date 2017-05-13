@@ -19,95 +19,136 @@
 
 package oto
 
+// #cgo darwin        LDFLAGS: -framework OpenAL
+// #cgo freebsd linux LDFLAGS: -lopenal
+//
+// #ifdef __APPLE__
+// #include <OpenAL/al.h>
+// #include <OpenAL/alc.h>
+// #else
+// #include <AL/al.h>
+// #include <AL/alc.h>
+// #endif
+import "C"
+
 import (
+	"errors"
 	"fmt"
 	"runtime"
-
-	"github.com/hajimehoshi/go-openal/openal"
+	"unsafe"
 )
 
-// As x/mobile/exp/audio/al is broken on Mac OS X (https://github.com/golang/go/issues/15075),
-// let's use github.com/hajimehoshi/go-openal instead.
+// As x/mobile/exp/audio/al is broken on macOS (https://github.com/golang/go/issues/15075),
+// and that doesn't support FreeBSD, use OpenAL directly here.
 
 const (
 	maxBufferNum = 8
 )
 
 type Player struct {
-	alDevice   *openal.Device
-	alSource   openal.Source
-	alBuffers  []openal.Buffer
+	// alContext represents a pointer to ALCcontext. The type is uintptr since the value
+	// can be 0x18 on macOS, which is invalid as a pointer value, and this might cause
+	// GC errors.
+	alContext  uintptr
+	alDevice   uintptr
+	alSource   C.ALuint
+	alBuffers  []C.ALuint
 	sampleRate int
 	isClosed   bool
-	alFormat   openal.Format
+	alFormat   C.ALenum
 }
 
-func alFormat(channelNum, bytesPerSample int) openal.Format {
+func alFormat(channelNum, bytesPerSample int) C.ALenum {
 	switch {
 	case channelNum == 1 && bytesPerSample == 1:
-		return openal.FormatMono8
+		return C.AL_FORMAT_MONO8
 	case channelNum == 1 && bytesPerSample == 2:
-		return openal.FormatMono16
+		return C.AL_FORMAT_MONO16
 	case channelNum == 2 && bytesPerSample == 1:
-		return openal.FormatStereo8
+		return C.AL_FORMAT_STEREO8
 	case channelNum == 2 && bytesPerSample == 2:
-		return openal.FormatStereo16
+		return C.AL_FORMAT_STEREO16
 	}
 	panic(fmt.Sprintf("oto: invalid channel num (%d) or bytes per sample (%d)", channelNum, bytesPerSample))
 }
 
+func getError(device uintptr) error {
+	c := C.alcGetError((*C.struct_ALCdevice_struct)(unsafe.Pointer(device)))
+	switch c {
+	case C.ALC_NO_ERROR:
+		return nil
+	case C.ALC_INVALID_DEVICE:
+		return errors.New("OpenAL error: invalid device")
+	case C.ALC_INVALID_CONTEXT:
+		return errors.New("OpenAL error: invalid context")
+	case C.ALC_INVALID_ENUM:
+		return errors.New("OpenAL error: invalid enum")
+	case C.ALC_INVALID_VALUE:
+		return errors.New("OpenAL error: invalid value")
+	case C.ALC_OUT_OF_MEMORY:
+		return errors.New("OpenAL error: out of memory")
+	default:
+		return fmt.Errorf("OpenAL error: code %d", c)
+	}
+}
+
 func NewPlayer(sampleRate, channelNum, bytesPerSample int) (*Player, error) {
-	d := openal.OpenDevice(openal.GetString(openal.DefaultDeviceSpecifier))
-	if d == nil {
-		return nil, fmt.Errorf("oto: OpenDevice must not return nil")
+	name := C.alGetString(C.ALC_DEFAULT_DEVICE_SPECIFIER)
+	d := uintptr(unsafe.Pointer(C.alcOpenDevice((*C.ALCchar)(name))))
+	if d == 0 {
+		return nil, fmt.Errorf("oto: alcOpenDevice must not return null")
 	}
-	c := d.CreateContext()
-	if c == nil {
-		return nil, fmt.Errorf("oto: CreateContext must not return nil")
+	c := uintptr(unsafe.Pointer(C.alcCreateContext((*C.struct_ALCdevice_struct)(unsafe.Pointer(d)), nil)))
+	if c == 0 {
+		return nil, fmt.Errorf("oto: alcCreateContext must not return null")
 	}
-	// Don't check openal.Err until making the current context is done.
+	// Don't check getError until making the current context is done.
 	// Linux might fail this check even though it succeeds (hajimehoshi/ebiten#204).
-	c.Activate()
-	if err := openal.Err(); err != nil {
+	C.alcMakeContextCurrent((*C.struct_ALCcontext_struct)(unsafe.Pointer(c)))
+	if err := getError(d); err != nil {
 		return nil, fmt.Errorf("oto: Activate: %v", err)
 	}
-	s := openal.NewSource()
-	if err := openal.Err(); err != nil {
+	s := C.ALuint(0)
+	C.alGenSources(1, &s)
+	if err := getError(d); err != nil {
 		return nil, fmt.Errorf("oto: NewSource: %v", err)
 	}
 	p := &Player{
+		alContext:  c,
 		alDevice:   d,
 		alSource:   s,
-		alBuffers:  []openal.Buffer{},
+		alBuffers:  []C.ALuint{},
 		sampleRate: sampleRate,
 		alFormat:   alFormat(channelNum, bytesPerSample),
 	}
 	runtime.SetFinalizer(p, (*Player).Close)
 
-	bs := openal.NewBuffers(maxBufferNum)
+	bs := make([]C.ALuint, maxBufferNum)
+	C.alGenBuffers(maxBufferNum, &bs[0])
 	const bufferSize = 1024
 	emptyBytes := make([]byte, bufferSize)
 	for _, b := range bs {
 		// Note that the third argument of only the first buffer is used.
-		b.SetData(p.alFormat, emptyBytes, int32(p.sampleRate))
+		C.alBufferData(b, p.alFormat, unsafe.Pointer(&emptyBytes[0]), C.ALsizei(len(emptyBytes)), C.ALsizei(p.sampleRate))
 		p.alBuffers = append(p.alBuffers, b)
 	}
-	p.alSource.Play()
-	if err := openal.Err(); err != nil {
+	C.alSourcePlay(p.alSource)
+	if err := getError(d); err != nil {
 		return nil, fmt.Errorf("oto: Play: %v", err)
 	}
 	return p, nil
 }
 
 func (p *Player) Write(data []byte) (int, error) {
-	if err := openal.Err(); err != nil {
+	if err := getError(p.alDevice); err != nil {
 		return 0, fmt.Errorf("oto: starting Proceed: %v", err)
 	}
-	processedNum := p.alSource.BuffersProcessed()
+	processedNum := C.ALint(0)
+	C.alGetSourcei(p.alSource, C.AL_BUFFERS_PROCESSED, &processedNum)
 	if 0 < processedNum {
-		bufs := make([]openal.Buffer, processedNum)
-		p.alSource.UnqueueBuffers(bufs)
-		if err := openal.Err(); err != nil {
+		bufs := make([]C.ALuint, processedNum)
+		C.alSourceUnqueueBuffers(p.alSource, C.ALsizei(len(bufs)), &bufs[0])
+		if err := getError(p.alDevice); err != nil {
 			return 0, fmt.Errorf("oto: UnqueueBuffers: %v", err)
 		}
 		p.alBuffers = append(p.alBuffers, bufs...)
@@ -119,16 +160,18 @@ func (p *Player) Write(data []byte) (int, error) {
 	}
 	buf := p.alBuffers[0]
 	p.alBuffers = p.alBuffers[1:]
-	buf.SetData(p.alFormat, data, int32(p.sampleRate))
-	p.alSource.QueueBuffer(buf)
-	if err := openal.Err(); err != nil {
+	C.alBufferData(buf, p.alFormat, unsafe.Pointer(&data[0]), C.ALsizei(len(data)), C.ALsizei(p.sampleRate))
+	C.alSourceQueueBuffers(p.alSource, 1, &buf)
+	if err := getError(p.alDevice); err != nil {
 		return 0, fmt.Errorf("oto: QueueBuffer: %v", err)
 	}
 
-	if p.alSource.State() == openal.Stopped || p.alSource.State() == openal.Initial {
-		p.alSource.Rewind()
-		p.alSource.Play()
-		if err := openal.Err(); err != nil {
+	state := C.ALint(0)
+	C.alGetSourcei(p.alSource, C.AL_SOURCE_STATE, &state)
+	if state == C.AL_STOPPED || state == C.AL_INITIAL {
+		C.alSourceRewind(p.alSource)
+		C.alSourcePlay(p.alSource)
+		if err := getError(p.alDevice); err != nil {
 			return 0, fmt.Errorf("oto: Rewind or Play: %v", err)
 		}
 	}
@@ -137,23 +180,25 @@ func (p *Player) Write(data []byte) (int, error) {
 }
 
 func (p *Player) Close() error {
-	if err := openal.Err(); err != nil {
+	if err := getError(p.alDevice); err != nil {
 		return fmt.Errorf("oto: starting Close: %v", err)
 	}
 	if p.isClosed {
 		return nil
 	}
-	var bs []openal.Buffer
-	p.alSource.Rewind()
-	p.alSource.Play()
-	if n := p.alSource.BuffersQueued(); 0 < n {
-		bs = make([]openal.Buffer, n)
-		p.alSource.UnqueueBuffers(bs)
+	var bs []C.ALuint
+	C.alSourceRewind(p.alSource)
+	C.alSourcePlay(p.alSource)
+	n := C.ALint(0)
+	C.alGetSourcei(p.alSource, C.AL_BUFFERS_QUEUED, &n)
+	if 0 < n {
+		bs = make([]C.ALuint, n)
+		C.alSourceUnqueueBuffers(p.alSource, C.ALsizei(len(bs)), &bs[0])
 		p.alBuffers = append(p.alBuffers, bs...)
 	}
-	p.alDevice.CloseDevice()
+	C.alcCloseDevice((*C.struct_ALCdevice_struct)(unsafe.Pointer(p.alDevice)))
 	p.isClosed = true
-	if err := openal.Err(); err != nil {
+	if err := getError(p.alDevice); err != nil {
 		return fmt.Errorf("oto: CloseDevice: %v", err)
 	}
 	runtime.SetFinalizer(p, nil)
