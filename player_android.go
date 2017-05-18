@@ -177,14 +177,14 @@ import (
 )
 
 type Player struct {
-	sampleRate     int
-	channelNum     int
-	bytesPerSample int
-	audioTrack     C.jobject
-	buffer         []byte
-	bufferSize     int
-	chErr          chan error
-	chBuffer       chan []byte
+	sampleRate           int
+	channelNum           int
+	bytesPerSample       int
+	audioTrack           C.jobject
+	buffer               []byte
+	underlyingBufferSize int
+	chErr                chan error
+	chBuffer             chan []byte
 }
 
 func NewPlayer(sampleRate, channelNum, bytesPerSample int) (*Player, error) {
@@ -205,7 +205,7 @@ func NewPlayer(sampleRate, channelNum, bytesPerSample int) (*Player, error) {
 			return errors.New("oto: " + C.GoString(msg))
 		}
 		p.audioTrack = audioTrack
-		p.bufferSize = int(bufferSize)
+		p.underlyingBufferSize = int(bufferSize)
 		return nil
 	}); err != nil {
 		return nil, err
@@ -250,18 +250,22 @@ func (p *Player) loop() {
 }
 
 func (p *Player) Write(data []byte) (int, error) {
-	p.buffer = append(p.buffer, data...)
-	if len(p.buffer) < p.bufferSize {
-		return len(data), nil
+	m := max(getDefaultBufferSize(p.sampleRate, p.channelNum, p.bytesPerSample), p.underlyingBufferSize)
+	n := min(len(data), m-len(p.buffer))
+	if n < 0 {
+		n = 0
 	}
-	buf := p.buffer[:p.bufferSize]
-	select {
-	case p.chBuffer <- buf:
-	case err := <-p.chErr:
-		return 0, err
+	p.buffer = append(p.buffer, data[:n]...)
+	for len(p.buffer) >= p.underlyingBufferSize {
+		buf := p.buffer[:p.underlyingBufferSize]
+		select {
+		case p.chBuffer <- buf:
+		case err := <-p.chErr:
+			return 0, err
+		}
+		p.buffer = p.buffer[p.underlyingBufferSize:]
 	}
-	p.buffer = p.buffer[p.bufferSize:]
-	return len(data), nil
+	return n, nil
 }
 
 func (p *Player) Close() error {
