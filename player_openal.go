@@ -141,7 +141,7 @@ func NewPlayer(sampleRate, channelNum, bytesPerSample int) (*Player, error) {
 
 func (p *Player) Write(data []byte) (int, error) {
 	if err := getError(p.alDevice); err != nil {
-		return 0, fmt.Errorf("oto: starting Proceed: %v", err)
+		return 0, fmt.Errorf("oto: starting Write: %v", err)
 	}
 	processedNum := C.ALint(0)
 	C.alGetSourcei(p.alSource, C.AL_BUFFERS_PROCESSED, &processedNum)
