@@ -49,13 +49,16 @@ type Player struct {
 	// alContext represents a pointer to ALCcontext. The type is uintptr since the value
 	// can be 0x18 on macOS, which is invalid as a pointer value, and this might cause
 	// GC errors.
-	alContext  uintptr
-	alDevice   uintptr
-	alSource   C.ALuint
-	alBuffers  []C.ALuint
-	sampleRate int
-	isClosed   bool
-	alFormat   C.ALenum
+	alContext      uintptr
+	alDevice       uintptr
+	alSource       C.ALuint
+	alBuffers      []C.ALuint
+	sampleRate     int
+	isClosed       bool
+	alFormat       C.ALenum
+	maxWrittenSize int
+	writtenSize    int
+	bufferSizes    []int
 }
 
 func alFormat(channelNum, bytesPerSample int) C.ALenum {
@@ -114,12 +117,13 @@ func NewPlayer(sampleRate, channelNum, bytesPerSample int) (*Player, error) {
 		return nil, fmt.Errorf("oto: NewSource: %v", err)
 	}
 	p := &Player{
-		alContext:  c,
-		alDevice:   d,
-		alSource:   s,
-		alBuffers:  []C.ALuint{},
-		sampleRate: sampleRate,
-		alFormat:   alFormat(channelNum, bytesPerSample),
+		alContext:      c,
+		alDevice:       d,
+		alSource:       s,
+		alBuffers:      []C.ALuint{},
+		sampleRate:     sampleRate,
+		alFormat:       alFormat(channelNum, bytesPerSample),
+		maxWrittenSize: getDefaultBufferSize(sampleRate, channelNum, bytesPerSample),
 	}
 	runtime.SetFinalizer(p, (*Player).Close)
 
@@ -152,6 +156,10 @@ func (p *Player) Write(data []byte) (int, error) {
 			return 0, fmt.Errorf("oto: UnqueueBuffers: %v", err)
 		}
 		p.alBuffers = append(p.alBuffers, bufs...)
+		for i := 0; i < len(bufs); i++ {
+			p.writtenSize -= p.bufferSizes[0]
+			p.bufferSizes = p.bufferSizes[1:]
+		}
 	}
 
 	if len(p.alBuffers) == 0 {
@@ -160,11 +168,19 @@ func (p *Player) Write(data []byte) (int, error) {
 	}
 	buf := p.alBuffers[0]
 	p.alBuffers = p.alBuffers[1:]
-	C.alBufferData(buf, p.alFormat, unsafe.Pointer(&data[0]), C.ALsizei(len(data)), C.ALsizei(p.sampleRate))
+	n := min(len(data), p.maxWrittenSize-p.writtenSize)
+	if n <= 0 {
+		return 0, nil
+	}
+	C.alBufferData(buf, p.alFormat, unsafe.Pointer(&data[0]), C.ALsizei(n), C.ALsizei(p.sampleRate))
 	C.alSourceQueueBuffers(p.alSource, 1, &buf)
 	if err := getError(p.alDevice); err != nil {
 		return 0, fmt.Errorf("oto: QueueBuffer: %v", err)
 	}
+	// when writtenSize is 0, noise happens. why??
+	println(n, p.maxWrittenSize, p.writtenSize)
+	p.writtenSize += n
+	p.bufferSizes = append(p.bufferSizes, n)
 
 	state := C.ALint(0)
 	C.alGetSourcei(p.alSource, C.AL_SOURCE_STATE, &state)
@@ -176,7 +192,7 @@ func (p *Player) Write(data []byte) (int, error) {
 		}
 	}
 
-	return len(data), nil
+	return n, nil
 }
 
 func (p *Player) Close() error {
