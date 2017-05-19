@@ -30,11 +30,14 @@ const (
 )
 
 type Player struct {
-	alSource   al.Source
-	alBuffers  []al.Buffer
-	sampleRate int
-	isClosed   bool
-	alFormat   uint32
+	alSource       al.Source
+	alBuffers      []al.Buffer
+	sampleRate     int
+	isClosed       bool
+	alFormat       uint32
+	maxWrittenSize int
+	writtenSize    int
+	bufferSizes    []int
 }
 
 func alFormat(channelNum, bytesPerSample int) uint32 {
@@ -61,10 +64,11 @@ func NewPlayer(sampleRate, channelNum, bytesPerSample int) (*Player, error) {
 		return nil, fmt.Errorf("oto: al.GenSources error: %d", e)
 	}
 	p = &Player{
-		alSource:   s[0],
-		alBuffers:  []al.Buffer{},
-		sampleRate: sampleRate,
-		alFormat:   alFormat(channelNum, bytesPerSample),
+		alSource:       s[0],
+		alBuffers:      []al.Buffer{},
+		sampleRate:     sampleRate,
+		alFormat:       alFormat(channelNum, bytesPerSample),
+		maxWrittenSize: getDefaultBufferSize(sampleRate, channelNum, bytesPerSample),
 	}
 	runtime.SetFinalizer(p, (*Player).Close)
 
@@ -74,7 +78,7 @@ func NewPlayer(sampleRate, channelNum, bytesPerSample int) (*Player, error) {
 	for _, b := range bs {
 		// Note that the third argument of only the first buffer is used.
 		b.BufferData(p.alFormat, emptyBytes, int32(p.sampleRate))
-		p.alSource.QueueBuffers(b)
+		p.alBuffers = append(p.alBuffers, b)
 	}
 	al.PlaySources(p.alSource)
 	return p, nil
@@ -82,16 +86,20 @@ func NewPlayer(sampleRate, channelNum, bytesPerSample int) (*Player, error) {
 
 func (p *Player) Write(data []byte) (int, error) {
 	if err := al.Error(); err != 0 {
-		return 0, fmt.Errorf("oto: before proceed: %d", err)
+		return 0, fmt.Errorf("oto: before Write: %d", err)
 	}
 	processedNum := p.alSource.BuffersProcessed()
 	if 0 < processedNum {
 		bufs := make([]al.Buffer, processedNum)
 		p.alSource.UnqueueBuffers(bufs...)
 		if err := al.Error(); err != 0 {
-			return 0, fmt.Errorf("oto: Unqueue in process: %d", err)
+			return 0, fmt.Errorf("oto: Unqueue: %d", err)
 		}
 		p.alBuffers = append(p.alBuffers, bufs...)
+		for i := 0; i < len(bufs); i++ {
+			p.writtenSize -= p.bufferSizes[0]
+			p.bufferSizes = p.bufferSizes[1:]
+		}
 	}
 
 	if len(p.alBuffers) == 0 {
@@ -100,21 +108,27 @@ func (p *Player) Write(data []byte) (int, error) {
 	}
 	buf := p.alBuffers[0]
 	p.alBuffers = p.alBuffers[1:]
-	buf.BufferData(p.alFormat, data, int32(p.sampleRate))
+	n := min(len(data), p.maxWrittenSize-p.writtenSize)
+	if n <= 0 {
+		return 0, nil
+	}
+	buf.BufferData(p.alFormat, data[:n], int32(p.sampleRate))
 	p.alSource.QueueBuffers(buf)
 	if err := al.Error(); err != 0 {
-		return 0, fmt.Errorf("oto: Queue in process: %d", err)
+		return 0, fmt.Errorf("oto: Queue: %d", err)
 	}
+	p.writtenSize += n
+	p.bufferSizes = append(p.bufferSizes, n)
 
 	if p.alSource.State() == al.Stopped || p.alSource.State() == al.Initial {
 		al.RewindSources(p.alSource)
 		al.PlaySources(p.alSource)
 		if err := al.Error(); err != 0 {
-			return 0, fmt.Errorf("oto: PlaySource in process: %d", err)
+			return 0, fmt.Errorf("oto: PlaySource: %d", err)
 		}
 	}
 
-	return len(data), nil
+	return n, nil
 }
 
 func (p *Player) Close() error {
