@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// TODO: Can we unify this into driver_openal.go?
+// TODO: Can we unify this into player_openal.go?
 
 // +build ios
 
