@@ -177,8 +177,6 @@ func (p *Player) Write(data []byte) (int, error) {
 	if err := getError(p.alDevice); err != nil {
 		return 0, fmt.Errorf("oto: QueueBuffer: %v", err)
 	}
-	// when writtenSize is 0, noise happens. why??
-	println(n, p.maxWrittenSize, p.writtenSize)
 	p.writtenSize += n
 	p.bufferSizes = append(p.bufferSizes, n)
 
