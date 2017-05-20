@@ -171,6 +171,7 @@ import "C"
 
 import (
 	"errors"
+	"runtime"
 	"unsafe"
 
 	"github.com/hajimehoshi/oto/internal/jni"
@@ -196,6 +197,7 @@ func NewPlayer(sampleRate, channelNum, bytesPerSample int) (*Player, error) {
 		chErr:          make(chan error),
 		chBuffer:       make(chan []byte, 8),
 	}
+	runtime.SetFinalizer(p, (*Player).Close)
 	if err := jni.RunOnJVM(func(vm, env, ctx uintptr) error {
 		audioTrack := C.jobject(nil)
 		bufferSize := C.int(0)
@@ -269,5 +271,6 @@ func (p *Player) Write(data []byte) (int, error) {
 }
 
 func (p *Player) Close() error {
+	runtime.SetFinalizer(p, nil)
 	return nil
 }

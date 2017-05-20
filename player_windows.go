@@ -29,6 +29,7 @@ import "C"
 import (
 	"errors"
 	"fmt"
+	"runtime"
 	"unsafe"
 )
 
@@ -97,6 +98,7 @@ func NewPlayer(sampleRate, channelNum, bytesPerSample int) (*Player, error) {
 		headers:       make([]*header, numHeader),
 		maxBufferSize: max(getDefaultBufferSize(sampleRate, channelNum, bytesPerSample), bufferSize),
 	}
+	runtime.SetFinalizer(p, (*Player).Close)
 	for i := 0; i < numHeader; i++ {
 		var err error
 		p.headers[i], err = newHeader(w, bufferSize)
@@ -136,5 +138,6 @@ func (p *Player) Write(data []byte) (int, error) {
 
 func (p *Player) Close() error {
 	// TODO: Implement this
+	runtime.SetFinalizer(p, nil)
 	return nil
 }
