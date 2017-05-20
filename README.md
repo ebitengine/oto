@@ -1,6 +1,6 @@
 # Oto (音)
 
-A low-level library to play sound. This package offers io.WriteCloser to play PCM sound.
+A low-level library to play sound. This package offers `io.WriteCloser` to play PCM sound.
 
 ## Platforms
 
@@ -8,6 +8,6 @@ A low-level library to play sound. This package offers io.WriteCloser to play PC
 * macOS
 * Linux
 * FreeBSD
-* Android (checked with `gomobile bind`)
-* iOS (checked with `gomobile bind`)
+* Android (tested with `gomobile bind`)
+* iOS (tested with `gomobile bind`)
 * (Modern) web browsers (powered by [GopherJS](https://github.com/gopherjs/gopherjs))
