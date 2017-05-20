@@ -69,12 +69,13 @@ func (h *header) Write(waveOut C.HWAVEOUT, data []byte) error {
 const numHeader = 8
 
 type Player struct {
-	out     C.HWAVEOUT
-	buffer  []byte
-	headers []*header
+	out           C.HWAVEOUT
+	buffer        []byte
+	headers       []*header
+	maxBufferSize int
 }
 
-const bufferSize = 4096
+const bufferSize = 1024
 
 func NewPlayer(sampleRate, channelNum, bytesPerSample int) (*Player, error) {
 	numBlockAlign := channelNum * bytesPerSample
@@ -91,9 +92,10 @@ func NewPlayer(sampleRate, channelNum, bytesPerSample int) (*Player, error) {
 		return nil, fmt.Errorf("oto: waveOutOpen error: %d", err)
 	}
 	p := &Player{
-		out:     w,
-		buffer:  []byte{},
-		headers: make([]*header, numHeader),
+		out:           w,
+		buffer:        []byte{},
+		headers:       make([]*header, numHeader),
+		maxBufferSize: max(getDefaultBufferSize(sampleRate, channelNum, bytesPerSample), bufferSize),
 	}
 	for i := 0; i < numHeader; i++ {
 		var err error
@@ -106,27 +108,30 @@ func NewPlayer(sampleRate, channelNum, bytesPerSample int) (*Player, error) {
 }
 
 func (p *Player) Write(data []byte) (int, error) {
-	p.buffer = append(p.buffer, data...)
-	if bufferSize > len(p.buffer) {
-		return len(data), nil
+	n := min(len(data), p.maxBufferSize-len(p.buffer))
+	p.buffer = append(p.buffer, data[:n]...)
+	if n < 0 {
+		n = 0
 	}
-	headerToWrite := (*header)(nil)
-	for _, h := range p.headers {
-		// TODO: Need to check WHDR_DONE?
-		if h.waveHdr.dwFlags&C.WHDR_INQUEUE == 0 {
-			headerToWrite = h
+	for len(p.buffer) >= bufferSize {
+		headerToWrite := (*header)(nil)
+		for _, h := range p.headers {
+			// TODO: Need to check WHDR_DONE?
+			if h.waveHdr.dwFlags&C.WHDR_INQUEUE == 0 {
+				headerToWrite = h
+				break
+			}
+		}
+		if headerToWrite == nil {
+			// This can happen (hajimehoshi/ebiten#207)
 			break
 		}
+		if err := headerToWrite.Write(p.out, p.buffer[:bufferSize]); err != nil {
+			return 0, err
+		}
+		p.buffer = p.buffer[bufferSize:]
 	}
-	if headerToWrite == nil {
-		// This can happen (hajimehoshi/ebiten#207)
-		return len(data), nil
-	}
-	if err := headerToWrite.Write(p.out, p.buffer[:bufferSize]); err != nil {
-		return 0, err
-	}
-	p.buffer = p.buffer[bufferSize:]
-	return len(data), nil
+	return n, nil
 }
 
 func (p *Player) Close() error {
