@@ -34,6 +34,7 @@ type player struct {
 	bytesPerSample    int
 	positionInSamples int64
 	bufferedData      []byte
+	bufferSizeInBytes int
 	context           *js.Object
 }
 
@@ -56,7 +57,7 @@ func isAndroidChrome() bool {
 	return true
 }
 
-func newPlayer(sampleRate, channelNum, bytesPerSample int) (*player, error) {
+func newPlayer(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*player, error) {
 	class := js.Global.Get("AudioContext")
 	if class == js.Undefined {
 		class = js.Global.Get("webkitAudioContext")
@@ -65,11 +66,12 @@ func newPlayer(sampleRate, channelNum, bytesPerSample int) (*player, error) {
 		return nil, errors.New("oto: audio couldn't be initialized")
 	}
 	p := &player{
-		sampleRate:     sampleRate,
-		channelNum:     channelNum,
-		bytesPerSample: bytesPerSample,
-		bufferedData:   []byte{},
-		context:        class.New(),
+		sampleRate:        sampleRate,
+		channelNum:        channelNum,
+		bytesPerSample:    bytesPerSample,
+		bufferedData:      []byte{},
+		context:           class.New(),
+		bufferSizeInBytes: bufferSizeInBytes,
 	}
 	// iOS and Android Chrome requires touch event to use AudioContext.
 	if isIOS() || isAndroidChrome() {
@@ -96,8 +98,7 @@ func toLR(data []byte) ([]int16, []int16) {
 }
 
 func (p *player) Write(data []byte) (int, error) {
-	m := getDefaultBufferSize(p.sampleRate, p.channelNum, p.bytesPerSample)
-	n := min(len(data), m - len(p.bufferedData))
+	n := min(len(data), p.bufferSizeInBytes-len(p.bufferedData))
 	if n < 0 {
 		n = 0
 	}

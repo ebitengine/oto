@@ -95,7 +95,7 @@ func getError(device uintptr) error {
 	}
 }
 
-func newPlayer(sampleRate, channelNum, bytesPerSample int) (*player, error) {
+func newPlayer(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*player, error) {
 	name := C.alGetString(C.ALC_DEFAULT_DEVICE_SPECIFIER)
 	d := uintptr(unsafe.Pointer(C.alcOpenDevice((*C.ALCchar)(name))))
 	if d == 0 {
@@ -123,7 +123,7 @@ func newPlayer(sampleRate, channelNum, bytesPerSample int) (*player, error) {
 		alBuffers:      []C.ALuint{},
 		sampleRate:     sampleRate,
 		alFormat:       alFormat(channelNum, bytesPerSample),
-		maxWrittenSize: getDefaultBufferSize(sampleRate, channelNum, bytesPerSample),
+		maxWrittenSize: bufferSizeInBytes,
 	}
 	runtime.SetFinalizer(p, (*player).Close)
 

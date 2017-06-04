@@ -18,8 +18,8 @@ type Player struct {
 	player *player
 }
 
-func NewPlayer(sampleRate, channelNum, bytesPerSample int) (*Player, error) {
-	p, err := newPlayer(sampleRate, channelNum, bytesPerSample)
+func NewPlayer(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*Player, error) {
+	p, err := newPlayer(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes)
 	if err != nil {
 		return nil, err
 	}
@@ -32,12 +32,6 @@ func (p *Player) Write(data []uint8) (int, error) {
 
 func (p *Player) Close() error {
 	return p.player.Close()
-}
-
-// getDefaultBufferSize returns the default size of buffer in bytes.
-func getDefaultBufferSize(sampleRate, channelNum, bytesPerSample int) int {
-	// 1/10 secs
-	return sampleRate * channelNum * bytesPerSample / 10
 }
 
 func max(a, b int) int {

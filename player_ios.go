@@ -54,7 +54,7 @@ func alFormat(channelNum, bytesPerSample int) uint32 {
 	panic(fmt.Sprintf("oto: invalid channel num (%d) or bytes per sample (%d)", channelNum, bytesPerSample))
 }
 
-func newPlayer(sampleRate, channelNum, bytesPerSample int) (*player, error) {
+func newPlayer(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*player, error) {
 	var p *player
 	if err := al.OpenDevice(); err != nil {
 		return nil, fmt.Errorf("oto: OpenAL initialization failed: %v", err)
@@ -68,7 +68,7 @@ func newPlayer(sampleRate, channelNum, bytesPerSample int) (*player, error) {
 		alBuffers:      []al.Buffer{},
 		sampleRate:     sampleRate,
 		alFormat:       alFormat(channelNum, bytesPerSample),
-		maxWrittenSize: getDefaultBufferSize(sampleRate, channelNum, bytesPerSample),
+		maxWrittenSize: bufferSizeInBytes,
 	}
 	runtime.SetFinalizer(p, (*player).Close)
 

@@ -184,18 +184,20 @@ type player struct {
 	audioTrack           C.jobject
 	buffer               []byte
 	underlyingBufferSize int
+	bufferSizeInBytes    int
 	chErr                chan error
 	chBuffer             chan []byte
 }
 
-func newPlayer(sampleRate, channelNum, bytesPerSample int) (*player, error) {
+func newPlayer(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*player, error) {
 	p := &player{
-		sampleRate:     sampleRate,
-		channelNum:     channelNum,
-		bytesPerSample: bytesPerSample,
-		buffer:         []byte{},
-		chErr:          make(chan error),
-		chBuffer:       make(chan []byte, 8),
+		sampleRate:        sampleRate,
+		channelNum:        channelNum,
+		bytesPerSample:    bytesPerSample,
+		buffer:            []byte{},
+		chErr:             make(chan error),
+		chBuffer:          make(chan []byte, 8),
+		bufferSizeInBytes: bufferSizeInBytes,
 	}
 	runtime.SetFinalizer(p, (*player).Close)
 	if err := jni.RunOnJVM(func(vm, env, ctx uintptr) error {
@@ -252,7 +254,7 @@ func (p *player) loop() {
 }
 
 func (p *player) Write(data []byte) (int, error) {
-	m := max(getDefaultBufferSize(p.sampleRate, p.channelNum, p.bytesPerSample), p.underlyingBufferSize)
+	m := max(p.bufferSizeInBytes, p.underlyingBufferSize)
 	n := min(len(data), m-len(p.buffer))
 	if n < 0 {
 		n = 0

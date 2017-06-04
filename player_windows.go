@@ -78,7 +78,7 @@ type player struct {
 
 const bufferSize = 1024
 
-func newPlayer(sampleRate, channelNum, bytesPerSample int) (*player, error) {
+func newPlayer(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*player, error) {
 	numBlockAlign := channelNum * bytesPerSample
 	f := C.WAVEFORMATEX{
 		wFormatTag:      C.WAVE_FORMAT_PCM,
@@ -96,7 +96,7 @@ func newPlayer(sampleRate, channelNum, bytesPerSample int) (*player, error) {
 		out:           w,
 		buffer:        []byte{},
 		headers:       make([]*header, numHeader),
-		maxBufferSize: max(getDefaultBufferSize(sampleRate, channelNum, bytesPerSample), bufferSize),
+		maxBufferSize: max(bufferSizeInBytes, bufferSize),
 	}
 	runtime.SetFinalizer(p, (*player).Close)
 	for i := 0; i < numHeader; i++ {
