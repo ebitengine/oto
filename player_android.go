@@ -177,7 +177,7 @@ import (
 	"github.com/hajimehoshi/oto/internal/jni"
 )
 
-type Player struct {
+type player struct {
 	sampleRate           int
 	channelNum           int
 	bytesPerSample       int
@@ -188,8 +188,8 @@ type Player struct {
 	chBuffer             chan []byte
 }
 
-func NewPlayer(sampleRate, channelNum, bytesPerSample int) (*Player, error) {
-	p := &Player{
+func newPlayer(sampleRate, channelNum, bytesPerSample int) (*player, error) {
+	p := &player{
 		sampleRate:     sampleRate,
 		channelNum:     channelNum,
 		bytesPerSample: bytesPerSample,
@@ -197,7 +197,7 @@ func NewPlayer(sampleRate, channelNum, bytesPerSample int) (*Player, error) {
 		chErr:          make(chan error),
 		chBuffer:       make(chan []byte, 8),
 	}
-	runtime.SetFinalizer(p, (*Player).Close)
+	runtime.SetFinalizer(p, (*player).Close)
 	if err := jni.RunOnJVM(func(vm, env, ctx uintptr) error {
 		audioTrack := C.jobject(nil)
 		bufferSize := C.int(0)
@@ -216,7 +216,7 @@ func NewPlayer(sampleRate, channelNum, bytesPerSample int) (*Player, error) {
 	return p, nil
 }
 
-func (p *Player) loop() {
+func (p *player) loop() {
 	for bufInBytes := range p.chBuffer {
 		var bufInShorts []int16
 		if p.bytesPerSample == 2 {
@@ -251,7 +251,7 @@ func (p *Player) loop() {
 	}
 }
 
-func (p *Player) Write(data []byte) (int, error) {
+func (p *player) Write(data []byte) (int, error) {
 	m := max(getDefaultBufferSize(p.sampleRate, p.channelNum, p.bytesPerSample), p.underlyingBufferSize)
 	n := min(len(data), m-len(p.buffer))
 	if n < 0 {
@@ -270,7 +270,7 @@ func (p *Player) Write(data []byte) (int, error) {
 	return n, nil
 }
 
-func (p *Player) Close() error {
+func (p *player) Close() error {
 	runtime.SetFinalizer(p, nil)
 	return nil
 }

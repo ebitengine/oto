@@ -28,7 +28,7 @@ import (
 // much more often especially on Safari, which is the cause of noise (hajimehoshi/ebiten#307).
 const positionDelay = 256
 
-type Player struct {
+type player struct {
 	sampleRate        int
 	channelNum        int
 	bytesPerSample    int
@@ -56,7 +56,7 @@ func isAndroidChrome() bool {
 	return true
 }
 
-func NewPlayer(sampleRate, channelNum, bytesPerSample int) (*Player, error) {
+func newPlayer(sampleRate, channelNum, bytesPerSample int) (*player, error) {
 	class := js.Global.Get("AudioContext")
 	if class == js.Undefined {
 		class = js.Global.Get("webkitAudioContext")
@@ -64,7 +64,7 @@ func NewPlayer(sampleRate, channelNum, bytesPerSample int) (*Player, error) {
 	if class == js.Undefined {
 		return nil, errors.New("oto: audio couldn't be initialized")
 	}
-	p := &Player{
+	p := &player{
 		sampleRate:     sampleRate,
 		channelNum:     channelNum,
 		bytesPerSample: bytesPerSample,
@@ -95,7 +95,7 @@ func toLR(data []byte) ([]int16, []int16) {
 	return l, r
 }
 
-func (p *Player) Write(data []byte) (int, error) {
+func (p *player) Write(data []byte) (int, error) {
 	m := getDefaultBufferSize(p.sampleRate, p.channelNum, p.bytesPerSample)
 	n := min(len(data), m - len(p.bufferedData))
 	if n < 0 {
@@ -131,6 +131,6 @@ func (p *Player) Write(data []byte) (int, error) {
 	return n, nil
 }
 
-func (p *Player) Close() error {
+func (p *player) Close() error {
 	return nil
 }

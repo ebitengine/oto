@@ -14,6 +14,26 @@
 
 package oto
 
+type Player struct {
+	player *player
+}
+
+func NewPlayer(sampleRate, channelNum, bytesPerSample int) (*Player, error) {
+	p, err := newPlayer(sampleRate, channelNum, bytesPerSample)
+	if err != nil {
+		return nil, err
+	}
+	return &Player{p}, nil
+}
+
+func (p *Player) Write(data []uint8) (int, error) {
+	return p.player.Write(data)
+}
+
+func (p *Player) Close() error {
+	return p.player.Close()
+}
+
 // getDefaultBufferSize returns the default size of buffer in bytes.
 func getDefaultBufferSize(sampleRate, channelNum, bytesPerSample int) int {
 	// 1/10 secs

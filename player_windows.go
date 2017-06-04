@@ -69,7 +69,7 @@ func (h *header) Write(waveOut C.HWAVEOUT, data []byte) error {
 
 const numHeader = 8
 
-type Player struct {
+type player struct {
 	out           C.HWAVEOUT
 	buffer        []byte
 	headers       []*header
@@ -78,7 +78,7 @@ type Player struct {
 
 const bufferSize = 1024
 
-func NewPlayer(sampleRate, channelNum, bytesPerSample int) (*Player, error) {
+func newPlayer(sampleRate, channelNum, bytesPerSample int) (*player, error) {
 	numBlockAlign := channelNum * bytesPerSample
 	f := C.WAVEFORMATEX{
 		wFormatTag:      C.WAVE_FORMAT_PCM,
@@ -92,13 +92,13 @@ func NewPlayer(sampleRate, channelNum, bytesPerSample int) (*Player, error) {
 	if err := C.waveOutOpen(&w, C.WAVE_MAPPER, &f, 0, 0, C.CALLBACK_NULL); err != C.MMSYSERR_NOERROR {
 		return nil, fmt.Errorf("oto: waveOutOpen error: %d", err)
 	}
-	p := &Player{
+	p := &player{
 		out:           w,
 		buffer:        []byte{},
 		headers:       make([]*header, numHeader),
 		maxBufferSize: max(getDefaultBufferSize(sampleRate, channelNum, bytesPerSample), bufferSize),
 	}
-	runtime.SetFinalizer(p, (*Player).Close)
+	runtime.SetFinalizer(p, (*player).Close)
 	for i := 0; i < numHeader; i++ {
 		var err error
 		p.headers[i], err = newHeader(w, bufferSize)
@@ -109,7 +109,7 @@ func NewPlayer(sampleRate, channelNum, bytesPerSample int) (*Player, error) {
 	return p, nil
 }
 
-func (p *Player) Write(data []byte) (int, error) {
+func (p *player) Write(data []byte) (int, error) {
 	n := min(len(data), p.maxBufferSize-len(p.buffer))
 	p.buffer = append(p.buffer, data[:n]...)
 	if n < 0 {
@@ -136,7 +136,7 @@ func (p *Player) Write(data []byte) (int, error) {
 	return n, nil
 }
 
-func (p *Player) Close() error {
+func (p *player) Close() error {
 	// TODO: Implement this
 	runtime.SetFinalizer(p, nil)
 	return nil

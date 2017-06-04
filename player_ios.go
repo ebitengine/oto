@@ -29,7 +29,7 @@ const (
 	maxBufferNum = 8
 )
 
-type Player struct {
+type player struct {
 	alSource       al.Source
 	alBuffers      []al.Buffer
 	sampleRate     int
@@ -54,8 +54,8 @@ func alFormat(channelNum, bytesPerSample int) uint32 {
 	panic(fmt.Sprintf("oto: invalid channel num (%d) or bytes per sample (%d)", channelNum, bytesPerSample))
 }
 
-func NewPlayer(sampleRate, channelNum, bytesPerSample int) (*Player, error) {
-	var p *Player
+func newPlayer(sampleRate, channelNum, bytesPerSample int) (*player, error) {
+	var p *player
 	if err := al.OpenDevice(); err != nil {
 		return nil, fmt.Errorf("oto: OpenAL initialization failed: %v", err)
 	}
@@ -63,14 +63,14 @@ func NewPlayer(sampleRate, channelNum, bytesPerSample int) (*Player, error) {
 	if e := al.Error(); e != 0 {
 		return nil, fmt.Errorf("oto: al.GenSources error: %d", e)
 	}
-	p = &Player{
+	p = &player{
 		alSource:       s[0],
 		alBuffers:      []al.Buffer{},
 		sampleRate:     sampleRate,
 		alFormat:       alFormat(channelNum, bytesPerSample),
 		maxWrittenSize: getDefaultBufferSize(sampleRate, channelNum, bytesPerSample),
 	}
-	runtime.SetFinalizer(p, (*Player).Close)
+	runtime.SetFinalizer(p, (*player).Close)
 
 	bs := al.GenBuffers(maxBufferNum)
 	const bufferSize = 1024
@@ -84,7 +84,7 @@ func NewPlayer(sampleRate, channelNum, bytesPerSample int) (*Player, error) {
 	return p, nil
 }
 
-func (p *Player) Write(data []byte) (int, error) {
+func (p *player) Write(data []byte) (int, error) {
 	if err := al.Error(); err != 0 {
 		return 0, fmt.Errorf("oto: before Write: %d", err)
 	}
@@ -131,7 +131,7 @@ func (p *Player) Write(data []byte) (int, error) {
 	return n, nil
 }
 
-func (p *Player) Close() error {
+func (p *player) Close() error {
 	if err := al.Error(); err != 0 {
 		return fmt.Errorf("oto: error before closing: %d", err)
 	}

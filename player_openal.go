@@ -45,7 +45,7 @@ const (
 	maxBufferNum = 8
 )
 
-type Player struct {
+type player struct {
 	// alContext represents a pointer to ALCcontext. The type is uintptr since the value
 	// can be 0x18 on macOS, which is invalid as a pointer value, and this might cause
 	// GC errors.
@@ -95,7 +95,7 @@ func getError(device uintptr) error {
 	}
 }
 
-func NewPlayer(sampleRate, channelNum, bytesPerSample int) (*Player, error) {
+func newPlayer(sampleRate, channelNum, bytesPerSample int) (*player, error) {
 	name := C.alGetString(C.ALC_DEFAULT_DEVICE_SPECIFIER)
 	d := uintptr(unsafe.Pointer(C.alcOpenDevice((*C.ALCchar)(name))))
 	if d == 0 {
@@ -116,7 +116,7 @@ func NewPlayer(sampleRate, channelNum, bytesPerSample int) (*Player, error) {
 	if err := getError(d); err != nil {
 		return nil, fmt.Errorf("oto: NewSource: %v", err)
 	}
-	p := &Player{
+	p := &player{
 		alContext:      c,
 		alDevice:       d,
 		alSource:       s,
@@ -125,7 +125,7 @@ func NewPlayer(sampleRate, channelNum, bytesPerSample int) (*Player, error) {
 		alFormat:       alFormat(channelNum, bytesPerSample),
 		maxWrittenSize: getDefaultBufferSize(sampleRate, channelNum, bytesPerSample),
 	}
-	runtime.SetFinalizer(p, (*Player).Close)
+	runtime.SetFinalizer(p, (*player).Close)
 
 	bs := make([]C.ALuint, maxBufferNum)
 	C.alGenBuffers(maxBufferNum, &bs[0])
@@ -143,7 +143,7 @@ func NewPlayer(sampleRate, channelNum, bytesPerSample int) (*Player, error) {
 	return p, nil
 }
 
-func (p *Player) Write(data []byte) (int, error) {
+func (p *player) Write(data []byte) (int, error) {
 	if err := getError(p.alDevice); err != nil {
 		return 0, fmt.Errorf("oto: starting Write: %v", err)
 	}
@@ -193,7 +193,7 @@ func (p *Player) Write(data []byte) (int, error) {
 	return n, nil
 }
 
-func (p *Player) Close() error {
+func (p *player) Close() error {
 	if err := getError(p.alDevice); err != nil {
 		return fmt.Errorf("oto: starting Close: %v", err)
 	}
