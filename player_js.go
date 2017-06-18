@@ -112,7 +112,7 @@ func (p *player) Write(data []byte) (int, error) {
 	for dataSize <= len(p.bufferedData) {
 		data := p.bufferedData[:dataSize]
 		size := len(data) / p.bytesPerSample / p.channelNum
-		// TODO: size must be const or you'll get noise (e.g. sample rate is 22050)
+		// TODO: size must be const or you'll get noise (e.g. when sample rate is 22050)
 		buf := p.context.Call("createBuffer", p.channelNum, size, p.sampleRate)
 		l := buf.Call("getChannelData", 0)
 		r := buf.Call("getChannelData", 1)

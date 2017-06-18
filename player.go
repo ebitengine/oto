@@ -26,10 +26,25 @@ func NewPlayer(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*
 	return &Player{p}, nil
 }
 
+// Write is io.Writer's Write.
 func (p *Player) Write(data []uint8) (int, error) {
-	return p.player.Write(data)
+	written := 0
+	total := len(data)
+	// TODO: Fix player's Write to satisfy io.Writer.
+	// Now player's Write doesn't satisfy io.Writer's requirements since
+	// the current Write might return without processing all given data.
+	for written < total {
+		n, err := p.player.Write(data)
+		written += n
+		if err != nil {
+			return written, err
+		}
+		data = data[n:]
+	}
+	return written, nil
 }
 
+// Close is io.Closer's Close.
 func (p *Player) Close() error {
 	return p.player.Close()
 }
