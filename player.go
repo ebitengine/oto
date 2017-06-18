@@ -14,6 +14,10 @@
 
 package oto
 
+import (
+	"time"
+)
+
 type Player struct {
 	player *player
 }
@@ -40,6 +44,8 @@ func (p *Player) Write(data []uint8) (int, error) {
 			return written, err
 		}
 		data = data[n:]
+		// Mitigate the busy loop (#10).
+		time.Sleep(100 * time.Microsecond)
 	}
 	return written, nil
 }
