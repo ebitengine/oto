@@ -19,7 +19,11 @@ import (
 )
 
 type Player struct {
-	player *player
+	player         *player
+	sampleRate     int
+	channelNum     int
+	bytesPerSample int
+	bufferSize     int
 }
 
 func NewPlayer(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*Player, error) {
@@ -27,7 +31,17 @@ func NewPlayer(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*
 	if err != nil {
 		return nil, err
 	}
-	return &Player{p}, nil
+	return &Player{
+		player:         p,
+		sampleRate:     sampleRate,
+		channelNum:     channelNum,
+		bytesPerSample: bytesPerSample,
+		bufferSize:     bufferSizeInBytes,
+	}, nil
+}
+
+func (p *Player) samplesPerOneSec() int {
+	return p.sampleRate * p.channelNum * p.bytesPerSample
 }
 
 // Write is io.Writer's Write.
@@ -45,7 +59,10 @@ func (p *Player) Write(data []uint8) (int, error) {
 		}
 		data = data[n:]
 		// Mitigate the busy loop (#10).
-		time.Sleep(100 * time.Microsecond)
+		if n == 0 {
+			t := time.Second * time.Duration(p.bufferSize) / time.Duration(p.samplesPerOneSec()) / 4
+			time.Sleep(t)
+		}
 	}
 	return written, nil
 }
