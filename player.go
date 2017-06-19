@@ -58,8 +58,9 @@ func (p *Player) Write(data []uint8) (int, error) {
 			return written, err
 		}
 		data = data[n:]
-		// Mitigate the busy loop (#10).
-		if n == 0 {
+		// When not all data is written, the underlying buffer is full.
+		// Mitigate the busy loop by sleeping (#10).
+		if len(data) > 0 {
 			t := time.Second * time.Duration(p.bufferSize) / time.Duration(p.samplesPerOneSec()) / 4
 			time.Sleep(t)
 		}
