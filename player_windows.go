@@ -16,60 +16,45 @@
 
 package oto
 
-// TODO: Use golang.org/x/sys/windows (NewLazyDLL) instead of cgo.
-
-// #cgo LDFLAGS: -lwinmm
-//
-// #include <windows.h>
-// #include <mmsystem.h>
-//
-// #define sizeOfWavehdr (sizeof(WAVEHDR))
-import "C"
-
 import (
 	"errors"
-	"fmt"
 	"runtime"
 	"unsafe"
 )
 
 type header struct {
-	buffer     unsafe.Pointer
-	bufferSize int
-	waveHdr    C.WAVEHDR
+	buffer  []uint8
+	waveHdr *wavehdr
 }
 
-func newHeader(waveOut C.HWAVEOUT, bufferSize int) (*header, error) {
-	// NOTE: This is never freed so far, and we don't have to because newHeader is called a certain number of times.
-	buf := C.malloc(C.size_t(bufferSize))
+func newHeader(waveOut uintptr, bufferSize int) (*header, error) {
 	h := &header{
-		buffer:     buf,
-		bufferSize: bufferSize,
-		waveHdr: C.WAVEHDR{
-			lpData:         C.LPSTR(buf),
-			dwBufferLength: C.DWORD(bufferSize),
-		},
+		buffer: make([]uint8, bufferSize),
 	}
-	if err := C.waveOutPrepareHeader(waveOut, &h.waveHdr, C.sizeOfWavehdr); err != C.MMSYSERR_NOERROR {
-		return nil, fmt.Errorf("oto: waveOutPrepareHeader error: %d", err)
+	h.waveHdr = &wavehdr{
+		lpData:         uintptr(unsafe.Pointer(&h.buffer[0])),
+		dwBufferLength: uint32(bufferSize),
+	}
+	if err := waveOutPrepareHeader(waveOut, h.waveHdr); err != nil {
+		return nil, err
 	}
 	return h, nil
 }
 
-func (h *header) Write(waveOut C.HWAVEOUT, data []byte) error {
-	if len(data) != h.bufferSize {
-		return errors.New("oto: len(data) must equal to h.bufferSize")
+func (h *header) Write(waveOut uintptr, data []byte) error {
+	if len(data) != len(h.buffer) {
+		return errors.New("oto: len(data) must equal to len(h.buffer)")
 	}
-	C.memcpy(h.buffer, unsafe.Pointer(&data[0]), C.size_t(h.bufferSize))
-	if err := C.waveOutWrite(waveOut, &h.waveHdr, C.sizeOfWavehdr); err != C.MMSYSERR_NOERROR {
-		return fmt.Errorf("oto: waveOutWriter error: %d", err)
+	copy(h.buffer, data)
+	if err := waveOutWrite(waveOut, h.waveHdr); err != nil {
+		return err
 	}
 	return nil
 }
 
 type player struct {
-	out           C.HWAVEOUT
-	buffer        []byte
+	out           uintptr
+	buffer        []uint8
 	headers       []*header
 	maxBufferSize int
 }
@@ -78,23 +63,23 @@ const bufferSize = 1024
 
 func newPlayer(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*player, error) {
 	numBlockAlign := channelNum * bytesPerSample
-	f := C.WAVEFORMATEX{
-		wFormatTag:      C.WAVE_FORMAT_PCM,
-		nChannels:       C.WORD(channelNum),
-		nSamplesPerSec:  C.DWORD(sampleRate),
-		nAvgBytesPerSec: C.DWORD(sampleRate * numBlockAlign),
-		wBitsPerSample:  C.WORD(bytesPerSample * 8),
-		nBlockAlign:     C.WORD(numBlockAlign),
+	f := &waveformatex{
+		wFormatTag:      waveFormatPCM,
+		nChannels:       uint16(channelNum),
+		nSamplesPerSec:  uint32(sampleRate),
+		nAvgBytesPerSec: uint32(sampleRate * numBlockAlign),
+		wBitsPerSample:  uint16(bytesPerSample * 8),
+		nBlockAlign:     uint16(numBlockAlign),
 	}
-	var w C.HWAVEOUT
-	if err := C.waveOutOpen(&w, C.WAVE_MAPPER, &f, 0, 0, C.CALLBACK_NULL); err != C.MMSYSERR_NOERROR {
-		return nil, fmt.Errorf("oto: waveOutOpen error: %d", err)
+	w, err := waveOutOpen(f)
+	if err != nil {
+		return nil, err
 	}
 	maxBufferSize := max(bufferSizeInBytes, bufferSize)
 	numHeader := max(maxBufferSize / bufferSize, 8)
 	p := &player{
 		out:           w,
-		buffer:        []byte{},
+		buffer:        []uint8{},
 		headers:       make([]*header, numHeader),
 		maxBufferSize: maxBufferSize,
 	}
@@ -109,17 +94,14 @@ func newPlayer(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*
 	return p, nil
 }
 
-func (p *player) Write(data []byte) (int, error) {
+func (p *player) Write(data []uint8) (int, error) {
 	n := min(len(data), p.maxBufferSize-len(p.buffer))
 	p.buffer = append(p.buffer, data[:n]...)
-	if n < 0 {
-		n = 0
-	}
 	for len(p.buffer) >= bufferSize {
-		headerToWrite := (*header)(nil)
+		var headerToWrite *header
 		for _, h := range p.headers {
 			// TODO: Need to check WHDR_DONE?
-			if h.waveHdr.dwFlags&C.WHDR_INQUEUE == 0 {
+			if h.waveHdr.dwFlags&whdrInqueue == 0 {
 				headerToWrite = h
 				break
 			}
@@ -137,7 +119,10 @@ func (p *player) Write(data []byte) (int, error) {
 }
 
 func (p *player) Close() error {
-	// TODO: Implement this
 	runtime.SetFinalizer(p, nil)
+	// TODO: Call waveOutUnprepareHeader here
+	if err := waveOutClose(p.out); err != nil {
+		return err
+	}
 	return nil
 }
