@@ -67,8 +67,6 @@ func (h *header) Write(waveOut C.HWAVEOUT, data []byte) error {
 	return nil
 }
 
-const numHeader = 8
-
 type player struct {
 	out           C.HWAVEOUT
 	buffer        []byte
@@ -92,11 +90,13 @@ func newPlayer(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*
 	if err := C.waveOutOpen(&w, C.WAVE_MAPPER, &f, 0, 0, C.CALLBACK_NULL); err != C.MMSYSERR_NOERROR {
 		return nil, fmt.Errorf("oto: waveOutOpen error: %d", err)
 	}
+	maxBufferSize := max(bufferSizeInBytes, bufferSize)
+	numHeader := maxBufferSize / bufferSize
 	p := &player{
 		out:           w,
 		buffer:        []byte{},
 		headers:       make([]*header, numHeader),
-		maxBufferSize: max(bufferSizeInBytes, bufferSize),
+		maxBufferSize: maxBufferSize,
 	}
 	runtime.SetFinalizer(p, (*player).Close)
 	for i := 0; i < numHeader; i++ {
