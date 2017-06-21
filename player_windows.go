@@ -91,7 +91,7 @@ func newPlayer(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*
 		return nil, fmt.Errorf("oto: waveOutOpen error: %d", err)
 	}
 	maxBufferSize := max(bufferSizeInBytes, bufferSize)
-	numHeader := maxBufferSize / bufferSize
+	numHeader := max(maxBufferSize / bufferSize, 8)
 	p := &player{
 		out:           w,
 		buffer:        []byte{},
