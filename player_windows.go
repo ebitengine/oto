@@ -53,13 +53,11 @@ func (h *header) Write(waveOut uintptr, data []byte) error {
 }
 
 type player struct {
-	out           uintptr
-	buffer        []uint8
-	headers       []*header
-	maxBufferSize int
+	out             uintptr
+	headers         []*header
+	upperBuffer     []uint8
+	upperBufferSize int
 }
-
-const bufferSize = 1024
 
 func newPlayer(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*player, error) {
 	numBlockAlign := channelNum * bytesPerSample
@@ -75,18 +73,16 @@ func newPlayer(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*
 	if err != nil {
 		return nil, err
 	}
-	maxBufferSize := max(bufferSizeInBytes, bufferSize)
-	numHeader := max(maxBufferSize / bufferSize, 8)
+	u, l := bufferSizes(bufferSizeInBytes)
 	p := &player{
-		out:           w,
-		buffer:        []uint8{},
-		headers:       make([]*header, numHeader),
-		maxBufferSize: maxBufferSize,
+		out:             w,
+		headers:         make([]*header, l),
+		upperBufferSize: u,
 	}
 	runtime.SetFinalizer(p, (*player).Close)
-	for i := 0; i < numHeader; i++ {
+	for i := range p.headers {
 		var err error
-		p.headers[i], err = newHeader(w, bufferSize)
+		p.headers[i], err = newHeader(w, lowerBufferUnitSize)
 		if err != nil {
 			return nil, err
 		}
@@ -95,9 +91,9 @@ func newPlayer(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*
 }
 
 func (p *player) Write(data []uint8) (int, error) {
-	n := min(len(data), p.maxBufferSize-len(p.buffer))
-	p.buffer = append(p.buffer, data[:n]...)
-	for len(p.buffer) >= bufferSize {
+	n := min(len(data), p.upperBufferSize-len(p.upperBuffer))
+	p.upperBuffer = append(p.upperBuffer, data[:n]...)
+	for len(p.upperBuffer) >= lowerBufferUnitSize {
 		var headerToWrite *header
 		for _, h := range p.headers {
 			// TODO: Need to check WHDR_DONE?
@@ -110,10 +106,10 @@ func (p *player) Write(data []uint8) (int, error) {
 			// This can happen (hajimehoshi/ebiten#207)
 			break
 		}
-		if err := headerToWrite.Write(p.out, p.buffer[:bufferSize]); err != nil {
+		if err := headerToWrite.Write(p.out, p.upperBuffer[:lowerBufferUnitSize]); err != nil {
 			return 0, err
 		}
-		p.buffer = p.buffer[bufferSize:]
+		p.upperBuffer = p.upperBuffer[lowerBufferUnitSize:]
 	}
 	return n, nil
 }
