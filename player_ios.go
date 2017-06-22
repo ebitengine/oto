@@ -25,19 +25,14 @@ import (
 	"golang.org/x/mobile/exp/audio/al"
 )
 
-const (
-	maxBufferNum = 8
-)
-
 type player struct {
-	alSource       al.Source
-	alBuffers      []al.Buffer
-	sampleRate     int
-	isClosed       bool
-	alFormat       uint32
-	maxWrittenSize int
-	writtenSize    int
-	bufferSizes    []int
+	alSource         al.Source
+	sampleRate       int
+	isClosed         bool
+	alFormat         uint32
+	lowerBufferUnits []al.Buffer
+	upperBuffer      []uint8
+	upperBufferSize  int
 }
 
 func alFormat(channelNum, bytesPerSample int) uint32 {
@@ -63,22 +58,20 @@ func newPlayer(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*
 	if e := al.Error(); e != 0 {
 		return nil, fmt.Errorf("oto: al.GenSources error: %d", e)
 	}
+	u, l := bufferSizes(bufferSizeInBytes)
 	p = &player{
-		alSource:       s[0],
-		alBuffers:      []al.Buffer{},
-		sampleRate:     sampleRate,
-		alFormat:       alFormat(channelNum, bytesPerSample),
-		maxWrittenSize: bufferSizeInBytes,
+		alSource:         s[0],
+		sampleRate:       sampleRate,
+		alFormat:         alFormat(channelNum, bytesPerSample),
+		lowerBufferUnits: al.GenBuffers(l),
+		upperBufferSize:  u,
 	}
 	runtime.SetFinalizer(p, (*player).Close)
 
-	bs := al.GenBuffers(maxBufferNum)
-	const bufferSize = 1024
-	emptyBytes := make([]byte, bufferSize)
-	for _, b := range bs {
+	emptyBytes := make([]byte, lowerBufferUnitSize)
+	for _, b := range p.lowerBufferUnits {
 		// Note that the third argument of only the first buffer is used.
 		b.BufferData(p.alFormat, emptyBytes, int32(p.sampleRate))
-		p.alBuffers = append(p.alBuffers, b)
 	}
 	al.PlaySources(p.alSource)
 	return p, nil
@@ -88,46 +81,36 @@ func (p *player) Write(data []byte) (int, error) {
 	if err := al.Error(); err != 0 {
 		return 0, fmt.Errorf("oto: before Write: %d", err)
 	}
-	processedNum := p.alSource.BuffersProcessed()
-	if 0 < processedNum {
-		bufs := make([]al.Buffer, processedNum)
-		p.alSource.UnqueueBuffers(bufs...)
+	n := min(len(data), p.upperBufferSize-len(p.upperBuffer))
+	p.upperBuffer = append(p.upperBuffer, data[:n]...)
+	for len(p.upperBuffer) >= lowerBufferUnitSize {
+		if pn := p.alSource.BuffersProcessed(); pn > 0 {
+			bufs := make([]al.Buffer, pn)
+			p.alSource.UnqueueBuffers(bufs...)
+			if err := al.Error(); err != 0 {
+				return 0, fmt.Errorf("oto: Unqueue: %d", err)
+			}
+			p.lowerBufferUnits = append(p.lowerBufferUnits, bufs...)
+		}
+		if len(p.lowerBufferUnits) == 0 {
+			break
+		}
+		lowerBufferUnit := p.lowerBufferUnits[0]
+		p.lowerBufferUnits = p.lowerBufferUnits[1:]
+		lowerBufferUnit.BufferData(p.alFormat, p.upperBuffer[:lowerBufferUnitSize], int32(p.sampleRate))
+		p.alSource.QueueBuffers(lowerBufferUnit)
 		if err := al.Error(); err != 0 {
-			return 0, fmt.Errorf("oto: Unqueue: %d", err)
+			return 0, fmt.Errorf("oto: Queue: %d", err)
 		}
-		p.alBuffers = append(p.alBuffers, bufs...)
-		for i := 0; i < len(bufs); i++ {
-			p.writtenSize -= p.bufferSizes[0]
-			p.bufferSizes = p.bufferSizes[1:]
+		if p.alSource.State() == al.Stopped || p.alSource.State() == al.Initial {
+			al.RewindSources(p.alSource)
+			al.PlaySources(p.alSource)
+			if err := al.Error(); err != 0 {
+				return 0, fmt.Errorf("oto: PlaySource: %d", err)
+			}
 		}
+		p.upperBuffer = p.upperBuffer[lowerBufferUnitSize:]
 	}
-
-	if len(p.alBuffers) == 0 {
-		// This can happen (hajimehoshi/ebiten#207)
-		return 0, nil
-	}
-	buf := p.alBuffers[0]
-	p.alBuffers = p.alBuffers[1:]
-	n := min(len(data), p.maxWrittenSize-p.writtenSize)
-	if n <= 0 {
-		return 0, nil
-	}
-	buf.BufferData(p.alFormat, data[:n], int32(p.sampleRate))
-	p.alSource.QueueBuffers(buf)
-	if err := al.Error(); err != 0 {
-		return 0, fmt.Errorf("oto: Queue: %d", err)
-	}
-	p.writtenSize += n
-	p.bufferSizes = append(p.bufferSizes, n)
-
-	if p.alSource.State() == al.Stopped || p.alSource.State() == al.Initial {
-		al.RewindSources(p.alSource)
-		al.PlaySources(p.alSource)
-		if err := al.Error(); err != 0 {
-			return 0, fmt.Errorf("oto: PlaySource: %d", err)
-		}
-	}
-
 	return n, nil
 }
 
@@ -144,7 +127,7 @@ func (p *player) Close() error {
 	if n := p.alSource.BuffersQueued(); 0 < n {
 		bs = make([]al.Buffer, n)
 		p.alSource.UnqueueBuffers(bs...)
-		p.alBuffers = append(p.alBuffers, bs...)
+		p.lowerBufferUnits = append(p.lowerBufferUnits, bs...)
 	}
 	p.isClosed = true
 	if err := al.Error(); err != 0 {
