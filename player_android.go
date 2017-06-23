@@ -178,26 +178,25 @@ import (
 )
 
 type player struct {
-	sampleRate           int
-	channelNum           int
-	bytesPerSample       int
-	audioTrack           C.jobject
-	buffer               []byte
-	underlyingBufferSize int
-	bufferSizeInBytes    int
-	chErr                chan error
-	chBuffer             chan []byte
+	sampleRate          int
+	channelNum          int
+	bytesPerSample      int
+	audioTrack          C.jobject
+	chErr               chan error
+	chBuffer            chan []byte
+	lowerBufferUnitSize int
+	upperBuffer         []byte
+	upperBufferSize     int
 }
 
 func newPlayer(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*player, error) {
 	p := &player{
-		sampleRate:        sampleRate,
-		channelNum:        channelNum,
-		bytesPerSample:    bytesPerSample,
-		buffer:            []byte{},
-		chErr:             make(chan error),
-		chBuffer:          make(chan []byte, 8),
-		bufferSizeInBytes: bufferSizeInBytes,
+		sampleRate:      sampleRate,
+		channelNum:      channelNum,
+		bytesPerSample:  bytesPerSample,
+		chErr:           make(chan error),
+		chBuffer:        make(chan []byte, 8),
+		upperBufferSize: bufferSizeInBytes,
 	}
 	runtime.SetFinalizer(p, (*player).Close)
 	if err := jni.RunOnJVM(func(vm, env, ctx uintptr) error {
@@ -209,7 +208,7 @@ func newPlayer(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*
 			return errors.New("oto: " + C.GoString(msg))
 		}
 		p.audioTrack = audioTrack
-		p.underlyingBufferSize = int(bufferSize)
+		p.lowerBufferUnitSize = int(bufferSize)
 		return nil
 	}); err != nil {
 		return nil, err
@@ -227,7 +226,6 @@ func (p *player) loop() {
 				bufInShorts[i] = int16(bufInBytes[2*i]) | (int16(bufInBytes[2*i+1]) << 8)
 			}
 		}
-
 		if err := jni.RunOnJVM(func(vm, env, ctx uintptr) error {
 			msg := (*C.char)(nil)
 			switch p.bytesPerSample {
@@ -254,20 +252,20 @@ func (p *player) loop() {
 }
 
 func (p *player) Write(data []byte) (int, error) {
-	m := max(p.bufferSizeInBytes, p.underlyingBufferSize)
-	n := min(len(data), m-len(p.buffer))
+	m := max(p.upperBufferSize, p.lowerBufferUnitSize)
+	n := min(len(data), m-len(p.upperBuffer))
 	if n < 0 {
 		n = 0
 	}
-	p.buffer = append(p.buffer, data[:n]...)
-	for len(p.buffer) >= p.underlyingBufferSize {
-		buf := p.buffer[:p.underlyingBufferSize]
+	p.upperBuffer = append(p.upperBuffer, data[:n]...)
+	for len(p.upperBuffer) >= p.lowerBufferUnitSize {
+		buf := p.upperBuffer[:p.lowerBufferUnitSize]
 		select {
 		case p.chBuffer <- buf:
 		case err := <-p.chErr:
 			return 0, err
 		}
-		p.buffer = p.buffer[p.underlyingBufferSize:]
+		p.upperBuffer = p.upperBuffer[p.lowerBufferUnitSize:]
 	}
 	return n, nil
 }
