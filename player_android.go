@@ -205,7 +205,7 @@ func newPlayer(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*
 		if msg := C.initAudioTrack(C.uintptr_t(vm), C.uintptr_t(env),
 			C.int(sampleRate), C.int(channelNum), C.int(bytesPerSample),
 			&audioTrack, &bufferSize); msg != nil {
-			return errors.New("oto: " + C.GoString(msg))
+			return errors.New("oto: initAutioTrack failed: " + C.GoString(msg))
 		}
 		p.audioTrack = audioTrack
 		p.lowerBufferUnitSize = int(bufferSize)
@@ -241,7 +241,7 @@ func (p *player) loop() {
 				panic("not reach")
 			}
 			if msg != nil {
-				return errors.New(C.GoString(msg))
+				return errors.New("oto: loop failed: " + C.GoString(msg))
 			}
 			return nil
 		}); err != nil {
