@@ -95,15 +95,18 @@ func (p *player) Write(data []uint8) (int, error) {
 	p.upperBuffer = append(p.upperBuffer, data[:n]...)
 	for len(p.upperBuffer) >= lowerBufferUnitSize {
 		var headerToWrite *header
-		for _, h := range p.headers {
-			// TODO: Need to check WHDR_DONE?
-			if h.waveHdr.dwFlags&whdrInqueue == 0 {
-				headerToWrite = h
-				break
+		for {
+			for _, h := range p.headers {
+				// TODO: Need to check WHDR_DONE?
+				if h.waveHdr.dwFlags&whdrInqueue == 0 {
+					headerToWrite = h
+					break
+				}
 			}
-		}
-		if headerToWrite == nil {
-			// This can happen (hajimehoshi/ebiten#207)
+			if headerToWrite == nil {
+				// This can happen (hajimehoshi/ebiten#207)
+				continue
+			}
 			break
 		}
 		if err := headerToWrite.Write(p.out, p.upperBuffer[:lowerBufferUnitSize]); err != nil {
