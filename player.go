@@ -12,12 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package oto offers io.Writer to play sound on multiple platforms.
 package oto
 
 import (
 	"time"
 )
 
+// A Player is a sound player.
 type Player struct {
 	player         *player
 	sampleRate     int
@@ -26,6 +28,18 @@ type Player struct {
 	bufferSize     int
 }
 
+// NewPlayer creates a Player.
+//
+// sampleRate indicates the sample rate like 2048.
+//
+// channelNum indicates the number of channels. This must be 1 or 2.
+//
+// bytesPerSample indicates the size of a sample in one channel. This must be 1 or 2.
+//
+// bufferSizeInBytes indicates the size in bytes of inner buffers.
+// Too small buffer can trigger glitches, and too big buffer can trigger delay.
+//
+// NewPlayer returns error when initializaiton fails.
 func NewPlayer(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*Player, error) {
 	p, err := newPlayer(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes)
 	if err != nil {
@@ -45,6 +59,12 @@ func (p *Player) samplesPerOneSec() int {
 }
 
 // Write is io.Writer's Write.
+//
+// The format is 8bit or 16bit (little endian), 1 or 2 channel PCM.
+//
+// For example, if the number of channels is 2 and the size of a sample is 2, the format is:
+//
+//    [Left lower byte][Left higher byte][Right lower byte][Right higher byte]...(repeat)...
 func (p *Player) Write(data []uint8) (int, error) {
 	written := 0
 	total := len(data)
