@@ -1,5 +1,7 @@
 # Oto (音)
 
+[![GoDoc](https://godoc.org/github.com/hajimehoshi/oto?status.svg)](http://godoc.org/github.com/hajimehoshi/oto)
+
 A low-level library to play sound. This package offers `io.WriteCloser` to play PCM sound.
 
 ## Platforms
