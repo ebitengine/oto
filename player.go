@@ -80,7 +80,7 @@ func (p *Player) Write(data []uint8) (int, error) {
 		data = data[n:]
 		// When not all data is written, the underlying buffer is full.
 		// Mitigate the busy loop by sleeping (#10).
-		if len(data) > 0 {
+		if n == 0 {
 			t := time.Second * time.Duration(p.bufferSize) / time.Duration(p.bytesPerSec()) / 4
 			time.Sleep(t)
 		}
@@ -107,10 +107,9 @@ func min(a, b int) int {
 	return b
 }
 
-const lowerBufferUnitSize = 1024
+const bufferUnitSize = 512
 
-func bufferSizes(bufferSize int) (upperBufferSize int, lowerBufferUnitNum int) {
-	u := max(bufferSize, lowerBufferUnitSize)
-	l := max((u+1)/lowerBufferUnitSize, 8)
-	return u, l
+func bufferUnitNum(bufferSize int) int {
+	u := max(bufferSize, bufferUnitSize)
+	return max(u/bufferUnitSize, 2)
 }
