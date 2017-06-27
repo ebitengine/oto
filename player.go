@@ -54,7 +54,7 @@ func NewPlayer(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*
 	}, nil
 }
 
-func (p *Player) samplesPerOneSec() int {
+func (p *Player) bytesPerSec() int {
 	return p.sampleRate * p.channelNum * p.bytesPerSample
 }
 
@@ -81,7 +81,7 @@ func (p *Player) Write(data []uint8) (int, error) {
 		// When not all data is written, the underlying buffer is full.
 		// Mitigate the busy loop by sleeping (#10).
 		if len(data) > 0 {
-			t := time.Second * time.Duration(p.bufferSize) / time.Duration(p.samplesPerOneSec()) / 4
+			t := time.Second * time.Duration(p.bufferSize) / time.Duration(p.bytesPerSec()) / 4
 			time.Sleep(t)
 		}
 	}
