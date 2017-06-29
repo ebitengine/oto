@@ -19,7 +19,8 @@ import (
 	"time"
 )
 
-// A Player is a sound player.
+// Player is a PCM (pulse-code modulation) audio player. It implements io.Writer, use Write method
+// to play samples.
 type Player struct {
 	player         *player
 	sampleRate     int
@@ -28,18 +29,22 @@ type Player struct {
 	bufferSize     int
 }
 
-// NewPlayer creates a Player.
+// NewPlayer creates a new, ready-to-use Player.
 //
-// sampleRate indicates the sample rate like 2048.
+// The sampleRate argument specifies the number of samples that should be played during one second.
+// Usual numbers are 44100 or 48000.
 //
-// channelNum indicates the number of channels. This must be 1 or 2.
+// The channelNum argument specifies the number of channels. One channel is mono playback. Two
+// channels are stereo playback. No other values are supported.
 //
-// bytesPerSample indicates the size of a sample in one channel. This must be 1 or 2.
+// The bytesPerSample argument specifies the number of bytes per sample per channel. The usual value
+// is 2, other values are allowed.
 //
-// bufferSizeInBytes indicates the size in bytes of inner buffers.
-// Too small buffer can trigger glitches, and too big buffer can trigger delay.
-//
-// NewPlayer returns error when initializaiton fails.
+// The bufferSizeInBytes argument specifies the size of the buffer of the Player. This means, how
+// many bytes can Player remember before actually playing them. Bigger buffer can reduce the number
+// of Write calls, thus reducing CPU time. Smaller buffer enables more precise timing. The longest
+// delay between when samples were written and when they started playing is equal to the size of the
+// buffer.
 func NewPlayer(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*Player, error) {
 	p, err := newPlayer(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes)
 	if err != nil {
@@ -58,19 +63,22 @@ func (p *Player) bytesPerSec() int {
 	return p.sampleRate * p.channelNum * p.bytesPerSample
 }
 
-// Write is io.Writer's Write.
+// Write writes PCM samples to the Player.
 //
-// The format is 8bit or 16bit (little endian), 1 or 2 channel PCM.
+// The format is as follows: [data]      = [sample 1] [sample 2] [sample 3] ... [sample *]  =
+//   [channel 1] ... [channel *] = [byte 1] [byte 2] ... Byte ordering is little endian.
 //
-// For example, if the number of channels is 2 and the size of a sample is 2, the format is:
+// The data is first put into the Player's buffer. Once the buffer is full, Player starts playing
+// the data and empties the buffer.
 //
-//    [Left lower byte][Left higher byte][Right lower byte][Right higher byte]...(repeat)...
+// If the supplied data doesn't fit into the Player's buffer, Write block until a sufficient amount
+// of data has been played (or at least started playing) and the remaining unplayed data fits into
+// the buffer.
+//
+// Note, that the Player won't start playing anything until the buffer is full.
 func (p *Player) Write(data []uint8) (int, error) {
 	written := 0
 	total := len(data)
-	// TODO: Fix player's Write to satisfy io.Writer.
-	// Now player's Write doesn't satisfy io.Writer's requirements since
-	// the current Write might return without processing all given data.
 	for written < total {
 		n, err := p.player.Write(data)
 		written += n
@@ -88,7 +96,8 @@ func (p *Player) Write(data []uint8) (int, error) {
 	return written, nil
 }
 
-// Close is io.Closer's Close.
+// Close closes the Player and frees any resources associated with it. The Player is no longer
+// usable after calling Close.
 func (p *Player) Close() error {
 	return p.player.Close()
 }
