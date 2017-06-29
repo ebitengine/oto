@@ -67,12 +67,6 @@ func newPlayer(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*
 		upperBufferSize:  u,
 	}
 	runtime.SetFinalizer(p, (*player).Close)
-
-	emptyBytes := make([]byte, lowerBufferUnitSize)
-	for _, b := range p.lowerBufferUnits {
-		// Note that the third argument of only the first buffer is used.
-		b.BufferData(p.alFormat, emptyBytes, int32(p.sampleRate))
-	}
 	al.PlaySources(p.alSource)
 	return p, nil
 }
