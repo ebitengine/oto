@@ -45,15 +45,16 @@ type player struct {
 	// alContext represents a pointer to ALCcontext. The type is uintptr since the value
 	// can be 0x18 on macOS, which is invalid as a pointer value, and this might cause
 	// GC errors.
-	alContext        uintptr
-	alDevice         uintptr
-	alSource         C.ALuint
-	sampleRate       int
-	isClosed         bool
-	alFormat         C.ALenum
-	lowerBufferUnits []C.ALuint
-	upperBuffer      []uint8
-	upperBufferSize  int
+	alContext  uintptr
+	alDevice   uintptr
+	alSource   C.ALuint
+	sampleRate int
+	isClosed   bool
+	alFormat   C.ALenum
+
+	bufs       []C.ALuint
+	tmp        []uint8
+	bufferSize int
 }
 
 func alFormat(channelNum, bytesPerSample int) C.ALenum {
@@ -90,45 +91,49 @@ func getError(device uintptr) error {
 	}
 }
 
-const lowerBufferSize = 1024
-
 func newPlayer(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*player, error) {
 	name := C.alGetString(C.ALC_DEFAULT_DEVICE_SPECIFIER)
 	d := uintptr(unsafe.Pointer(C.alcOpenDevice((*C.ALCchar)(name))))
 	if d == 0 {
 		return nil, fmt.Errorf("oto: alcOpenDevice must not return null")
 	}
+
 	c := uintptr(unsafe.Pointer(C.alcCreateContext((*C.struct_ALCdevice_struct)(unsafe.Pointer(d)), nil)))
 	if c == 0 {
 		return nil, fmt.Errorf("oto: alcCreateContext must not return null")
 	}
+
 	// Don't check getError until making the current context is done.
 	// Linux might fail this check even though it succeeds (hajimehoshi/ebiten#204).
 	C.alcMakeContextCurrent((*C.struct_ALCcontext_struct)(unsafe.Pointer(c)))
 	if err := getError(d); err != nil {
 		return nil, fmt.Errorf("oto: Activate: %v", err)
 	}
+
 	s := C.ALuint(0)
 	C.alGenSources(1, &s)
 	if err := getError(d); err != nil {
 		return nil, fmt.Errorf("oto: NewSource: %v", err)
 	}
-	u, l := bufferSizes(bufferSizeInBytes)
+
+	const numBufs = 2
 	p := &player{
-		alContext:        c,
-		alDevice:         d,
-		alSource:         s,
-		sampleRate:       sampleRate,
-		alFormat:         alFormat(channelNum, bytesPerSample),
-		lowerBufferUnits: make([]C.ALuint, l),
-		upperBufferSize:  u,
+		alContext:  c,
+		alDevice:   d,
+		alSource:   s,
+		sampleRate: sampleRate,
+		alFormat:   alFormat(channelNum, bytesPerSample),
+		bufs:       make([]C.ALuint, numBufs),
+		bufferSize: bufferSizeInBytes,
 	}
 	runtime.SetFinalizer(p, (*player).Close)
-	C.alGenBuffers(C.ALsizei(len(p.lowerBufferUnits)), &p.lowerBufferUnits[0])
+	C.alGenBuffers(numBufs, &p.bufs[0])
 	C.alSourcePlay(p.alSource)
+
 	if err := getError(d); err != nil {
 		return nil, fmt.Errorf("oto: Play: %v", err)
 	}
+
 	return p, nil
 }
 
@@ -136,60 +141,70 @@ func (p *player) Write(data []byte) (int, error) {
 	if err := getError(p.alDevice); err != nil {
 		return 0, fmt.Errorf("oto: starting Write: %v", err)
 	}
-	n := min(len(data), p.upperBufferSize-len(p.upperBuffer))
-	p.upperBuffer = append(p.upperBuffer, data[:n]...)
-	for len(p.upperBuffer) >= lowerBufferUnitSize {
-		pn := C.ALint(0)
-		C.alGetSourcei(p.alSource, C.AL_BUFFERS_PROCESSED, &pn)
-		if pn > 0 {
-			bufs := make([]C.ALuint, pn)
-			C.alSourceUnqueueBuffers(p.alSource, C.ALsizei(len(bufs)), &bufs[0])
-			if err := getError(p.alDevice); err != nil {
-				return 0, fmt.Errorf("oto: UnqueueBuffers: %v", err)
-			}
-			p.lowerBufferUnits = append(p.lowerBufferUnits, bufs...)
-		}
-		if len(p.lowerBufferUnits) == 0 {
-			break
-		}
-		lowerBufferUnit := p.lowerBufferUnits[0]
-		p.lowerBufferUnits = p.lowerBufferUnits[1:]
-		C.alBufferData(lowerBufferUnit, p.alFormat, unsafe.Pointer(&p.upperBuffer[0]), C.ALsizei(lowerBufferUnitSize), C.ALsizei(p.sampleRate))
-		C.alSourceQueueBuffers(p.alSource, 1, &lowerBufferUnit)
-		if err := getError(p.alDevice); err != nil {
-			return 0, fmt.Errorf("oto: QueueBuffer: %v", err)
-		}
-		state := C.ALint(0)
-		C.alGetSourcei(p.alSource, C.AL_SOURCE_STATE, &state)
-		if state == C.AL_STOPPED || state == C.AL_INITIAL {
-			C.alSourceRewind(p.alSource)
-			C.alSourcePlay(p.alSource)
-			if err := getError(p.alDevice); err != nil {
-				return 0, fmt.Errorf("oto: Rewind or Play: %v", err)
-			}
-		}
-		p.upperBuffer = p.upperBuffer[lowerBufferUnitSize:]
+	n := min(len(data), p.bufferSize-len(p.tmp))
+	p.tmp = append(p.tmp, data[:n]...)
+	if len(p.tmp) < p.bufferSize {
+		return n, nil
 	}
+
+	pn := C.ALint(0)
+	C.alGetSourcei(p.alSource, C.AL_BUFFERS_PROCESSED, &pn)
+	if pn > 0 {
+		bufs := make([]C.ALuint, pn)
+		C.alSourceUnqueueBuffers(p.alSource, C.ALsizei(len(bufs)), &bufs[0])
+		if err := getError(p.alDevice); err != nil {
+			return 0, fmt.Errorf("oto: UnqueueBuffers: %v", err)
+		}
+		p.bufs = append(p.bufs, bufs...)
+	}
+
+	if len(p.bufs) == 0 {
+		return n, nil
+	}
+
+	buf := p.bufs[0]
+	p.bufs = p.bufs[1:]
+	C.alBufferData(buf, p.alFormat, unsafe.Pointer(&p.tmp[0]), C.ALsizei(p.bufferSize), C.ALsizei(p.sampleRate))
+	C.alSourceQueueBuffers(p.alSource, 1, &buf)
+	if err := getError(p.alDevice); err != nil {
+		return 0, fmt.Errorf("oto: QueueBuffer: %v", err)
+	}
+
+	state := C.ALint(0)
+	C.alGetSourcei(p.alSource, C.AL_SOURCE_STATE, &state)
+	if state == C.AL_STOPPED || state == C.AL_INITIAL {
+		C.alSourceRewind(p.alSource)
+		C.alSourcePlay(p.alSource)
+		if err := getError(p.alDevice); err != nil {
+			return 0, fmt.Errorf("oto: Rewind or Play: %v", err)
+		}
+	}
+
+	p.tmp = nil
 	return n, nil
 }
 
 func (p *player) Close() error {
+	// TODO: also need to delete buffers and stuff
+
 	if err := getError(p.alDevice); err != nil {
 		return fmt.Errorf("oto: starting Close: %v", err)
 	}
 	if p.isClosed {
 		return nil
 	}
-	var bs []C.ALuint
+
 	C.alSourceRewind(p.alSource)
 	C.alSourcePlay(p.alSource)
+
 	n := C.ALint(0)
 	C.alGetSourcei(p.alSource, C.AL_BUFFERS_QUEUED, &n)
 	if 0 < n {
-		bs = make([]C.ALuint, n)
+		bs := make([]C.ALuint, n)
 		C.alSourceUnqueueBuffers(p.alSource, C.ALsizei(len(bs)), &bs[0])
-		p.lowerBufferUnits = append(p.lowerBufferUnits, bs...)
+		p.bufs = append(p.bufs, bs...)
 	}
+
 	C.alcCloseDevice((*C.struct_ALCdevice_struct)(unsafe.Pointer(p.alDevice)))
 	p.isClosed = true
 	if err := getError(p.alDevice); err != nil {
