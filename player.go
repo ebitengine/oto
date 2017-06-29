@@ -65,8 +65,11 @@ func (p *Player) bytesPerSec() int {
 
 // Write writes PCM samples to the Player.
 //
-// The format is as follows: [data]      = [sample 1] [sample 2] [sample 3] ... [sample *]  =
-//   [channel 1] ... [channel *] = [byte 1] [byte 2] ... Byte ordering is little endian.
+// The format is as follows:
+//   [data]      = [sample 1] [sample 2] [sample 3] ...
+//   [sample *]  = [channel 1] ...
+//   [channel *] = [byte 1] [byte 2] ...
+// Byte ordering is little endian.
 //
 // The data is first put into the Player's buffer. Once the buffer is full, Player starts playing
 // the data and empties the buffer.
