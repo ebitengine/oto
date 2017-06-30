@@ -38,7 +38,7 @@ type Player struct {
 // channels are stereo playback. No other values are supported.
 //
 // The bytesPerSample argument specifies the number of bytes per sample per channel. The usual value
-// is 2, other values are allowed.
+// is 2. Only values 1 and 2 are supported.
 //
 // The bufferSizeInBytes argument specifies the size of the buffer of the Player. This means, how
 // many bytes can Player remember before actually playing them. Bigger buffer can reduce the number
