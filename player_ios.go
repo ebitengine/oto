@@ -125,6 +125,7 @@ func (p *player) Close() error {
 	if p.isClosed {
 		return nil
 	}
+
 	var bs []al.Buffer
 	al.RewindSources(p.alSource)
 	al.StopSources(p.alSource)
@@ -133,10 +134,12 @@ func (p *player) Close() error {
 		p.alSource.UnqueueBuffers(bs...)
 		p.bufs = append(p.bufs, bs...)
 	}
+
 	p.isClosed = true
 	if err := al.Error(); err != 0 {
 		return fmt.Errorf("oto: error after closing: %d", err)
 	}
 	runtime.SetFinalizer(p, nil)
+
 	return nil
 }
