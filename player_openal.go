@@ -92,7 +92,13 @@ func getError(device *C.ALCdevice) error {
 	}
 }
 
-const numBufs = 2
+var numBufs = 2
+
+// SetNumALBuffers sets the underlying number of buffers that oto will use when queueing AL buffers for playback
+// The default is 2, but for higher quality playback 3 or more are recommended
+func SetNumALBuffers(numBuffers int) {
+	numBufs = numBuffers
+}
 
 func newPlayer(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*player, error) {
 	name := C.alGetString(C.ALC_DEFAULT_DEVICE_SPECIFIER)
@@ -129,7 +135,7 @@ func newPlayer(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*
 		bufferSize:   bufferSizeInBytes,
 	}
 	runtime.SetFinalizer(p, (*player).Close)
-	C.alGenBuffers(numBufs, &p.bufs[0])
+	C.alGenBuffers(C.ALsizei(numBufs), &p.bufs[0])
 	C.alSourcePlay(p.alSource)
 
 	if err := getError(d); err != nil {
@@ -151,6 +157,7 @@ func (p *player) Write(data []byte) (int, error) {
 
 	pn := C.ALint(0)
 	C.alGetSourcei(p.alSource, C.AL_BUFFERS_PROCESSED, &pn)
+
 	if pn > 0 {
 		bufs := make([]C.ALuint, pn)
 		C.alSourceUnqueueBuffers(p.alSource, C.ALsizei(len(bufs)), &bufs[0])
@@ -206,7 +213,7 @@ func (p *player) Close() error {
 
 	C.alSourceStop(p.alSource)
 	C.alDeleteSources(1, &p.alSource)
-	C.alDeleteBuffers(numBufs, &p.bufs[0])
+	C.alDeleteBuffers(C.ALsizei(numBufs), &p.bufs[0])
 	C.alcDestroyContext((*C.struct_ALCcontext_struct)(unsafe.Pointer(p.alContext)))
 
 	if err := getError(p.alDevice); err != nil {
