@@ -214,7 +214,7 @@ func (p *player) Close() error {
 	}
 
 	b := C.alcCloseDevice(p.alDevice)
-	if b != C.ALC_TRUE {
+	if b == C.ALC_FALSE {
 		return fmt.Errorf("oto: CloseDevice: %s failed to close", p.alDeviceName)
 	}
 
