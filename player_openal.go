@@ -45,12 +45,13 @@ type player struct {
 	// alContext represents a pointer to ALCcontext. The type is uintptr since the value
 	// can be 0x18 on macOS, which is invalid as a pointer value, and this might cause
 	// GC errors.
-	alContext  uintptr
-	alDevice   uintptr
-	alSource   C.ALuint
-	sampleRate int
-	isClosed   bool
-	alFormat   C.ALenum
+	alContext    uintptr
+	alDevice     *C.ALCdevice
+	alDeviceName *C.ALchar
+	alSource     C.ALuint
+	sampleRate   int
+	isClosed     bool
+	alFormat     C.ALenum
 
 	bufs       []C.ALuint
 	tmp        []uint8
@@ -71,8 +72,8 @@ func alFormat(channelNum, bytesPerSample int) C.ALenum {
 	panic(fmt.Sprintf("oto: invalid channel num (%d) or bytes per sample (%d)", channelNum, bytesPerSample))
 }
 
-func getError(device uintptr) error {
-	c := C.alcGetError((*C.struct_ALCdevice_struct)(unsafe.Pointer(device)))
+func getError(device *C.ALCdevice) error {
+	c := C.alcGetError(device)
 	switch c {
 	case C.ALC_NO_ERROR:
 		return nil
@@ -91,13 +92,14 @@ func getError(device uintptr) error {
 	}
 }
 
+const numBufs = 2
+
 func newPlayer(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*player, error) {
 	name := C.alGetString(C.ALC_DEFAULT_DEVICE_SPECIFIER)
-	d := uintptr(unsafe.Pointer(C.alcOpenDevice((*C.ALCchar)(name))))
-	if d == 0 {
+	d := C.alcOpenDevice((*C.ALCchar)(name))
+	if d == nil {
 		return nil, fmt.Errorf("oto: alcOpenDevice must not return null")
 	}
-
 	c := uintptr(unsafe.Pointer(C.alcCreateContext((*C.struct_ALCdevice_struct)(unsafe.Pointer(d)), nil)))
 	if c == 0 {
 		return nil, fmt.Errorf("oto: alcCreateContext must not return null")
@@ -116,15 +118,15 @@ func newPlayer(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*
 		return nil, fmt.Errorf("oto: NewSource: %v", err)
 	}
 
-	const numBufs = 2
 	p := &player{
-		alContext:  c,
-		alDevice:   d,
-		alSource:   s,
-		sampleRate: sampleRate,
-		alFormat:   alFormat(channelNum, bytesPerSample),
-		bufs:       make([]C.ALuint, numBufs),
-		bufferSize: bufferSizeInBytes,
+		alContext:    c,
+		alDevice:     d,
+		alSource:     s,
+		alDeviceName: name,
+		sampleRate:   sampleRate,
+		alFormat:     alFormat(channelNum, bytesPerSample),
+		bufs:         make([]C.ALuint, numBufs),
+		bufferSize:   bufferSizeInBytes,
 	}
 	runtime.SetFinalizer(p, (*player).Close)
 	C.alGenBuffers(numBufs, &p.bufs[0])
@@ -194,9 +196,6 @@ func (p *player) Close() error {
 		return nil
 	}
 
-	C.alSourceRewind(p.alSource)
-	C.alSourcePlay(p.alSource)
-
 	n := C.ALint(0)
 	C.alGetSourcei(p.alSource, C.AL_BUFFERS_QUEUED, &n)
 	if 0 < n {
@@ -205,11 +204,21 @@ func (p *player) Close() error {
 		p.bufs = append(p.bufs, bs...)
 	}
 
-	C.alcCloseDevice((*C.struct_ALCdevice_struct)(unsafe.Pointer(p.alDevice)))
-	p.isClosed = true
+	C.alSourceStop(p.alSource)
+	C.alDeleteSources(1, &p.alSource)
+	C.alDeleteBuffers(numBufs, &p.bufs[0])
+	C.alcDestroyContext((*C.struct_ALCcontext_struct)(unsafe.Pointer(p.alContext)))
+
 	if err := getError(p.alDevice); err != nil {
 		return fmt.Errorf("oto: CloseDevice: %v", err)
 	}
+
+	b := C.alcCloseDevice(p.alDevice)
+	if b != C.ALC_TRUE {
+		return fmt.Errorf("oto: CloseDevice: %s failed to close", p.alDeviceName)
+	}
+
+	p.isClosed = true
 	runtime.SetFinalizer(p, nil)
 	return nil
 }
