@@ -169,7 +169,7 @@ func (p *player) Write(data []byte) (int, error) {
 
 	pn := C.ALint(0)
 	C.alGetSourcei(p.alSource, C.AL_BUFFERS_PROCESSED, &pn)
-	
+
 	if pn > 0 {
 		bufs := make([]C.ALuint, pn)
 		C.alSourceUnqueueBuffers(p.alSource, C.ALsizei(len(bufs)), &bufs[0])
@@ -206,8 +206,6 @@ func (p *player) Write(data []byte) (int, error) {
 }
 
 func (p *player) Close() error {
-	// TODO: also need to delete buffers and stuff
-
 	if err := p.alDevice.getError(); err != nil {
 		return fmt.Errorf("oto: starting Close: %v", err)
 	}
