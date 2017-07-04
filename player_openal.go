@@ -45,9 +45,9 @@ type player struct {
 	// alContext represents a pointer to ALCcontext. The type is uintptr since the value
 	// can be 0x18 on macOS, which is invalid as a pointer value, and this might cause
 	// GC errors.
-	alContext    uintptr
-	alDevice     *C.ALCdevice
-	alDeviceName *C.ALchar
+	alContext    alContext
+	alDevice     alDevice
+	alDeviceName string
 	alSource     C.ALuint
 	sampleRate   int
 	isClosed     bool
@@ -58,22 +58,16 @@ type player struct {
 	bufferSize int
 }
 
-func alFormat(channelNum, bytesPerSample int) C.ALenum {
-	switch {
-	case channelNum == 1 && bytesPerSample == 1:
-		return C.AL_FORMAT_MONO8
-	case channelNum == 1 && bytesPerSample == 2:
-		return C.AL_FORMAT_MONO16
-	case channelNum == 2 && bytesPerSample == 1:
-		return C.AL_FORMAT_STEREO8
-	case channelNum == 2 && bytesPerSample == 2:
-		return C.AL_FORMAT_STEREO16
-	}
-	panic(fmt.Sprintf("oto: invalid channel num (%d) or bytes per sample (%d)", channelNum, bytesPerSample))
+type alContext uintptr
+
+func (a alContext) cALCcontext() *C.ALCcontext {
+	return (*C.struct_ALCcontext_struct)(unsafe.Pointer(a))
 }
 
-func getError(device *C.ALCdevice) error {
-	c := C.alcGetError(device)
+type alDevice uintptr
+
+func (a alDevice) getError() error {
+	c := C.alcGetError(a.cALCDevice())
 	switch c {
 	case C.ALC_NO_ERROR:
 		return nil
@@ -92,6 +86,24 @@ func getError(device *C.ALCdevice) error {
 	}
 }
 
+func (a alDevice) cALCDevice() *C.ALCdevice {
+	return (*C.struct_ALCdevice_struct)(unsafe.Pointer(a))
+}
+
+func alFormat(channelNum, bytesPerSample int) C.ALenum {
+	switch {
+	case channelNum == 1 && bytesPerSample == 1:
+		return C.AL_FORMAT_MONO8
+	case channelNum == 1 && bytesPerSample == 2:
+		return C.AL_FORMAT_MONO16
+	case channelNum == 2 && bytesPerSample == 1:
+		return C.AL_FORMAT_STEREO8
+	case channelNum == 2 && bytesPerSample == 2:
+		return C.AL_FORMAT_STEREO16
+	}
+	panic(fmt.Sprintf("oto: invalid channel num (%d) or bytes per sample (%d)", channelNum, bytesPerSample))
+}
+
 var numBufs = 2
 
 // SetNumALBuffers sets the underlying number of buffers that oto will use when queueing AL buffers for playback
@@ -102,25 +114,25 @@ func SetNumALBuffers(numBuffers int) {
 
 func newPlayer(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*player, error) {
 	name := C.alGetString(C.ALC_DEFAULT_DEVICE_SPECIFIER)
-	d := C.alcOpenDevice((*C.ALCchar)(name))
-	if d == nil {
+	d := alDevice(unsafe.Pointer(C.alcOpenDevice((*C.ALCchar)(name))))
+	if d == 0 {
 		return nil, fmt.Errorf("oto: alcOpenDevice must not return null")
 	}
-	c := uintptr(unsafe.Pointer(C.alcCreateContext((*C.struct_ALCdevice_struct)(unsafe.Pointer(d)), nil)))
+	c := alContext(unsafe.Pointer(C.alcCreateContext((*C.struct_ALCdevice_struct)(unsafe.Pointer(d)), nil)))
 	if c == 0 {
 		return nil, fmt.Errorf("oto: alcCreateContext must not return null")
 	}
 
 	// Don't check getError until making the current context is done.
 	// Linux might fail this check even though it succeeds (hajimehoshi/ebiten#204).
-	C.alcMakeContextCurrent((*C.struct_ALCcontext_struct)(unsafe.Pointer(c)))
-	if err := getError(d); err != nil {
+	C.alcMakeContextCurrent(c.cALCcontext())
+	if err := d.getError(); err != nil {
 		return nil, fmt.Errorf("oto: Activate: %v", err)
 	}
 
 	s := C.ALuint(0)
 	C.alGenSources(1, &s)
-	if err := getError(d); err != nil {
+	if err := d.getError(); err != nil {
 		return nil, fmt.Errorf("oto: NewSource: %v", err)
 	}
 
@@ -128,7 +140,7 @@ func newPlayer(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*
 		alContext:    c,
 		alDevice:     d,
 		alSource:     s,
-		alDeviceName: name,
+		alDeviceName: C.GoString((*C.char)(name)),
 		sampleRate:   sampleRate,
 		alFormat:     alFormat(channelNum, bytesPerSample),
 		bufs:         make([]C.ALuint, numBufs),
@@ -138,7 +150,7 @@ func newPlayer(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*
 	C.alGenBuffers(C.ALsizei(numBufs), &p.bufs[0])
 	C.alSourcePlay(p.alSource)
 
-	if err := getError(d); err != nil {
+	if err := d.getError(); err != nil {
 		return nil, fmt.Errorf("oto: Play: %v", err)
 	}
 
@@ -146,7 +158,7 @@ func newPlayer(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*
 }
 
 func (p *player) Write(data []byte) (int, error) {
-	if err := getError(p.alDevice); err != nil {
+	if err := p.alDevice.getError(); err != nil {
 		return 0, fmt.Errorf("oto: starting Write: %v", err)
 	}
 	n := min(len(data), p.bufferSize-len(p.tmp))
@@ -157,11 +169,11 @@ func (p *player) Write(data []byte) (int, error) {
 
 	pn := C.ALint(0)
 	C.alGetSourcei(p.alSource, C.AL_BUFFERS_PROCESSED, &pn)
-
+	
 	if pn > 0 {
 		bufs := make([]C.ALuint, pn)
 		C.alSourceUnqueueBuffers(p.alSource, C.ALsizei(len(bufs)), &bufs[0])
-		if err := getError(p.alDevice); err != nil {
+		if err := p.alDevice.getError(); err != nil {
 			return 0, fmt.Errorf("oto: UnqueueBuffers: %v", err)
 		}
 		p.bufs = append(p.bufs, bufs...)
@@ -175,7 +187,7 @@ func (p *player) Write(data []byte) (int, error) {
 	p.bufs = p.bufs[1:]
 	C.alBufferData(buf, p.alFormat, unsafe.Pointer(&p.tmp[0]), C.ALsizei(p.bufferSize), C.ALsizei(p.sampleRate))
 	C.alSourceQueueBuffers(p.alSource, 1, &buf)
-	if err := getError(p.alDevice); err != nil {
+	if err := p.alDevice.getError(); err != nil {
 		return 0, fmt.Errorf("oto: QueueBuffer: %v", err)
 	}
 
@@ -184,7 +196,7 @@ func (p *player) Write(data []byte) (int, error) {
 	if state == C.AL_STOPPED || state == C.AL_INITIAL {
 		C.alSourceRewind(p.alSource)
 		C.alSourcePlay(p.alSource)
-		if err := getError(p.alDevice); err != nil {
+		if err := p.alDevice.getError(); err != nil {
 			return 0, fmt.Errorf("oto: Rewind or Play: %v", err)
 		}
 	}
@@ -196,7 +208,7 @@ func (p *player) Write(data []byte) (int, error) {
 func (p *player) Close() error {
 	// TODO: also need to delete buffers and stuff
 
-	if err := getError(p.alDevice); err != nil {
+	if err := p.alDevice.getError(); err != nil {
 		return fmt.Errorf("oto: starting Close: %v", err)
 	}
 	if p.isClosed {
@@ -214,13 +226,13 @@ func (p *player) Close() error {
 	C.alSourceStop(p.alSource)
 	C.alDeleteSources(1, &p.alSource)
 	C.alDeleteBuffers(C.ALsizei(numBufs), &p.bufs[0])
-	C.alcDestroyContext((*C.struct_ALCcontext_struct)(unsafe.Pointer(p.alContext)))
+	C.alcDestroyContext(p.alContext.cALCcontext())
 
-	if err := getError(p.alDevice); err != nil {
+	if err := p.alDevice.getError(); err != nil {
 		return fmt.Errorf("oto: CloseDevice: %v", err)
 	}
 
-	b := C.alcCloseDevice(p.alDevice)
+	b := C.alcCloseDevice(p.alDevice.cALCDevice())
 	if b == C.ALC_FALSE {
 		return fmt.Errorf("oto: CloseDevice: %s failed to close", p.alDeviceName)
 	}
