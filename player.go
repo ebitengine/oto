@@ -118,11 +118,3 @@ func min(a, b int) int {
 	}
 	return b
 }
-
-const lowerBufferUnitSize = 1024
-
-func bufferSizes(bufferSize int) (upperBufferSize int, lowerBufferUnitNum int) {
-	u := max(bufferSize, lowerBufferUnitSize)
-	l := max((u+1)/lowerBufferUnitSize, 8)
-	return u, l
-}

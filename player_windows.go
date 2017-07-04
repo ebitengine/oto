@@ -41,7 +41,7 @@ func newHeader(waveOut uintptr, bufferSize int) (*header, error) {
 	return h, nil
 }
 
-func (h *header) Write(waveOut uintptr, data []byte) error {
+func (h *header) Write(waveOut uintptr, data []uint8) error {
 	if len(data) != len(h.buffer) {
 		return errors.New("oto: len(data) must equal to len(h.buffer)")
 	}
@@ -53,10 +53,10 @@ func (h *header) Write(waveOut uintptr, data []byte) error {
 }
 
 type player struct {
-	out             uintptr
-	headers         []*header
-	upperBuffer     []uint8
-	upperBufferSize int
+	out        uintptr
+	headers    []*header
+	tmp        []uint8
+	bufferSize int
 }
 
 func newPlayer(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*player, error) {
@@ -73,16 +73,17 @@ func newPlayer(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*
 	if err != nil {
 		return nil, err
 	}
-	u, l := bufferSizes(bufferSizeInBytes)
+
+	const numBufs = 2
 	p := &player{
-		out:             w,
-		headers:         make([]*header, l),
-		upperBufferSize: u,
+		out:        w,
+		headers:    make([]*header, numBufs),
+		bufferSize: bufferSizeInBytes,
 	}
 	runtime.SetFinalizer(p, (*player).Close)
 	for i := range p.headers {
 		var err error
-		p.headers[i], err = newHeader(w, lowerBufferUnitSize)
+		p.headers[i], err = newHeader(w, p.bufferSize)
 		if err != nil {
 			return nil, err
 		}
@@ -91,26 +92,29 @@ func newPlayer(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*
 }
 
 func (p *player) Write(data []uint8) (int, error) {
-	n := min(len(data), p.upperBufferSize-len(p.upperBuffer))
-	p.upperBuffer = append(p.upperBuffer, data[:n]...)
-	for len(p.upperBuffer) >= lowerBufferUnitSize {
-		var headerToWrite *header
-		for _, h := range p.headers {
-			// TODO: Need to check WHDR_DONE?
-			if h.waveHdr.dwFlags&whdrInqueue == 0 {
-				headerToWrite = h
-				break
-			}
-		}
-		if headerToWrite == nil {
-			// This can happen (hajimehoshi/ebiten#207)
+	n := min(len(data), p.bufferSize-len(p.tmp))
+	p.tmp = append(p.tmp, data[:n]...)
+	if len(p.tmp) < p.bufferSize {
+		return n, nil
+	}
+
+	var headerToWrite *header
+	for _, h := range p.headers {
+		// TODO: Need to check WHDR_DONE?
+		if h.waveHdr.dwFlags&whdrInqueue == 0 {
+			headerToWrite = h
 			break
 		}
-		if err := headerToWrite.Write(p.out, p.upperBuffer[:lowerBufferUnitSize]); err != nil {
-			return 0, err
-		}
-		p.upperBuffer = p.upperBuffer[lowerBufferUnitSize:]
 	}
+	if headerToWrite == nil {
+		return n, nil
+	}
+
+	if err := headerToWrite.Write(p.out, p.tmp); err != nil {
+		return 0, err
+	}
+
+	p.tmp = nil
 	return n, nil
 }
 

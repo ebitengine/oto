@@ -23,18 +23,13 @@ import (
 	"github.com/gopherjs/gopherjs/js"
 )
 
-// positionDelay is buffer in sample numbers for p.positionInSamples.
-// Without this, adjusting p.positionInSamples with the context's currenTime
-// much more often especially on Safari, which is the cause of noise (hajimehoshi/ebiten#307).
-const positionDelay = 256
-
 type player struct {
 	sampleRate        int
 	channelNum        int
 	bytesPerSample    int
 	positionInSamples int64
-	bufferedData      []byte
-	bufferSizeInBytes int
+	tmp               []uint8
+	bufferSize        int
 	context           *js.Object
 }
 
@@ -57,7 +52,7 @@ func isAndroidChrome() bool {
 	return true
 }
 
-func newPlayer(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*player, error) {
+func newPlayer(sampleRate, channelNum, bytesPerSample, bufferSize int) (*player, error) {
 	class := js.Global.Get("AudioContext")
 	if class == js.Undefined {
 		class = js.Global.Get("webkitAudioContext")
@@ -66,12 +61,11 @@ func newPlayer(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*
 		return nil, errors.New("oto: audio couldn't be initialized")
 	}
 	p := &player{
-		sampleRate:        sampleRate,
-		channelNum:        channelNum,
-		bytesPerSample:    bytesPerSample,
-		bufferedData:      []byte{},
-		context:           class.New(),
-		bufferSizeInBytes: bufferSizeInBytes,
+		sampleRate:     sampleRate,
+		channelNum:     channelNum,
+		bytesPerSample: bytesPerSample,
+		context:        class.New(),
+		bufferSize:     bufferSize,
 	}
 	// iOS and Android Chrome requires touch event to use AudioContext.
 	if isIOS() || isAndroidChrome() {
@@ -80,14 +74,14 @@ func newPlayer(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*
 			// domain page in an iframe.
 			p.context.Call("resume")
 			p.context.Call("createBufferSource").Call("start", 0)
-			p.positionInSamples = int64(p.context.Get("currentTime").Float()*float64(p.sampleRate)) + positionDelay
+			p.positionInSamples = int64(p.context.Get("currentTime").Float() * float64(p.sampleRate))
 		})
 	}
-	p.positionInSamples = int64(p.context.Get("currentTime").Float()*float64(p.sampleRate)) + positionDelay
+	p.positionInSamples = int64(p.context.Get("currentTime").Float() * float64(p.sampleRate))
 	return p, nil
 }
 
-func toLR(data []byte) ([]int16, []int16) {
+func toLR(data []uint8) ([]int16, []int16) {
 	l := make([]int16, len(data)/4)
 	r := make([]int16, len(data)/4)
 	for i := 0; i < len(data)/4; i++ {
@@ -97,38 +91,37 @@ func toLR(data []byte) ([]int16, []int16) {
 	return l, r
 }
 
-func (p *player) Write(data []byte) (int, error) {
-	n := min(len(data), p.bufferSizeInBytes-len(p.bufferedData))
-	if n < 0 {
-		n = 0
-	}
-	p.bufferedData = append(p.bufferedData, data[:n]...)
+func (p *player) Write(data []uint8) (int, error) {
+	n := min(len(data), p.bufferSize-len(p.tmp))
+	p.tmp = append(p.tmp, data[:n]...)
+
 	c := int64(p.context.Get("currentTime").Float() * float64(p.sampleRate))
-	if p.positionInSamples+positionDelay < c {
+	if p.positionInSamples < c {
 		p.positionInSamples = c
 	}
-	// Heuristic data size which doesn't cause too much noise and too much delay (hajimehoshi/ebiten#299)
-	dataSize := int(float64(p.sampleRate)/13.5) / 4 * 4
-	for dataSize <= len(p.bufferedData) {
-		data := p.bufferedData[:dataSize]
-		size := len(data) / p.bytesPerSample / p.channelNum
-		// TODO: size must be const or you'll get noise (e.g. when sample rate is 22050)
-		buf := p.context.Call("createBuffer", p.channelNum, size, p.sampleRate)
-		l := buf.Call("getChannelData", 0)
-		r := buf.Call("getChannelData", 1)
-		il, ir := toLR(data)
-		const max = 1 << 15
-		for i := 0; i < len(il); i++ {
-			l.SetIndex(i, float64(il[i])/max)
-			r.SetIndex(i, float64(ir[i])/max)
-		}
-		s := p.context.Call("createBufferSource")
-		s.Set("buffer", buf)
-		s.Call("connect", p.context.Get("destination"))
-		s.Call("start", float64(p.positionInSamples+positionDelay)/float64(p.sampleRate))
-		p.positionInSamples += int64(len(il))
-		p.bufferedData = p.bufferedData[dataSize:]
+
+	if len(p.tmp) < p.bufferSize {
+		return n, nil
 	}
+
+	size := p.bufferSize / p.bytesPerSample / p.channelNum
+	buf := p.context.Call("createBuffer", p.channelNum, size, p.sampleRate)
+	l := buf.Call("getChannelData", 0)
+	r := buf.Call("getChannelData", 1)
+	il, ir := toLR(p.tmp)
+	const max = 1 << 15
+	for i := 0; i < len(il); i++ {
+		l.SetIndex(i, float64(il[i])/max)
+		r.SetIndex(i, float64(ir[i])/max)
+	}
+
+	s := p.context.Call("createBufferSource")
+	s.Set("buffer", buf)
+	s.Call("connect", p.context.Get("destination"))
+	s.Call("start", float64(p.positionInSamples)/float64(p.sampleRate))
+	p.positionInSamples += int64(len(il))
+
+	p.tmp = nil
 	return n, nil
 }
 

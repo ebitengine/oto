@@ -26,13 +26,14 @@ import (
 )
 
 type player struct {
-	alSource         al.Source
-	sampleRate       int
-	isClosed         bool
-	alFormat         uint32
-	lowerBufferUnits []al.Buffer
-	upperBuffer      []uint8
-	upperBufferSize  int
+	alSource   al.Source
+	sampleRate int
+	isClosed   bool
+	alFormat   uint32
+
+	bufs       []al.Buffer
+	tmp        []uint8
+	bufferSize int
 }
 
 func alFormat(channelNum, bytesPerSample int) uint32 {
@@ -54,20 +55,23 @@ func newPlayer(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*
 	if err := al.OpenDevice(); err != nil {
 		return nil, fmt.Errorf("oto: OpenAL initialization failed: %v", err)
 	}
+
 	s := al.GenSources(1)
 	if e := al.Error(); e != 0 {
 		return nil, fmt.Errorf("oto: al.GenSources error: %d", e)
 	}
-	u, l := bufferSizes(bufferSizeInBytes)
+
+	const numBufs = 2
 	p = &player{
-		alSource:         s[0],
-		sampleRate:       sampleRate,
-		alFormat:         alFormat(channelNum, bytesPerSample),
-		lowerBufferUnits: al.GenBuffers(l),
-		upperBufferSize:  u,
+		alSource:   s[0],
+		sampleRate: sampleRate,
+		alFormat:   alFormat(channelNum, bytesPerSample),
+		bufs:       al.GenBuffers(numBufs),
+		bufferSize: bufferSizeInBytes,
 	}
 	runtime.SetFinalizer(p, (*player).Close)
 	al.PlaySources(p.alSource)
+
 	return p, nil
 }
 
@@ -75,36 +79,42 @@ func (p *player) Write(data []byte) (int, error) {
 	if err := al.Error(); err != 0 {
 		return 0, fmt.Errorf("oto: before Write: %d", err)
 	}
-	n := min(len(data), p.upperBufferSize-len(p.upperBuffer))
-	p.upperBuffer = append(p.upperBuffer, data[:n]...)
-	for len(p.upperBuffer) >= lowerBufferUnitSize {
-		if pn := p.alSource.BuffersProcessed(); pn > 0 {
-			bufs := make([]al.Buffer, pn)
-			p.alSource.UnqueueBuffers(bufs...)
-			if err := al.Error(); err != 0 {
-				return 0, fmt.Errorf("oto: Unqueue: %d", err)
-			}
-			p.lowerBufferUnits = append(p.lowerBufferUnits, bufs...)
-		}
-		if len(p.lowerBufferUnits) == 0 {
-			break
-		}
-		lowerBufferUnit := p.lowerBufferUnits[0]
-		p.lowerBufferUnits = p.lowerBufferUnits[1:]
-		lowerBufferUnit.BufferData(p.alFormat, p.upperBuffer[:lowerBufferUnitSize], int32(p.sampleRate))
-		p.alSource.QueueBuffers(lowerBufferUnit)
-		if err := al.Error(); err != 0 {
-			return 0, fmt.Errorf("oto: Queue: %d", err)
-		}
-		if p.alSource.State() == al.Stopped || p.alSource.State() == al.Initial {
-			al.RewindSources(p.alSource)
-			al.PlaySources(p.alSource)
-			if err := al.Error(); err != 0 {
-				return 0, fmt.Errorf("oto: PlaySource: %d", err)
-			}
-		}
-		p.upperBuffer = p.upperBuffer[lowerBufferUnitSize:]
+	n := min(len(data), p.bufferSize-len(p.tmp))
+	p.tmp = append(p.tmp, data[:n]...)
+	if len(p.tmp) < p.bufferSize {
+		return n, nil
 	}
+
+	if pn := p.alSource.BuffersProcessed(); pn > 0 {
+		bufs := make([]al.Buffer, pn)
+		p.alSource.UnqueueBuffers(bufs...)
+		if err := al.Error(); err != 0 {
+			return 0, fmt.Errorf("oto: Unqueue: %d", err)
+		}
+		p.bufs = append(p.bufs, bufs...)
+	}
+
+	if len(p.bufs) == 0 {
+		return n, nil
+	}
+
+	buf := p.bufs[0]
+	p.bufs = p.bufs[1:]
+	buf.BufferData(p.alFormat, p.tmp, int32(p.sampleRate))
+	p.alSource.QueueBuffers(buf)
+	if err := al.Error(); err != 0 {
+		return 0, fmt.Errorf("oto: Queue: %d", err)
+	}
+
+	if p.alSource.State() == al.Stopped || p.alSource.State() == al.Initial {
+		al.RewindSources(p.alSource)
+		al.PlaySources(p.alSource)
+		if err := al.Error(); err != 0 {
+			return 0, fmt.Errorf("oto: PlaySource: %d", err)
+		}
+	}
+
+	p.tmp = nil
 	return n, nil
 }
 
@@ -115,18 +125,21 @@ func (p *player) Close() error {
 	if p.isClosed {
 		return nil
 	}
+
 	var bs []al.Buffer
 	al.RewindSources(p.alSource)
 	al.StopSources(p.alSource)
 	if n := p.alSource.BuffersQueued(); 0 < n {
 		bs = make([]al.Buffer, n)
 		p.alSource.UnqueueBuffers(bs...)
-		p.lowerBufferUnits = append(p.lowerBufferUnits, bs...)
+		p.bufs = append(p.bufs, bs...)
 	}
+
 	p.isClosed = true
 	if err := al.Error(); err != 0 {
 		return fmt.Errorf("oto: error after closing: %d", err)
 	}
 	runtime.SetFinalizer(p, nil)
+
 	return nil
 }

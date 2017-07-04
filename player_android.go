@@ -25,7 +25,9 @@ static jclass android_media_AudioTrack;
 
 static char* initAudioTrack(uintptr_t java_vm, uintptr_t jni_env,
     int sampleRate, int channelNum, int bytesPerSample, jobject* audioTrack, int* bufferSize) {
-  *bufferSize = 0;
+  // bufferSize has an initial value, and this is updated when bufferSize is
+  // smaller than AudioTrack's minimum buffer size.
+
   JavaVM* vm = (JavaVM*)java_vm;
   JNIEnv* env = (JNIEnv*)jni_env;
 
@@ -90,11 +92,14 @@ static char* initAudioTrack(uintptr_t java_vm, uintptr_t jni_env,
     return "invalid bytesPerSample";
   }
 
-  *bufferSize =
+  int minBufferSize =
       (*env)->CallStaticIntMethod(
           env, android_media_AudioTrack,
           (*env)->GetStaticMethodID(env, android_media_AudioTrack, "getMinBufferSize", "(III)I"),
           sampleRate, channel, encoding);
+  if (*bufferSize < minBufferSize) {
+    *bufferSize = minBufferSize;
+  }
 
   const jobject tmpAudioTrack =
       (*env)->NewObject(
@@ -178,41 +183,41 @@ import (
 )
 
 type player struct {
-	sampleRate          int
-	channelNum          int
-	bytesPerSample      int
-	audioTrack          C.jobject
-	chErr               chan error
-	chBuffer            chan []byte
-	lowerBufferUnitSize int
-	upperBuffer         []byte
-	upperBufferSize     int
+	sampleRate     int
+	channelNum     int
+	bytesPerSample int
+	audioTrack     C.jobject
+	chErr          chan error
+	chBuffer       chan []uint8
+	tmp    []uint8
+	bufferSize     int
 }
 
 func newPlayer(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*player, error) {
 	p := &player{
-		sampleRate:      sampleRate,
-		channelNum:      channelNum,
-		bytesPerSample:  bytesPerSample,
-		chErr:           make(chan error),
-		chBuffer:        make(chan []byte, 8),
-		upperBufferSize: bufferSizeInBytes,
+		sampleRate:     sampleRate,
+		channelNum:     channelNum,
+		bytesPerSample: bytesPerSample,
+		chErr:          make(chan error),
+		chBuffer:       make(chan []uint8, 8),
 	}
 	runtime.SetFinalizer(p, (*player).Close)
+
 	if err := jni.RunOnJVM(func(vm, env, ctx uintptr) error {
 		audioTrack := C.jobject(nil)
-		bufferSize := C.int(0)
+		bufferSize := C.int(bufferSizeInBytes)
 		if msg := C.initAudioTrack(C.uintptr_t(vm), C.uintptr_t(env),
 			C.int(sampleRate), C.int(channelNum), C.int(bytesPerSample),
 			&audioTrack, &bufferSize); msg != nil {
 			return errors.New("oto: initAutioTrack failed: " + C.GoString(msg))
 		}
 		p.audioTrack = audioTrack
-		p.lowerBufferUnitSize = int(bufferSize)
+		p.bufferSize = int(bufferSize) // Variable bufferSize can be updated at initAudioTrack.
 		return nil
 	}); err != nil {
 		return nil, err
 	}
+
 	go p.loop()
 	return p, nil
 }
@@ -251,22 +256,21 @@ func (p *player) loop() {
 	}
 }
 
-func (p *player) Write(data []byte) (int, error) {
-	m := max(p.upperBufferSize, p.lowerBufferUnitSize)
-	n := min(len(data), m-len(p.upperBuffer))
-	if n < 0 {
-		n = 0
+func (p *player) Write(data []uint8) (int, error) {
+	n := min(len(data), p.bufferSize-len(p.tmp))
+	p.tmp = append(p.tmp, data[:n]...)
+
+	if len(p.tmp) < p.bufferSize {
+		return n, nil
 	}
-	p.upperBuffer = append(p.upperBuffer, data[:n]...)
-	for len(p.upperBuffer) >= p.lowerBufferUnitSize {
-		buf := p.upperBuffer[:p.lowerBufferUnitSize]
-		select {
-		case p.chBuffer <- buf:
-		case err := <-p.chErr:
-			return 0, err
-		}
-		p.upperBuffer = p.upperBuffer[p.lowerBufferUnitSize:]
+
+	select {
+	case p.chBuffer <- p.tmp:
+	case err := <-p.chErr:
+		return 0, err
 	}
+
+	p.tmp = nil
 	return n, nil
 }
 
