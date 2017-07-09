@@ -47,7 +47,7 @@ func newPlayer(sampleRate, numChans, bytesPerSample, bufferSizeInBytes int) (*pl
 		periodSize = bufferSize
 	)
 
-	// choose th correct sample format according to bytesPerSamples
+	// choose the correct sample format according to bytesPerSamples
 	switch bytesPerSample {
 	case 1:
 		format = C.SND_PCM_FORMAT_S8
