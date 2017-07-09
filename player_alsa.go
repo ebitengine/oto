@@ -92,8 +92,7 @@ func (p *player) Write(data []byte) (n int, err error) {
 			wrote := C.snd_pcm_writei(p.handle, unsafe.Pointer(&p.buf[0]), C.snd_pcm_uframes_t(p.bufSamples))
 			switch {
 			case wrote == -C.EPIPE:
-				// underrun, this means that the we send data too slow and need to
-				// catch up
+				// underrun, this means we send data too slow and need to catch up
 				//
 				// when underrun occurs, sample processing stops, so we need to
 				// rewoke it by snd_pcm_prepare
