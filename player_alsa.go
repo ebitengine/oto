@@ -69,7 +69,6 @@ func newPlayer(sampleRate, numChans, bytesPerSample, bufferSizeInBytes int) (*pl
 		p.Close()
 		return nil, alsaError(errCode)
 	}
-	fmt.Println(bufferSize, periodSize)
 
 	// allocate the buffer of the size of the period, use the periodSize that we've got back
 	// from ALSA after it's wise decision
