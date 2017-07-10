@@ -1,13 +1,8 @@
-// +build linux
-// +build !js
-// +build !android
-// +build !ios
-
 package oto
 
-// #cgo linux LDFLAGS: -lasound
+// #cgo LDFLAGS: -lasound
 // #include <alsa/asoundlib.h>
-// #include "player_alsa.h"
+// #include "player_linux.h"
 import "C"
 
 import (
