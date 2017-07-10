@@ -24,13 +24,13 @@ import (
 )
 
 type player struct {
-	sampleRate        int
-	channelNum        int
-	bytesPerSample    int
-	positionInSamples int64
-	tmp               []uint8
-	bufferSize        int
-	context           *js.Object
+	sampleRate       int
+	channelNum       int
+	bytesPerSample   int
+	nextPosInSamples int64
+	tmp              []uint8
+	bufferSize       int
+	context          *js.Object
 }
 
 func isIOS() bool {
@@ -74,10 +74,10 @@ func newPlayer(sampleRate, channelNum, bytesPerSample, bufferSize int) (*player,
 			// domain page in an iframe.
 			p.context.Call("resume")
 			p.context.Call("createBufferSource").Call("start", 0)
-			p.positionInSamples = int64(p.context.Get("currentTime").Float() * float64(p.sampleRate))
+			p.nextPosInSamples = int64(p.context.Get("currentTime").Float() * float64(p.sampleRate))
 		})
 	}
-	p.positionInSamples = int64(p.context.Get("currentTime").Float() * float64(p.sampleRate))
+	p.nextPosInSamples = int64(p.context.Get("currentTime").Float() * float64(p.sampleRate))
 	return p, nil
 }
 
@@ -96,16 +96,24 @@ func (p *player) Write(data []uint8) (int, error) {
 	p.tmp = append(p.tmp, data[:n]...)
 
 	c := int64(p.context.Get("currentTime").Float() * float64(p.sampleRate))
-	if p.positionInSamples < c {
-		p.positionInSamples = c
+
+	if p.nextPosInSamples < c {
+		p.nextPosInSamples = c
+	}
+
+	sizeInSamples := p.bufferSize / p.bytesPerSample / p.channelNum
+
+	// It's too early to enqueue a buffer.
+	// Highly likely, there is two playing buffer now.
+	if c+int64(sizeInSamples) < p.nextPosInSamples {
+		return n, nil
 	}
 
 	if len(p.tmp) < p.bufferSize {
 		return n, nil
 	}
 
-	size := p.bufferSize / p.bytesPerSample / p.channelNum
-	buf := p.context.Call("createBuffer", p.channelNum, size, p.sampleRate)
+	buf := p.context.Call("createBuffer", p.channelNum, sizeInSamples, p.sampleRate)
 	l := buf.Call("getChannelData", 0)
 	r := buf.Call("getChannelData", 1)
 	il, ir := toLR(p.tmp)
@@ -118,8 +126,8 @@ func (p *player) Write(data []uint8) (int, error) {
 	s := p.context.Call("createBufferSource")
 	s.Set("buffer", buf)
 	s.Call("connect", p.context.Get("destination"))
-	s.Call("start", float64(p.positionInSamples)/float64(p.sampleRate))
-	p.positionInSamples += int64(len(il))
+	s.Call("start", float64(p.nextPosInSamples)/float64(p.sampleRate))
+	p.nextPosInSamples += int64(len(il))
 
 	p.tmp = nil
 	return n, nil
