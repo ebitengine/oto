@@ -57,7 +57,7 @@ func newPlayer(sampleRate, numChans, bytesPerSample, bufferSizeInBytes int) (*pl
 	case 2:
 		format = C.SND_PCM_FORMAT_S16_LE
 	default:
-		panic(fmt.Errorf("oto: bytesPerSample can be 1 or 2, got %d", bytesPerSample))
+		panic(fmt.Errorf("oto: bytesPerSample must be 1 or 2, got %d", bytesPerSample))
 	}
 
 	// set the device hardware parameters according to sampleRate, numChans, format, bufferSize
