@@ -93,9 +93,9 @@ func (p *player) Write(data []byte) (n int, err error) {
 		data = data[toWrite:]
 		n += toWrite
 
-		// our buffer is not full yet, we won't flush it yet
+		// our buffer is not full and we've used up all the data, we'll keep them and finish
 		if len(p.buf) < cap(p.buf) {
-			continue
+			break
 		}
 
 		// write samples to the main circular buffer
