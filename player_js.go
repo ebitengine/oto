@@ -104,7 +104,7 @@ func (p *player) Write(data []uint8) (int, error) {
 	sizeInSamples := p.bufferSize / p.bytesPerSample / p.channelNum
 
 	// It's too early to enqueue a buffer.
-	// Highly likely, there is two playing buffer now.
+	// Highly likely, there are two playing buffer now.
 	if c+int64(sizeInSamples) < p.nextPosInSamples {
 		return n, nil
 	}
