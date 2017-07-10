@@ -6,7 +6,6 @@ package oto
 import "C"
 
 import (
-	"errors"
 	"fmt"
 	"unsafe"
 )
@@ -18,7 +17,7 @@ type player struct {
 }
 
 func alsaError(err C.int) error {
-	return errors.New(C.GoString(C.snd_strerror(err)))
+	return fmt.Errorf("oto: ALSA error: %s", C.GoString(C.snd_strerror(err)))
 }
 
 func newPlayer(sampleRate, numChans, bytesPerSample, bufferSizeInBytes int) (*player, error) {
@@ -30,19 +29,16 @@ func newPlayer(sampleRate, numChans, bytesPerSample, bufferSizeInBytes int) (*pl
 		return nil, alsaError(errCode)
 	}
 
-	var (
-		// sample format, either SND_PCM_FORMAT_S8 or SND_PCM_FORMAT_S16_LE
-		format C.snd_pcm_format_t
-		// bufferSize is the total size of the main circular buffer fullness of this buffer
-		// oscilates somewhere between bufferSize and bufferSize-periodSize
-		bufferSize = C.snd_pcm_uframes_t(bufferSizeInBytes / (numChans * bytesPerSample))
-		// periodSize is the number of samples that will be taken from the main circular
-		// buffer at once, we leave this value to bufferSize, because ALSA will change that
-		// to the maximum viable number, obviously lower than bufferSize
-		periodSize = bufferSize
-	)
+	// bufferSize is the total size of the main circular buffer fullness of this buffer
+	// oscilates somewhere between bufferSize and bufferSize-periodSize
+	bufferSize := C.snd_pcm_uframes_t(bufferSizeInBytes / (numChans * bytesPerSample))
+	// periodSize is the number of samples that will be taken from the main circular
+	// buffer at once, we leave this value to bufferSize, because ALSA will change that
+	// to the maximum viable number, obviously lower than bufferSize
+	periodSize := bufferSize
 
 	// choose the correct sample format according to bytesPerSamples
+	var format C.snd_pcm_format_t
 	switch bytesPerSample {
 	case 1:
 		format = C.SND_PCM_FORMAT_S8
@@ -81,23 +77,25 @@ func (p *player) Write(data []byte) (n int, err error) {
 		data = data[toWrite:]
 		n += toWrite
 
-		// when our buffer is full, we flush it to ALSA
-		if len(p.buf) == cap(p.buf) {
-			// write samples to the main circular buffer
-			wrote := C.snd_pcm_writei(p.handle, unsafe.Pointer(&p.buf[0]), C.snd_pcm_uframes_t(p.bufSamples))
-			switch {
-			case wrote == -C.EPIPE:
-				// underrun, this means we send data too slow and need to catch up
-				//
-				// when underrun occurs, sample processing stops, so we need to
-				// rewoke it by snd_pcm_prepare
-				C.snd_pcm_prepare(p.handle)
-			case wrote < 0:
-				// an error occured while writing samples
-				return n, alsaError(C.int(wrote))
-			}
-			p.buf = p.buf[:0]
+		// our buffer is not full yet, we won't flush it yet
+		if len(p.buf) < cap(p.buf) {
+			continue
 		}
+
+		// write samples to the main circular buffer
+		wrote := C.snd_pcm_writei(p.handle, unsafe.Pointer(&p.buf[0]), C.snd_pcm_uframes_t(p.bufSamples))
+		switch {
+		case wrote == -C.EPIPE:
+			// underrun, this means we send data too slow and need to catch up
+			//
+			// when underrun occurs, sample processing stops, so we need to
+			// rewoke it by snd_pcm_prepare
+			C.snd_pcm_prepare(p.handle)
+		case wrote < 0:
+			// an error occured while writing samples
+			return n, alsaError(C.int(wrote))
+		}
+		p.buf = p.buf[:0]
 	}
 	return n, nil
 }
