@@ -189,7 +189,7 @@ type player struct {
 	audioTrack     C.jobject
 	chErr          chan error
 	chBuffer       chan []uint8
-	tmp    []uint8
+	tmp            []uint8
 	bufferSize     int
 }
 
