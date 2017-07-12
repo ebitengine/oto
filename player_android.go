@@ -205,14 +205,14 @@ func newPlayer(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*
 
 	if err := jni.RunOnJVM(func(vm, env, ctx uintptr) error {
 		audioTrack := C.jobject(nil)
-		bufferSize := C.int(bufferSizeInBytes) * 2
+		bufferSize := C.int(bufferSizeInBytes)
 		if msg := C.initAudioTrack(C.uintptr_t(vm), C.uintptr_t(env),
 			C.int(sampleRate), C.int(channelNum), C.int(bytesPerSample),
 			&audioTrack, &bufferSize); msg != nil {
 			return errors.New("oto: initAutioTrack failed: " + C.GoString(msg))
 		}
 		p.audioTrack = audioTrack
-		p.bufferSize = int(bufferSize / 2) // bufferSize can be updated at initAudioTrack.
+		p.bufferSize = int(bufferSize) // bufferSize can be updated at initAudioTrack.
 		return nil
 	}); err != nil {
 		return nil, err
