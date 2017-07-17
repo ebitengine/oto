@@ -42,8 +42,7 @@ func newPlayer(sampleRate, numChans, bytesPerSample, bufferSizeInBytes int) (*pl
 	var p player
 
 	// open a default ALSA audio device for blocking stream playback
-	errCode := C.snd_pcm_open(&p.handle, C.CString("default"), C.SND_PCM_STREAM_PLAYBACK, 0)
-	if errCode < 0 {
+	if errCode := C.snd_pcm_open(&p.handle, C.CString("default"), C.SND_PCM_STREAM_PLAYBACK, 0); errCode < 0 {
 		return nil, alsaError(errCode)
 	}
 
@@ -73,8 +72,7 @@ func newPlayer(sampleRate, numChans, bytesPerSample, bufferSizeInBytes int) (*pl
 	// to the wisdom of ALSA
 	//
 	// ALSA will try too keep them as close to what was requested as possible
-	errCode = C.ALSA_hw_params(p.handle, C.uint(sampleRate), C.uint(numChans), format, &bufferSize, &periodSize)
-	if errCode < 0 {
+	if errCode := C.ALSA_hw_params(p.handle, C.uint(sampleRate), C.uint(numChans), format, &bufferSize, &periodSize); errCode < 0 {
 		p.Close()
 		return nil, alsaError(errCode)
 	}
@@ -120,12 +118,10 @@ func (p *player) Write(data []byte) (n int, err error) {
 
 func (p *player) Close() error {
 	// drop the remaining unprocessed samples in the main circular buffer
-	errCode := C.snd_pcm_drop(p.handle)
-	if errCode < 0 {
+	if errCode := C.snd_pcm_drop(p.handle); errCode < 0 {
 		return alsaError(errCode)
 	}
-	errCode = C.snd_pcm_close(p.handle)
-	if errCode < 0 {
+	if errCode := C.snd_pcm_close(p.handle); errCode < 0 {
 		return alsaError(errCode)
 	}
 	return nil
