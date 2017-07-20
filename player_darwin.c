@@ -5,7 +5,7 @@
 #include <sys/param.h>
 #include "player_darwin.h"
 
-#pragma mark - callback function -
+#pragma mark - utility functions
 
 void MakeBufferSilent (AudioBufferList * ioData) {
 
@@ -35,6 +35,9 @@ inline int32_t min(int32_t a, int32_t b) {
   return MIN(a, b);
 }
 
+
+#pragma mark - callback function -
+
 OSStatus GoInputCallback(void *inRefCon,
                     AudioUnitRenderActionFlags *ioActionFlags,
                     const AudioTimeStamp *inTimeStamp,
@@ -49,30 +52,7 @@ OSStatus GoInputCallback(void *inRefCon,
                                    ioData);
 }
 
-
-#pragma mark - utility functions -
-
-// generic error handler - if err is nonzero, prints error message and exits program.
-static bool CheckError(OSStatus error, const char *operation) {
-  if (error == noErr) {
-    return false;
-  }
-
-  char str[20];
-// see if it appears to be a 4-char-code
-  *(UInt32 *) (str + 1) = CFSwapInt32HostToBig(error);
-  if (isprint(str[1]) && isprint(str[2]) && isprint(str[3]) && isprint(str[4])) {
-    str[0] = str[5] = '\'';
-    str[6] = '\0';
-  } else
-// no, format it as an integer
-    sprintf(str, "%d", (int) error);
-
-  fprintf(stderr, "Error: %s (%s)\n", operation, str);
-
-  return true;
-}
-
+#pragma mark - output unit and audio render connections
 
 OSStatus CreateAndConnectOutputUnit(AudioPlayer *player, AURenderCallback callback) {
 
