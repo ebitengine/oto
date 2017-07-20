@@ -5,22 +5,8 @@ package oto
 // #include "player_darwin.h"
 import "C"
 
-import (
-	"sync"
-)
-
 // global buffer since it must be accessed from the go_input_callback
 var Buf []byte
-
-type PingPongBuf struct {
-	mu  sync.Mutex
-	buf [2][]byte
-	cur int
-}
-
-func (p *PingPongBuf) Write(b []byte) {
-	p.buf[p.cur] = append(p.buf[p.cur], b...)
-}
 
 type player struct {
 	audioPlayer C.AudioPlayer
@@ -50,7 +36,7 @@ func newPlayer(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*
 
 	//bufferSize := bufferSizeInBytes / (channelNum * bytesPerSample)
 	//buf = make([]byte, 0, bufferSize)
-	p.audioPlayer = C.NewAudioPlayer(C.Float64(44100.0), C.UInt32(2), C.UInt32(16))
+	p.audioPlayer = C.NewAudioPlayer(C.Float64(sampleRate), C.UInt32(channelNum), C.UInt32(bytesPerSample*8))
 	return p, nil
 }
 
