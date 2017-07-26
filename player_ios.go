@@ -75,6 +75,10 @@ func newPlayer(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*
 	return p, nil
 }
 
+func (p *player) SetUnderrunCallback(f func()) {
+	//TODO
+}
+
 func (p *player) Write(data []byte) (int, error) {
 	if err := al.Error(); err != 0 {
 		return 0, fmt.Errorf("oto: before Write: %d", err)

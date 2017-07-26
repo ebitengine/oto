@@ -32,6 +32,7 @@ type player struct {
 	handle     *C.snd_pcm_t
 	buf        []byte
 	bufSamples int
+	underrun   func()
 }
 
 func alsaError(err C.int) error {
@@ -85,6 +86,10 @@ func newPlayer(sampleRate, numChans, bytesPerSample, bufferSizeInBytes int) (*pl
 	return &p, nil
 }
 
+func (p *player) SetUnderrunCallback(f func()) {
+	p.underrun = f
+}
+
 func (p *player) Write(data []byte) (n int, err error) {
 	for len(data) > 0 {
 		// cap(p.buf) is equal to the size of the period
@@ -106,6 +111,9 @@ func (p *player) Write(data []byte) (n int, err error) {
 			//
 			// when underrun occurs, sample processing stops, so we need to
 			// rewoke it by snd_pcm_prepare
+			if p.underrun != nil {
+				p.underrun()
+			}
 			C.snd_pcm_prepare(p.handle)
 		case wrote < 0:
 			// an error occured while writing samples

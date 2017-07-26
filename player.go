@@ -63,6 +63,24 @@ func (p *Player) bytesPerSec() int {
 	return p.sampleRate * p.channelNum * p.bytesPerSample
 }
 
+// SetUnderrunCallback sets a function which will be called whenever an underrun occurs. This is
+// mostly for debugging and optimization purposes.
+//
+// Underrun occurs when not enough samples is written to the player in a certain amount of time and
+// thus there's nothing to play. This usually happens when there's too much audio data processing,
+// or the audio data processing code gets stuck for a while, or the player's buffer is too small.
+//
+// Example:
+//
+//   player.SetUnderrunCallback(func() {
+//       log.Println("UNDERRUN, YOUR CODE IS SLOW")
+//   })
+//
+// Supported platforms: Linux.
+func (p *Player) SetUnderrunCallback(f func()) {
+	p.player.SetUnderrunCallback(f)
+}
+
 // Write writes PCM samples to the Player.
 //
 // The format is as follows:

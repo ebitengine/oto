@@ -91,6 +91,10 @@ func toLR(data []uint8) ([]int16, []int16) {
 	return l, r
 }
 
+func (p *player) SetUnderrunCallback(f func()) {
+	//TODO
+}
+
 func (p *player) Write(data []uint8) (int, error) {
 	n := min(len(data), p.bufferSize-len(p.tmp))
 	p.tmp = append(p.tmp, data[:n]...)
