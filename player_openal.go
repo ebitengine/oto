@@ -221,7 +221,9 @@ func (p *player) Close() error {
 
 	C.alSourceStop(p.alSource)
 	C.alDeleteSources(1, &p.alSource)
-	C.alDeleteBuffers(C.ALsizei(numBufs), &p.bufs[0])
+	if len(p.bufs) != 0 {
+		C.alDeleteBuffers(C.ALsizei(numBufs), &p.bufs[0])
+	}
 	C.alcDestroyContext(p.alContext.cALCcontext())
 
 	if err := p.alDevice.getError(); err != nil {
