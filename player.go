@@ -125,6 +125,7 @@ func (p *Player) Write(data []uint8) (int, error) {
 	return written, nil
 }
 
+// Abort aborts the playing music.
 func (p *Player) Abort() {
 	p.abortCh <- true
 }
