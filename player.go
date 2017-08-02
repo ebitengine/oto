@@ -16,6 +16,7 @@
 package oto
 
 import (
+	"fmt"
 	"time"
 )
 
@@ -27,6 +28,7 @@ type Player struct {
 	channelNum     int
 	bytesPerSample int
 	bufferSize     int
+	abortCh        chan bool
 }
 
 // NewPlayer creates a new, ready-to-use Player.
@@ -56,6 +58,7 @@ func NewPlayer(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*
 		channelNum:     channelNum,
 		bytesPerSample: bytesPerSample,
 		bufferSize:     bufferSizeInBytes,
+		abortCh:        make(chan bool),
 	}, nil
 }
 
@@ -101,6 +104,11 @@ func (p *Player) Write(data []uint8) (int, error) {
 	written := 0
 	total := len(data)
 	for written < total {
+		select {
+		default:
+		case <-p.abortCh:
+			return 0, fmt.Errorf("Aborted")
+		}
 		n, err := p.player.Write(data)
 		written += n
 		if err != nil {
@@ -115,6 +123,10 @@ func (p *Player) Write(data []uint8) (int, error) {
 		}
 	}
 	return written, nil
+}
+
+func (p *Player) Abort() {
+	p.abortCh <- true
 }
 
 // Close closes the Player and frees any resources associated with it. The Player is no longer
