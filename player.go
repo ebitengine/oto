@@ -15,10 +15,7 @@
 // Package oto offers io.Writer to play sound on multiple platforms.
 package oto
 
-import (
-	"fmt"
-	"time"
-)
+import "time"
 
 // Player is a PCM (pulse-code modulation) audio player. It implements io.Writer, use Write method
 // to play samples.
@@ -107,7 +104,7 @@ func (p *Player) Write(data []uint8) (int, error) {
 		select {
 		default:
 		case <-p.abortCh:
-			return 0, fmt.Errorf("Aborted")
+			return written, nil
 		}
 		n, err := p.player.Write(data)
 		written += n
