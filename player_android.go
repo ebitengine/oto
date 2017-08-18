@@ -108,7 +108,6 @@ static char* initAudioTrack(uintptr_t java_vm, uintptr_t jni_env,
           android_media_AudioManager_STREAM_MUSIC,
           sampleRate, channel, encoding, *bufferSize,
           android_media_AudioTrack_MODE_STREAM);
-  // Note that *audioTrack will never be released.
   *audioTrack = (*env)->NewGlobalRef(env, tmpAudioTrack);
   (*env)->DeleteLocalRef(env, tmpAudioTrack);
 
