@@ -171,6 +171,17 @@ static char* writeToAudioTrack(uintptr_t java_vm, uintptr_t jni_env,
   return NULL;
 }
 
+static char* releaseAudioTrack(uintptr_t java_vm, uintptr_t jni_env,
+    jobject audioTrack) {
+  JavaVM* vm = (JavaVM*)java_vm;
+  JNIEnv* env = (JNIEnv*)jni_env;
+
+  (*env)->CallVoidMethod(
+      env, audioTrack,
+      (*env)->GetMethodID(env, android_media_AudioTrack, "release", "()V"));
+  return NULL;
+}
+
 */
 import "C"
 
@@ -279,6 +290,19 @@ func (p *player) Write(data []uint8) (int, error) {
 }
 
 func (p *player) Close() error {
+	if p.audioTrack == nil {
+		return nil
+	}
+
 	runtime.SetFinalizer(p, nil)
-	return nil
+	err := jni.RunOnJVM(func(vm, env, ctx uintptr) error {
+		if msg := C.releaseAudioTrack(C.uintptr_t(vm), C.uintptr_t(env),
+			p.audioTrack); msg != nil {
+			return errors.New("oto: release failed: " + C.GoString(msg))
+		}
+		return nil
+	})
+
+	p.audioTrack = nil
+	return err
 }
