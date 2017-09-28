@@ -69,13 +69,17 @@ func newPlayer(sampleRate, channelNum, bytesPerSample, bufferSize int) (*player,
 	}
 	// iOS and Android Chrome requires touch event to use AudioContext.
 	if isIOS() || isAndroidChrome() {
-		js.Global.Get("document").Call("addEventListener", "touchend", func() {
+		var f *js.Object
+		f = js.MakeFunc(func(this *js.Object, arguments []*js.Object) interface{} {
 			// Resuming is necessary as of Chrome 55+ in some cases like different
 			// domain page in an iframe.
 			p.context.Call("resume")
 			p.context.Call("createBufferSource").Call("start", 0)
 			p.nextPosInSamples = int64(p.context.Get("currentTime").Float() * float64(p.sampleRate))
+			js.Global.Get("document").Call("removeEventListener", "touchend", f)
+			return nil
 		})
+		js.Global.Get("document").Call("addEventListener", "touchend", f)
 	}
 	p.nextPosInSamples = int64(p.context.Get("currentTime").Float() * float64(p.sampleRate))
 	return p, nil
