@@ -22,14 +22,14 @@ package oto
 #cgo LDFLAGS: -lasound
 #include <alsa/asoundlib.h>
 
-void check(int *err, int newErr) {
+static void check(int *err, int newErr) {
   if (*err) {
     return;
   }
   *err = newErr;
 }
 
-int ALSA_hw_params(
+static int ALSA_hw_params(
     snd_pcm_t          *pcm,
     unsigned           sampleRate,
     unsigned           numChans,
