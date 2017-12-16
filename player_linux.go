@@ -62,10 +62,12 @@ import (
 )
 
 type player struct {
-	handle     *C.snd_pcm_t
-	buf        []byte
-	bufSamples int
-	underrun   func()
+	handle         *C.snd_pcm_t
+	buf            []byte
+	bufSamples     int
+	numChans       int
+	bytesPerSample int
+	underrun       func()
 }
 
 func alsaError(err C.int) error {
@@ -73,7 +75,10 @@ func alsaError(err C.int) error {
 }
 
 func newPlayer(sampleRate, numChans, bytesPerSample, bufferSizeInBytes int) (*player, error) {
-	var p player
+	p := &player{
+		numChans:       numChans,
+		bytesPerSample: bytesPerSample,
+	}
 
 	// open a default ALSA audio device for blocking stream playback
 	if errCode := C.snd_pcm_open(&p.handle, C.CString("default"), C.SND_PCM_STREAM_PLAYBACK, 0); errCode < 0 {
@@ -114,9 +119,9 @@ func newPlayer(sampleRate, numChans, bytesPerSample, bufferSizeInBytes int) (*pl
 	// allocate the buffer of the size of the period, use the periodSize that we've got back
 	// from ALSA after it's wise decision
 	p.bufSamples = int(periodSize)
-	p.buf = make([]byte, 0, p.bufSamples*numChans*bytesPerSample)
+	p.buf = []byte{}
 
-	return &p, nil
+	return p, nil
 }
 
 func (p *player) SetUnderrunCallback(f func()) {
@@ -124,15 +129,15 @@ func (p *player) SetUnderrunCallback(f func()) {
 }
 
 func (p *player) Write(data []byte) (n int, err error) {
+	bufSize := p.bufSamples * p.numChans * p.bytesPerSample
 	for len(data) > 0 {
-		// cap(p.buf) is equal to the size of the period
-		toWrite := min(len(data), cap(p.buf)-len(p.buf))
+		toWrite := min(len(data), bufSize-len(p.buf))
 		p.buf = append(p.buf, data[:toWrite]...)
 		data = data[toWrite:]
 		n += toWrite
 
 		// our buffer is not full and we've used up all the data, we'll keep them and finish
-		if len(p.buf) < cap(p.buf) {
+		if len(p.buf) < bufSize {
 			break
 		}
 
@@ -150,9 +155,10 @@ func (p *player) Write(data []byte) (n int, err error) {
 			C.snd_pcm_prepare(p.handle)
 		case wrote < 0:
 			// an error occured while writing samples
-			return n, alsaError(C.int(wrote))
+			return 0, alsaError(C.int(wrote))
+		default:
+			p.buf = p.buf[int(wrote)*p.numChans*p.bytesPerSample:]
 		}
-		p.buf = p.buf[:0]
 	}
 	return n, nil
 }
