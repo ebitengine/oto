@@ -143,8 +143,7 @@ func (p *player) Write(data []byte) (n int, err error) {
 
 		// write samples to the main circular buffer
 		wrote := C.snd_pcm_writei(p.handle, unsafe.Pointer(&p.buf[0]), C.snd_pcm_uframes_t(p.bufSamples))
-		switch {
-		case wrote == -C.EPIPE:
+		if wrote == -C.EPIPE {
 			// underrun, this means we send data too slow and need to catch up
 			//
 			// when underrun occurs, sample processing stops, so we need to
@@ -152,13 +151,16 @@ func (p *player) Write(data []byte) (n int, err error) {
 			if p.underrun != nil {
 				p.underrun()
 			}
-			C.snd_pcm_prepare(p.handle)
-		case wrote < 0:
+			if errCode := C.snd_pcm_prepare(p.handle); errCode < 0 {
+				return 0, alsaError(errCode)
+			}
+			continue
+		}
+		if wrote < 0 {
 			// an error occured while writing samples
 			return 0, alsaError(C.int(wrote))
-		default:
-			p.buf = p.buf[int(wrote)*p.numChans*p.bytesPerSample:]
 		}
+		p.buf = p.buf[int(wrote)*p.numChans*p.bytesPerSample:]
 	}
 	return n, nil
 }
