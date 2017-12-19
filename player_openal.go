@@ -15,12 +15,11 @@
 // +build darwin freebsd
 // +build !js
 // +build !android
-// +build !ios
 
 package oto
 
-// #cgo darwin        LDFLAGS: -framework OpenAL
-// #cgo freebsd linux LDFLAGS: -lopenal
+// #cgo darwin  LDFLAGS: -framework OpenAL
+// #cgo freebsd LDFLAGS: -lopenal
 //
 // #ifdef __APPLE__
 // #include <OpenAL/al.h>
