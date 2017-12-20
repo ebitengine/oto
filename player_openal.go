@@ -103,7 +103,7 @@ func alFormat(channelNum, bytesPerSample int) C.ALenum {
 	panic(fmt.Sprintf("oto: invalid channel num (%d) or bytes per sample (%d)", channelNum, bytesPerSample))
 }
 
-var numBufs = 2
+const numBufs = 2
 
 func newPlayer(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*player, error) {
 	name := C.alGetString(C.ALC_DEFAULT_DEVICE_SPECIFIER)
