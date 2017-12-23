@@ -99,8 +99,7 @@ func (p *Player) SetUnderrunCallback(f func()) {
 // Note, that the Player won't start playing anything until the buffer is full.
 func (p *Player) Write(data []byte) (int, error) {
 	written := 0
-	total := len(data)
-	for written < total {
+	for len(data) > 0 {
 		n, err := p.player.Write(data)
 		written += n
 		if err != nil {
