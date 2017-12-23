@@ -53,7 +53,7 @@ type player struct {
 	alFormat     C.ALenum
 
 	bufs       []C.ALuint
-	tmp        []uint8
+	tmp        []byte
 	bufferSize int
 }
 

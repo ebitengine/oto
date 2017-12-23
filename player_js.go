@@ -28,7 +28,7 @@ type player struct {
 	channelNum       int
 	bytesPerSample   int
 	nextPosInSamples int64
-	tmp              []uint8
+	tmp              []byte
 	bufferSize       int
 	context          *js.Object
 }
@@ -85,7 +85,7 @@ func newPlayer(sampleRate, channelNum, bytesPerSample, bufferSize int) (*player,
 	return p, nil
 }
 
-func toLR(data []uint8) ([]int16, []int16) {
+func toLR(data []byte) ([]int16, []int16) {
 	l := make([]int16, len(data)/4)
 	r := make([]int16, len(data)/4)
 	for i := 0; i < len(data)/4; i++ {
@@ -99,7 +99,7 @@ func (p *player) SetUnderrunCallback(f func()) {
 	//TODO
 }
 
-func (p *player) Write(data []uint8) (int, error) {
+func (p *player) Write(data []byte) (int, error) {
 	n := min(len(data), p.bufferSize-len(p.tmp))
 	p.tmp = append(p.tmp, data[:n]...)
 

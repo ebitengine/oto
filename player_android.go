@@ -198,8 +198,8 @@ type player struct {
 	bytesPerSample int
 	audioTrack     C.jobject
 	chErr          chan error
-	chBuffer       chan []uint8
-	tmp            []uint8
+	chBuffer       chan []byte
+	tmp            []byte
 	bufferSize     int
 }
 
@@ -209,7 +209,7 @@ func newPlayer(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*
 		channelNum:     channelNum,
 		bytesPerSample: bytesPerSample,
 		chErr:          make(chan error),
-		chBuffer:       make(chan []uint8),
+		chBuffer:       make(chan []byte),
 	}
 	runtime.SetFinalizer(p, (*player).Close)
 
@@ -270,7 +270,7 @@ func (p *player) SetUnderrunCallback(f func()) {
 	//TODO
 }
 
-func (p *player) Write(data []uint8) (int, error) {
+func (p *player) Write(data []byte) (int, error) {
 	n := min(len(data), p.bufferSize-len(p.tmp))
 	p.tmp = append(p.tmp, data[:n]...)
 

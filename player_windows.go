@@ -23,13 +23,13 @@ import (
 )
 
 type header struct {
-	buffer  []uint8
+	buffer  []byte
 	waveHdr *wavehdr
 }
 
 func newHeader(waveOut uintptr, bufferSize int) (*header, error) {
 	h := &header{
-		buffer: make([]uint8, bufferSize),
+		buffer: make([]byte, bufferSize),
 	}
 	h.waveHdr = &wavehdr{
 		lpData:         uintptr(unsafe.Pointer(&h.buffer[0])),
@@ -41,7 +41,7 @@ func newHeader(waveOut uintptr, bufferSize int) (*header, error) {
 	return h, nil
 }
 
-func (h *header) Write(waveOut uintptr, data []uint8) error {
+func (h *header) Write(waveOut uintptr, data []byte) error {
 	if len(data) != len(h.buffer) {
 		return errors.New("oto: len(data) must equal to len(h.buffer)")
 	}
@@ -55,7 +55,7 @@ func (h *header) Write(waveOut uintptr, data []uint8) error {
 type player struct {
 	out        uintptr
 	headers    []*header
-	tmp        []uint8
+	tmp        []byte
 	bufferSize int
 }
 
@@ -95,7 +95,7 @@ func (p *player) SetUnderrunCallback(f func()) {
 	//TODO
 }
 
-func (p *player) Write(data []uint8) (int, error) {
+func (p *player) Write(data []byte) (int, error) {
 	n := min(len(data), p.bufferSize-len(p.tmp))
 	p.tmp = append(p.tmp, data[:n]...)
 	if len(p.tmp) < p.bufferSize {

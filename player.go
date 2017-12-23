@@ -97,7 +97,7 @@ func (p *Player) SetUnderrunCallback(f func()) {
 // the buffer.
 //
 // Note, that the Player won't start playing anything until the buffer is full.
-func (p *Player) Write(data []uint8) (int, error) {
+func (p *Player) Write(data []byte) (int, error) {
 	written := 0
 	total := len(data)
 	for written < total {
