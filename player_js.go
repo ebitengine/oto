@@ -33,7 +33,7 @@ type player struct {
 	context          *js.Object
 }
 
-func isIOS() bool {
+func isIOSSafari() bool {
 	ua := js.Global.Get("navigator").Get("userAgent").String()
 	if !strings.Contains(ua, "iPhone") {
 		return false
@@ -67,8 +67,8 @@ func newPlayer(sampleRate, channelNum, bytesPerSample, bufferSize int) (*player,
 		context:        class.New(),
 		bufferSize:     bufferSize,
 	}
-	// iOS and Android Chrome requires touch event to use AudioContext.
-	if isIOS() || isAndroidChrome() {
+	// iOS Safari and Android Chrome requires touch event to use AudioContext.
+	if isIOSSafari() || isAndroidChrome() {
 		var f *js.Object
 		f = js.MakeFunc(func(this *js.Object, arguments []*js.Object) interface{} {
 			// Resuming is necessary as of Chrome 55+ in some cases like different
