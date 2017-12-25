@@ -158,7 +158,7 @@ func (p *player) Write(data []byte) (int, error) {
 	if err := p.alDevice.getError(); err != nil {
 		return 0, fmt.Errorf("oto: starting Write: %v", err)
 	}
-	n := min(len(data), p.bufferSize-len(p.tmp))
+	n := min(len(data), max(0, p.bufferSize-len(p.tmp)))
 	p.tmp = append(p.tmp, data[:n]...)
 	if len(p.tmp) < p.bufferSize {
 		return n, nil
