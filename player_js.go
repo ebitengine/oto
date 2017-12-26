@@ -85,12 +85,14 @@ func newPlayer(sampleRate, channelNum, bytesPerSample, bufferSize int) (*player,
 	return p, nil
 }
 
-func toLR(data []byte) ([]int16, []int16) {
-	l := make([]int16, len(data)/4)
-	r := make([]int16, len(data)/4)
+func toLR(data []byte) ([]float32, []float32) {
+	const max = 1 << 15
+
+	l := make([]float32, len(data)/4)
+	r := make([]float32, len(data)/4)
 	for i := 0; i < len(data)/4; i++ {
-		l[i] = int16(data[4*i]) | int16(data[4*i+1])<<8
-		r[i] = int16(data[4*i+2]) | int16(data[4*i+3])<<8
+		l[i] = float32(int16(data[4*i]) | int16(data[4*i+1])<<8) / max
+		r[i] = float32(int16(data[4*i+2]) | int16(data[4*i+3])<<8) / max
 	}
 	return l, r
 }
@@ -122,20 +124,15 @@ func (p *player) Write(data []byte) (int, error) {
 	}
 
 	buf := p.context.Call("createBuffer", p.channelNum, sizeInSamples, p.sampleRate)
-	l := buf.Call("getChannelData", 0)
-	r := buf.Call("getChannelData", 1)
-	il, ir := toLR(p.tmp)
-	const max = 1 << 15
-	for i := 0; i < len(il); i++ {
-		l.SetIndex(i, float64(il[i])/max)
-		r.SetIndex(i, float64(ir[i])/max)
-	}
+	l, r := toLR(p.tmp)
+	buf.Call("copyToChannel", l, 0, 0)
+	buf.Call("copyToChannel", r, 1, 0)
 
 	s := p.context.Call("createBufferSource")
 	s.Set("buffer", buf)
 	s.Call("connect", p.context.Get("destination"))
 	s.Call("start", float64(p.nextPosInSamples)/float64(p.sampleRate))
-	p.nextPosInSamples += int64(len(il))
+	p.nextPosInSamples += int64(len(l))
 
 	p.tmp = nil
 	return n, nil
