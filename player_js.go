@@ -24,13 +24,13 @@ import (
 )
 
 type player struct {
-	sampleRate       int
-	channelNum       int
-	bytesPerSample   int
-	nextPosInSamples int64
-	tmp              []byte
-	bufferSize       int
-	context          *js.Object
+	sampleRate     int
+	channelNum     int
+	bytesPerSample int
+	nextPos        float64
+	tmp            []byte
+	bufferSize     int
+	context        *js.Object
 }
 
 func isIOSSafari() bool {
@@ -103,17 +103,17 @@ func (p *player) Write(data []byte) (int, error) {
 	n := min(len(data), max(0, p.bufferSize-len(p.tmp)))
 	p.tmp = append(p.tmp, data[:n]...)
 
-	c := int64(p.context.Get("currentTime").Float() * float64(p.sampleRate))
+	c := p.context.Get("currentTime").Float()
 
-	if p.nextPosInSamples < c {
-		p.nextPosInSamples = c
+	if p.nextPos < c {
+		p.nextPos = c
 	}
 
 	sizeInSamples := p.bufferSize / p.bytesPerSample / p.channelNum
 
 	// It's too early to enqueue a buffer.
 	// Highly likely, there are two playing buffers now.
-	if c+int64(sizeInSamples) < p.nextPosInSamples {
+	if c+float64(sizeInSamples)/float64(p.sampleRate) < p.nextPos {
 		return n, nil
 	}
 
@@ -129,8 +129,8 @@ func (p *player) Write(data []byte) (int, error) {
 	s := p.context.Call("createBufferSource")
 	s.Set("buffer", buf)
 	s.Call("connect", p.context.Get("destination"))
-	s.Call("start", float64(p.nextPosInSamples)/float64(p.sampleRate))
-	p.nextPosInSamples += int64(len(l))
+	s.Call("start", p.nextPos)
+	p.nextPos += buf.Get("duration").Float()
 
 	p.tmp = nil
 	return n, nil
