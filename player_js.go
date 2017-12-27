@@ -122,7 +122,7 @@ func (p *player) Write(data []byte) (int, error) {
 	}
 
 	buf := p.context.Call("createBuffer", p.channelNum, sizeInSamples, p.sampleRate)
-	l, r := toLR(p.tmp)
+	l, r := toLR(p.tmp[:p.bufferSize])
 	buf.Call("copyToChannel", l, 0, 0)
 	buf.Call("copyToChannel", r, 1, 0)
 
@@ -132,7 +132,7 @@ func (p *player) Write(data []byte) (int, error) {
 	s.Call("start", p.nextPos)
 	p.nextPos += buf.Get("duration").Float()
 
-	p.tmp = nil
+	p.tmp = p.tmp[p.bufferSize:]
 	return n, nil
 }
 
