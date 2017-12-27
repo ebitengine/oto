@@ -52,6 +52,8 @@ func isAndroidChrome() bool {
 	return true
 }
 
+const audioBufferSamples = 3200
+
 func newPlayer(sampleRate, channelNum, bytesPerSample, bufferSize int) (*player, error) {
 	class := js.Global.Get("AudioContext")
 	if class == js.Undefined {
@@ -65,7 +67,7 @@ func newPlayer(sampleRate, channelNum, bytesPerSample, bufferSize int) (*player,
 		channelNum:     channelNum,
 		bytesPerSample: bytesPerSample,
 		context:        class.New(),
-		bufferSize:     bufferSize,
+		bufferSize:     max(bufferSize, audioBufferSamples*channelNum*bytesPerSample),
 	}
 	// iOS Safari and Android Chrome requires touch event to use AudioContext.
 	if isIOSSafari() || isAndroidChrome() {
@@ -109,20 +111,18 @@ func (p *player) Write(data []byte) (int, error) {
 		p.nextPos = c
 	}
 
-	sizeInSamples := p.bufferSize / p.bytesPerSample / p.channelNum
-
 	// It's too early to enqueue a buffer.
 	// Highly likely, there are two playing buffers now.
-	if c+float64(sizeInSamples)/float64(p.sampleRate) < p.nextPos {
+	if c+float64(p.bufferSize/p.bytesPerSample/p.channelNum)/float64(p.sampleRate) < p.nextPos {
 		return n, nil
 	}
 
-	if len(p.tmp) < p.bufferSize {
+	if len(p.tmp) < audioBufferSamples*p.bytesPerSample*p.channelNum {
 		return n, nil
 	}
 
-	buf := p.context.Call("createBuffer", p.channelNum, sizeInSamples, p.sampleRate)
-	l, r := toLR(p.tmp[:p.bufferSize])
+	buf := p.context.Call("createBuffer", p.channelNum, audioBufferSamples, p.sampleRate)
+	l, r := toLR(p.tmp[:audioBufferSamples*p.bytesPerSample*p.channelNum])
 	if buf.Get("copyToChannel") != js.Undefined {
 		buf.Call("copyToChannel", l, 0, 0)
 		buf.Call("copyToChannel", r, 1, 0)
@@ -140,7 +140,7 @@ func (p *player) Write(data []byte) (int, error) {
 	s.Call("start", p.nextPos)
 	p.nextPos += buf.Get("duration").Float()
 
-	p.tmp = p.tmp[p.bufferSize:]
+	p.tmp = p.tmp[audioBufferSamples*p.bytesPerSample*p.channelNum:]
 	return n, nil
 }
 
