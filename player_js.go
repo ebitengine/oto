@@ -123,8 +123,16 @@ func (p *player) Write(data []byte) (int, error) {
 
 	buf := p.context.Call("createBuffer", p.channelNum, sizeInSamples, p.sampleRate)
 	l, r := toLR(p.tmp[:p.bufferSize])
-	buf.Call("copyToChannel", l, 0, 0)
-	buf.Call("copyToChannel", r, 1, 0)
+	if buf.Get("copyToChannel") != js.Undefined {
+		buf.Call("copyToChannel", l, 0, 0)
+		buf.Call("copyToChannel", r, 1, 0)
+	} else {
+		// copyToChannel is not defined on Safari 11
+		outL := buf.Call("getChannelData", 0).Interface().([]float32)
+		outR := buf.Call("getChannelData", 1).Interface().([]float32)
+		copy(outL, l)
+		copy(outR, r)
+	}
 
 	s := p.context.Call("createBufferSource")
 	s.Set("buffer", buf)
