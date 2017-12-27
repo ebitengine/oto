@@ -75,13 +75,11 @@ func newPlayer(sampleRate, channelNum, bytesPerSample, bufferSize int) (*player,
 			// domain page in an iframe.
 			p.context.Call("resume")
 			p.context.Call("createBufferSource").Call("start", 0)
-			p.nextPosInSamples = int64(p.context.Get("currentTime").Float() * float64(p.sampleRate))
 			js.Global.Get("document").Call("removeEventListener", "touchend", f)
 			return nil
 		})
 		js.Global.Get("document").Call("addEventListener", "touchend", f)
 	}
-	p.nextPosInSamples = int64(p.context.Get("currentTime").Float() * float64(p.sampleRate))
 	return p, nil
 }
 
@@ -91,8 +89,8 @@ func toLR(data []byte) ([]float32, []float32) {
 	l := make([]float32, len(data)/4)
 	r := make([]float32, len(data)/4)
 	for i := 0; i < len(data)/4; i++ {
-		l[i] = float32(int16(data[4*i]) | int16(data[4*i+1])<<8) / max
-		r[i] = float32(int16(data[4*i+2]) | int16(data[4*i+3])<<8) / max
+		l[i] = float32(int16(data[4*i])|int16(data[4*i+1])<<8) / max
+		r[i] = float32(int16(data[4*i+2])|int16(data[4*i+3])<<8) / max
 	}
 	return l, r
 }
