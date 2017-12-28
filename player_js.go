@@ -107,7 +107,7 @@ func nowInSeconds() float64 {
 	return js.Global.Get("performance").Call("now").Float() / 1000.0
 }
 
-func (p *player) Write(data []byte) (int, error) {
+func (p *player) TryWrite(data []byte) (int, error) {
 	n := min(len(data), max(0, p.bufferSize-len(p.tmp)))
 	p.tmp = append(p.tmp, data[:n]...)
 

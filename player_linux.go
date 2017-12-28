@@ -128,7 +128,7 @@ func (p *player) SetUnderrunCallback(f func()) {
 	p.underrun = f
 }
 
-func (p *player) Write(data []byte) (n int, err error) {
+func (p *player) TryWrite(data []byte) (n int, err error) {
 	bufSize := p.bufSamples * p.numChans * p.bytesPerSample
 	for len(data) > 0 {
 		toWrite := min(len(data), max(0, bufSize-len(p.buf)))

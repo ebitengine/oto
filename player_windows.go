@@ -95,7 +95,7 @@ func (p *player) SetUnderrunCallback(f func()) {
 	//TODO
 }
 
-func (p *player) Write(data []byte) (int, error) {
+func (p *player) TryWrite(data []byte) (int, error) {
 	n := min(len(data), max(0, p.bufferSize-len(p.tmp)))
 	p.tmp = append(p.tmp, data[:n]...)
 	if len(p.tmp) < p.bufferSize {

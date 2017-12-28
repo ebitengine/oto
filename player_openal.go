@@ -154,7 +154,7 @@ func (p *player) SetUnderrunCallback(f func()) {
 	//TODO
 }
 
-func (p *player) Write(data []byte) (int, error) {
+func (p *player) TryWrite(data []byte) (int, error) {
 	if err := p.alDevice.getError(); err != nil {
 		return 0, fmt.Errorf("oto: starting Write: %v", err)
 	}

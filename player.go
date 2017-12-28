@@ -100,7 +100,7 @@ func (p *Player) SetUnderrunCallback(f func()) {
 func (p *Player) Write(data []byte) (int, error) {
 	written := 0
 	for len(data) > 0 {
-		n, err := p.player.Write(data)
+		n, err := p.player.TryWrite(data)
 		written += n
 		if err != nil {
 			return written, err
