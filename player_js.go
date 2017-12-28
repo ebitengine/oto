@@ -133,7 +133,7 @@ func (p *player) Write(data []byte) (int, error) {
 		return n, nil
 	}
 
-	le := audioBufferSamples*p.bytesPerSample*p.channelNum
+	le := audioBufferSamples * p.bytesPerSample * p.channelNum
 	if len(p.tmp) < le {
 		return n, nil
 	}
