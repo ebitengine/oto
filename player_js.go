@@ -31,6 +31,8 @@ type player struct {
 	tmp            []byte
 	bufferSize     int
 	context        *js.Object
+	lastTime       float64
+	lastAudioTime  float64
 }
 
 func isIOSSafari() bool {
@@ -101,11 +103,25 @@ func (p *player) SetUnderrunCallback(f func()) {
 	//TODO
 }
 
+func nowInSeconds() float64 {
+	return js.Global.Get("performance").Call("now").Float() / 1000.0
+}
+
 func (p *player) Write(data []byte) (int, error) {
 	n := min(len(data), max(0, p.bufferSize-len(p.tmp)))
 	p.tmp = append(p.tmp, data[:n]...)
 
 	c := p.context.Get("currentTime").Float()
+	now := nowInSeconds()
+
+	if p.lastTime != 0 && p.lastAudioTime != 0 && p.lastAudioTime >= c && p.lastTime != now {
+		// Unfortunately, currentTime might not be precise enough on some devices
+		// (e.g. Android Chrome). Adjust the audio time with OS clock.
+		c = p.lastAudioTime + now - p.lastTime
+	}
+
+	p.lastAudioTime = c
+	p.lastTime = now
 
 	if p.nextPos < c {
 		p.nextPos = c
@@ -117,12 +133,13 @@ func (p *player) Write(data []byte) (int, error) {
 		return n, nil
 	}
 
-	if len(p.tmp) < audioBufferSamples*p.bytesPerSample*p.channelNum {
+	le := audioBufferSamples*p.bytesPerSample*p.channelNum
+	if len(p.tmp) < le {
 		return n, nil
 	}
 
 	buf := p.context.Call("createBuffer", p.channelNum, audioBufferSamples, p.sampleRate)
-	l, r := toLR(p.tmp[:audioBufferSamples*p.bytesPerSample*p.channelNum])
+	l, r := toLR(p.tmp[:le])
 	if buf.Get("copyToChannel") != js.Undefined {
 		buf.Call("copyToChannel", l, 0, 0)
 		buf.Call("copyToChannel", r, 1, 0)
@@ -140,7 +157,7 @@ func (p *player) Write(data []byte) (int, error) {
 	s.Call("start", p.nextPos)
 	p.nextPos += buf.Get("duration").Float()
 
-	p.tmp = p.tmp[audioBufferSamples*p.bytesPerSample*p.channelNum:]
+	p.tmp = p.tmp[le:]
 	return n, nil
 }
 
