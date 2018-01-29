@@ -24,10 +24,7 @@ static jclass android_media_AudioManager;
 static jclass android_media_AudioTrack;
 
 static char* initAudioTrack(uintptr_t java_vm, uintptr_t jni_env,
-    int sampleRate, int channelNum, int bytesPerSample, jobject* audioTrack, int* bufferSize) {
-  // bufferSize has an initial value, and this is updated when bufferSize is
-  // smaller than AudioTrack's minimum buffer size.
-
+    int sampleRate, int channelNum, int bytesPerSample, jobject* audioTrack, int bufferSize) {
   JavaVM* vm = (JavaVM*)java_vm;
   JNIEnv* env = (JNIEnv*)jni_env;
 
@@ -92,21 +89,12 @@ static char* initAudioTrack(uintptr_t java_vm, uintptr_t jni_env,
     return "invalid bytesPerSample";
   }
 
-  int minBufferSize =
-      (*env)->CallStaticIntMethod(
-          env, android_media_AudioTrack,
-          (*env)->GetStaticMethodID(env, android_media_AudioTrack, "getMinBufferSize", "(III)I"),
-          sampleRate, channel, encoding);
-  if (*bufferSize < minBufferSize) {
-    *bufferSize = minBufferSize;
-  }
-
   const jobject tmpAudioTrack =
       (*env)->NewObject(
           env, android_media_AudioTrack,
           (*env)->GetMethodID(env, android_media_AudioTrack, "<init>", "(IIIIII)V"),
           android_media_AudioManager_STREAM_MUSIC,
-          sampleRate, channel, encoding, *bufferSize,
+          sampleRate, channel, encoding, bufferSize,
           android_media_AudioTrack_MODE_STREAM);
   *audioTrack = (*env)->NewGlobalRef(env, tmpAudioTrack);
   (*env)->DeleteLocalRef(env, tmpAudioTrack);
@@ -218,11 +206,11 @@ func newPlayer(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*
 		bufferSize := C.int(bufferSizeInBytes)
 		if msg := C.initAudioTrack(C.uintptr_t(vm), C.uintptr_t(env),
 			C.int(sampleRate), C.int(channelNum), C.int(bytesPerSample),
-			&audioTrack, &bufferSize); msg != nil {
+			&audioTrack, bufferSize); msg != nil {
 			return errors.New("oto: initAutioTrack failed: " + C.GoString(msg))
 		}
 		p.audioTrack = audioTrack
-		p.bufferSize = int(bufferSize) // bufferSize can be updated at initAudioTrack.
+		p.bufferSize = int(bufferSize)
 		return nil
 	}); err != nil {
 		return nil, err
