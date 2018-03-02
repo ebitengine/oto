@@ -119,6 +119,10 @@ func (p *Player) Write(data []byte) (int, error) {
 // Close closes the Player and frees any resources associated with it. The Player is no longer
 // usable after calling Close.
 func (p *Player) Close() error {
+	// Close should be wait until the buffer data is consumed (#36).
+	// This is the simplest (but ugly) fix.
+	// TODO: Implement player's Close to wait the buffer played.
+	time.Sleep(time.Second * time.Duration(p.bufferSize) / time.Duration(p.bytesPerSec()))
 	return p.player.Close()
 }
 
