@@ -20,7 +20,7 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/gopherjs/gopherjs/js"
+	"github.com/hajimehoshi/gopherwasm/js"
 )
 
 type player struct {
@@ -30,7 +30,7 @@ type player struct {
 	nextPos        float64
 	tmp            []byte
 	bufferSize     int
-	context        *js.Object
+	context        js.Value
 	lastTime       float64
 	lastAudioTime  float64
 }
@@ -73,14 +73,13 @@ func newPlayer(sampleRate, channelNum, bytesPerSample, bufferSize int) (*player,
 	}
 	// iOS Safari and Android Chrome requires touch event to use AudioContext.
 	if isIOSSafari() || isAndroidChrome() {
-		var f *js.Object
-		f = js.MakeFunc(func(this *js.Object, arguments []*js.Object) interface{} {
+		var f js.Callback
+		f = js.NewCallback(func(arguments []js.Value) {
 			// Resuming is necessary as of Chrome 55+ in some cases like different
 			// domain page in an iframe.
 			p.context.Call("resume")
 			p.context.Call("createBufferSource").Call("start", 0)
 			js.Global.Get("document").Call("removeEventListener", "touchend", f)
-			return nil
 		})
 		js.Global.Get("document").Call("addEventListener", "touchend", f)
 	}
@@ -141,14 +140,12 @@ func (p *player) TryWrite(data []byte) (int, error) {
 	buf := p.context.Call("createBuffer", p.channelNum, audioBufferSamples, p.sampleRate)
 	l, r := toLR(p.tmp[:le])
 	if buf.Get("copyToChannel") != js.Undefined {
-		buf.Call("copyToChannel", l, 0, 0)
-		buf.Call("copyToChannel", r, 1, 0)
+		buf.Call("copyToChannel", js.ValueOf(l), 0, 0)
+		buf.Call("copyToChannel", js.ValueOf(r), 1, 0)
 	} else {
 		// copyToChannel is not defined on Safari 11
-		outL := buf.Call("getChannelData", 0).Interface().([]float32)
-		outR := buf.Call("getChannelData", 1).Interface().([]float32)
-		copy(outL, l)
-		copy(outR, r)
+		buf.Call("getChannelData", 0).Call("set", js.ValueOf(l))
+		buf.Call("getChannelData", 1).Call("set", js.ValueOf(r))
 	}
 
 	s := p.context.Call("createBufferSource")
