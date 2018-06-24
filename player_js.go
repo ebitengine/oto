@@ -20,7 +20,7 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/hajimehoshi/gopherwasm/js"
+	"github.com/gopherjs/gopherwasm/js"
 )
 
 type player struct {
