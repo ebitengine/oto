@@ -36,7 +36,7 @@ type player struct {
 }
 
 func isIOSSafari() bool {
-	ua := js.Global.Get("navigator").Get("userAgent").String()
+	ua := js.Global().Get("navigator").Get("userAgent").String()
 	if !strings.Contains(ua, "iPhone") {
 		return false
 	}
@@ -44,7 +44,7 @@ func isIOSSafari() bool {
 }
 
 func isAndroidChrome() bool {
-	ua := js.Global.Get("navigator").Get("userAgent").String()
+	ua := js.Global().Get("navigator").Get("userAgent").String()
 	if !strings.Contains(ua, "Android") {
 		return false
 	}
@@ -57,11 +57,11 @@ func isAndroidChrome() bool {
 const audioBufferSamples = 3200
 
 func newPlayer(sampleRate, channelNum, bytesPerSample, bufferSize int) (*player, error) {
-	class := js.Global.Get("AudioContext")
-	if class == js.Undefined {
-		class = js.Global.Get("webkitAudioContext")
+	class := js.Global().Get("AudioContext")
+	if class == js.Undefined() {
+		class = js.Global().Get("webkitAudioContext")
 	}
-	if class == js.Undefined {
+	if class == js.Undefined() {
 		return nil, errors.New("oto: audio couldn't be initialized")
 	}
 	p := &player{
@@ -79,9 +79,9 @@ func newPlayer(sampleRate, channelNum, bytesPerSample, bufferSize int) (*player,
 			// domain page in an iframe.
 			p.context.Call("resume")
 			p.context.Call("createBufferSource").Call("start", 0)
-			js.Global.Get("document").Call("removeEventListener", "touchend", f)
+			js.Global().Get("document").Call("removeEventListener", "touchend", f)
 		})
-		js.Global.Get("document").Call("addEventListener", "touchend", f)
+		js.Global().Get("document").Call("addEventListener", "touchend", f)
 	}
 	return p, nil
 }
@@ -103,7 +103,7 @@ func (p *player) SetUnderrunCallback(f func()) {
 }
 
 func nowInSeconds() float64 {
-	return js.Global.Get("performance").Call("now").Float() / 1000.0
+	return js.Global().Get("performance").Call("now").Float() / 1000.0
 }
 
 func (p *player) TryWrite(data []byte) (int, error) {
@@ -139,7 +139,7 @@ func (p *player) TryWrite(data []byte) (int, error) {
 
 	buf := p.context.Call("createBuffer", p.channelNum, audioBufferSamples, p.sampleRate)
 	l, r := toLR(p.tmp[:le])
-	if buf.Get("copyToChannel") != js.Undefined {
+	if buf.Get("copyToChannel") != js.Undefined() {
 		buf.Call("copyToChannel", js.ValueOf(l), 0, 0)
 		buf.Call("copyToChannel", js.ValueOf(r), 1, 0)
 	} else {
