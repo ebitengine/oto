@@ -139,14 +139,18 @@ func (p *player) TryWrite(data []byte) (int, error) {
 
 	buf := p.context.Call("createBuffer", p.channelNum, audioBufferSamples, p.sampleRate)
 	l, r := toLR(p.tmp[:le])
+	tl := js.TypedArrayOf(l)
+	tr := js.TypedArrayOf(r)
 	if buf.Get("copyToChannel") != js.Undefined() {
-		buf.Call("copyToChannel", js.ValueOf(l), 0, 0)
-		buf.Call("copyToChannel", js.ValueOf(r), 1, 0)
+		buf.Call("copyToChannel", tl, 0, 0)
+		buf.Call("copyToChannel", tr, 1, 0)
 	} else {
 		// copyToChannel is not defined on Safari 11
-		buf.Call("getChannelData", 0).Call("set", js.ValueOf(l))
-		buf.Call("getChannelData", 1).Call("set", js.ValueOf(r))
+		buf.Call("getChannelData", 0).Call("set", tl)
+		buf.Call("getChannelData", 1).Call("set", tr)
 	}
+	tl.Release()
+	tr.Release()
 
 	s := p.context.Call("createBufferSource")
 	s.Set("buffer", buf)
