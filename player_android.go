@@ -177,7 +177,7 @@ import (
 	"runtime"
 	"unsafe"
 
-	"github.com/hajimehoshi/oto/internal/jni"
+	"golang.org/x/mobile/app"
 )
 
 type player struct {
@@ -201,7 +201,7 @@ func newPlayer(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*
 	}
 	runtime.SetFinalizer(p, (*player).Close)
 
-	if err := jni.RunOnJVM(func(vm, env, ctx uintptr) error {
+	if err := app.RunOnJVM(func(vm, env, ctx uintptr) error {
 		audioTrack := C.jobject(nil)
 		bufferSize := C.int(bufferSizeInBytes)
 		if msg := C.initAudioTrack(C.uintptr_t(vm), C.uintptr_t(env),
@@ -229,7 +229,7 @@ func (p *player) loop() {
 				bufInShorts[i] = int16(bufInBytes[2*i]) | (int16(bufInBytes[2*i+1]) << 8)
 			}
 		}
-		if err := jni.RunOnJVM(func(vm, env, ctx uintptr) error {
+		if err := app.RunOnJVM(func(vm, env, ctx uintptr) error {
 			msg := (*C.char)(nil)
 			switch p.bytesPerSample {
 			case 1:
@@ -282,7 +282,7 @@ func (p *player) Close() error {
 	}
 
 	runtime.SetFinalizer(p, nil)
-	err := jni.RunOnJVM(func(vm, env, ctx uintptr) error {
+	err := app.RunOnJVM(func(vm, env, ctx uintptr) error {
 		if msg := C.releaseAudioTrack(C.uintptr_t(vm), C.uintptr_t(env),
 			p.audioTrack); msg != nil {
 			return errors.New("oto: release failed: " + C.GoString(msg))
