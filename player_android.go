@@ -277,7 +277,7 @@ func (p *player) TryWrite(data []byte) (int, error) {
 }
 
 func (p *player) Close() error {
-	if p.audioTrack == nil {
+	if p.audioTrack == 0 {
 		return nil
 	}
 
@@ -290,6 +290,6 @@ func (p *player) Close() error {
 		return nil
 	})
 
-	p.audioTrack = nil
+	p.audioTrack = 0
 	return err
 }
