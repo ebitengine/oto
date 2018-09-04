@@ -202,7 +202,7 @@ func newPlayer(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*
 	runtime.SetFinalizer(p, (*player).Close)
 
 	if err := app.RunOnJVM(func(vm, env, ctx uintptr) error {
-		audioTrack := C.jobject(nil)
+		audioTrack := C.jobject(0)
 		bufferSize := C.int(bufferSizeInBytes)
 		if msg := C.initAudioTrack(C.uintptr_t(vm), C.uintptr_t(env),
 			C.int(sampleRate), C.int(channelNum), C.int(bytesPerSample),
