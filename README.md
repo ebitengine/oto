@@ -12,7 +12,7 @@ A low-level library to play sound. This package offers `io.WriteCloser` to play 
 * FreeBSD
 * Android
 * iOS
-* (Modern) web browsers (powered by [GopherJS](https://github.com/gopherjs/gopherjs))
+* Web browsers ([GopherJS](https://github.com/gopherjs/gopherjs) and WebAssembly)
 
 ## Prerequisite
 
