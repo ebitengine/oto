@@ -71,17 +71,25 @@ func newPlayer(sampleRate, channelNum, bytesPerSample, bufferSize int) (*player,
 		context:        class.New(),
 		bufferSize:     max(bufferSize, audioBufferSamples*channelNum*bytesPerSample),
 	}
-	// iOS Safari and Android Chrome requires touch event to use AudioContext.
-	if isIOSSafari() || isAndroidChrome() {
+
+	setCallback := func(event string) {
 		var f js.Callback
 		f = js.NewCallback(func(arguments []js.Value) {
 			// Resuming is necessary as of Chrome 55+ in some cases like different
 			// domain page in an iframe.
 			p.context.Call("resume")
 			p.context.Call("createBufferSource").Call("start", 0)
-			js.Global().Get("document").Call("removeEventListener", "touchend", f)
+			js.Global().Get("document").Call("removeEventListener", event, f)
 		})
-		js.Global().Get("document").Call("addEventListener", "touchend", f)
+		js.Global().Get("document").Call("addEventListener", event, f)
+	}
+
+	if isIOSSafari() || isAndroidChrome() {
+		setCallback("touchend")
+	} else {
+		// Desktop browsers also require user interaction to start the audio.
+		// https://developers.google.com/web/updates/2017/09/autoplay-policy-changes#webaudio
+		setCallback("click")
 	}
 	return p, nil
 }
