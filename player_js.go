@@ -18,7 +18,6 @@ package oto
 
 import (
 	"errors"
-	"strings"
 
 	"github.com/gopherjs/gopherwasm/js"
 )
@@ -33,25 +32,6 @@ type player struct {
 	context        js.Value
 	lastTime       float64
 	lastAudioTime  float64
-}
-
-func isIOSSafari() bool {
-	ua := js.Global().Get("navigator").Get("userAgent").String()
-	if !strings.Contains(ua, "iPhone") {
-		return false
-	}
-	return true
-}
-
-func isAndroidChrome() bool {
-	ua := js.Global().Get("navigator").Get("userAgent").String()
-	if !strings.Contains(ua, "Android") {
-		return false
-	}
-	if !strings.Contains(ua, "Chrome") {
-		return false
-	}
-	return true
 }
 
 const audioBufferSamples = 3200
@@ -72,25 +52,24 @@ func newPlayer(sampleRate, channelNum, bytesPerSample, bufferSize int) (*player,
 		bufferSize:     max(bufferSize, audioBufferSamples*channelNum*bytesPerSample),
 	}
 
+	unlocked := false
 	setCallback := func(event string) {
 		var f js.Callback
 		f = js.NewCallback(func(arguments []js.Value) {
-			// Resuming is necessary as of Chrome 55+ in some cases like different
-			// domain page in an iframe.
-			p.context.Call("resume")
-			p.context.Call("createBufferSource").Call("start", 0)
+			if !unlocked {
+				p.context.Call("resume")
+				unlocked = true
+			}
 			js.Global().Get("document").Call("removeEventListener", event, f)
 		})
 		js.Global().Get("document").Call("addEventListener", event, f)
 	}
 
-	if isIOSSafari() || isAndroidChrome() {
-		setCallback("touchend")
-	} else {
-		// Desktop browsers also require user interaction to start the audio.
-		// https://developers.google.com/web/updates/2017/09/autoplay-policy-changes#webaudio
-		setCallback("click")
-	}
+	// Browsers require user interaction to start the audio.
+	// https://developers.google.com/web/updates/2017/09/autoplay-policy-changes#webaudio
+	setCallback("touchend")
+	setCallback("keyup")
+	setCallback("mouseup")
 	return p, nil
 }
 
