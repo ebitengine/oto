@@ -67,7 +67,6 @@ type player struct {
 	bufSamples     int
 	numChans       int
 	bytesPerSample int
-	underrun       func()
 }
 
 func alsaError(err C.int) error {
@@ -124,10 +123,6 @@ func newPlayer(sampleRate, numChans, bytesPerSample, bufferSizeInBytes int) (*pl
 	return p, nil
 }
 
-func (p *player) SetUnderrunCallback(f func()) {
-	p.underrun = f
-}
-
 func (p *player) TryWrite(data []byte) (n int, err error) {
 	bufSize := p.bufSamples * p.numChans * p.bytesPerSample
 	for len(data) > 0 {
@@ -144,13 +139,7 @@ func (p *player) TryWrite(data []byte) (n int, err error) {
 		// write samples to the main circular buffer
 		wrote := C.snd_pcm_writei(p.handle, unsafe.Pointer(&p.buf[0]), C.snd_pcm_uframes_t(p.bufSamples))
 		if wrote == -C.EPIPE {
-			// underrun, this means we send data too slow and need to catch up
-			//
-			// when underrun occurs, sample processing stops, so we need to
-			// rewoke it by snd_pcm_prepare
-			if p.underrun != nil {
-				p.underrun()
-			}
+			// Underrun!
 			if errCode := C.snd_pcm_prepare(p.handle); errCode < 0 {
 				return 0, alsaError(errCode)
 			}
