@@ -85,10 +85,6 @@ func toLR(data []byte) ([]float32, []float32) {
 	return l, r
 }
 
-func (p *player) SetUnderrunCallback(f func()) {
-	//TODO
-}
-
 func nowInSeconds() float64 {
 	return js.Global().Get("performance").Call("now").Float() / 1000.0
 }

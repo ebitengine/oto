@@ -150,10 +150,6 @@ func newPlayer(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*
 	return p, nil
 }
 
-func (p *player) SetUnderrunCallback(f func()) {
-	//TODO
-}
-
 func (p *player) TryWrite(data []byte) (int, error) {
 	if err := p.alDevice.getError(); err != nil {
 		return 0, fmt.Errorf("oto: starting Write: %v", err)

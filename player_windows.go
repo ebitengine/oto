@@ -91,10 +91,6 @@ func newPlayer(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*
 	return p, nil
 }
 
-func (p *player) SetUnderrunCallback(f func()) {
-	//TODO
-}
-
 func (p *player) TryWrite(data []byte) (int, error) {
 	n := min(len(data), max(0, p.bufferSize-len(p.tmp)))
 	p.tmp = append(p.tmp, data[:n]...)
