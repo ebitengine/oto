@@ -32,6 +32,7 @@ type player struct {
 	context        js.Value
 	lastTime       float64
 	lastAudioTime  float64
+	ready          bool
 }
 
 const audioBufferSamples = 3200
@@ -52,13 +53,12 @@ func newPlayer(sampleRate, channelNum, bytesPerSample, bufferSize int) (*player,
 		bufferSize:     max(bufferSize, audioBufferSamples*channelNum*bytesPerSample),
 	}
 
-	unlocked := false
 	setCallback := func(event string) {
 		var f js.Callback
 		f = js.NewCallback(func(arguments []js.Value) {
-			if !unlocked {
+			if !p.ready {
 				p.context.Call("resume")
-				unlocked = true
+				p.ready = true
 			}
 			js.Global().Get("document").Call("removeEventListener", event, f)
 		})
@@ -90,6 +90,10 @@ func nowInSeconds() float64 {
 }
 
 func (p *player) TryWrite(data []byte) (int, error) {
+	if !p.ready {
+		return 0, nil
+	}
+
 	n := min(len(data), max(0, p.bufferSize-len(p.tmp)))
 	p.tmp = append(p.tmp, data[:n]...)
 
