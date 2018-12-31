@@ -18,12 +18,13 @@ package oto
 
 import (
 	"fmt"
-	"syscall"
 	"unsafe"
+
+	"golang.org/x/sys/windows"
 )
 
 var (
-	winmm = syscall.NewLazyDLL("winmm")
+	winmm = windows.NewLazySystemDLL("winmm")
 )
 
 var (
@@ -109,10 +110,9 @@ func waveOutOpen(f *waveformatex) (uintptr, error) {
 		callbackNull = 0
 	)
 	var w uintptr
-	r, _, e := syscall.Syscall6(procWaveOutOpen.Addr(), 6,
-		uintptr(unsafe.Pointer(&w)), waveMapper, uintptr(unsafe.Pointer(f)),
+	r, _, e := procWaveOutOpen.Call(uintptr(unsafe.Pointer(&w)), waveMapper, uintptr(unsafe.Pointer(f)),
 		0, 0, callbackNull)
-	if e != 0 {
+	if e.(windows.Errno) != 0 {
 		return 0, fmt.Errorf("oto: waveOutOpen error: %d", e)
 	}
 	if mmresult(r) != mmsyserrNoerror {
@@ -122,8 +122,8 @@ func waveOutOpen(f *waveformatex) (uintptr, error) {
 }
 
 func waveOutClose(hwo uintptr) error {
-	r, _, e := syscall.Syscall(procWaveOutClose.Addr(), 1, hwo, 0, 0)
-	if e != 0 {
+	r, _, e := procWaveOutClose.Call(hwo)
+	if e.(windows.Errno) != 0 {
 		return fmt.Errorf("oto: waveOutClose error: %d", e)
 	}
 	// WAVERR_STILLPLAYING is ignored.
@@ -134,9 +134,8 @@ func waveOutClose(hwo uintptr) error {
 }
 
 func waveOutPrepareHeader(hwo uintptr, pwh *wavehdr) error {
-	r, _, e := syscall.Syscall(procWaveOutPrepareHeader.Addr(), 3,
-		hwo, uintptr(unsafe.Pointer(pwh)), unsafe.Sizeof(wavehdr{}))
-	if e != 0 {
+	r, _, e := procWaveOutPrepareHeader.Call(hwo, uintptr(unsafe.Pointer(pwh)), unsafe.Sizeof(wavehdr{}))
+	if e.(windows.Errno) != 0 {
 		return fmt.Errorf("oto: waveOutPrepareHeader error: %d", e)
 	}
 	if mmresult(r) != mmsyserrNoerror {
@@ -146,9 +145,8 @@ func waveOutPrepareHeader(hwo uintptr, pwh *wavehdr) error {
 }
 
 func waveOutWrite(hwo uintptr, pwh *wavehdr) error {
-	r, _, e := syscall.Syscall(procWaveOutWrite.Addr(), 3,
-		hwo, uintptr(unsafe.Pointer(pwh)), unsafe.Sizeof(wavehdr{}))
-	if e != 0 {
+	r, _, e := procWaveOutWrite.Call(hwo, uintptr(unsafe.Pointer(pwh)), unsafe.Sizeof(wavehdr{}))
+	if e.(windows.Errno) != 0 {
 		return fmt.Errorf("oto: waveOutWrite error: %d", e)
 	}
 	if mmresult(r) != mmsyserrNoerror {
