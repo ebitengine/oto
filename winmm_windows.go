@@ -104,6 +104,22 @@ func (m mmresult) String() string {
 	return fmt.Sprintf("MMRESULT (%d)", m)
 }
 
+type winmmError struct {
+	fname    string
+	errno    windows.Errno
+	mmresult mmresult
+}
+
+func (e *winmmError) Error() string {
+	if e.errno != 0 {
+		return fmt.Sprintf("winmm error at %s: Errno: %d", e.fname, e.errno)
+	}
+	if e.mmresult != mmsyserrNoerror {
+		return fmt.Sprintf("winmm error at %s: %s", e.fname, e.mmresult)
+	}
+	return fmt.Sprintf("winmm error at %s", e.fname)
+}
+
 func waveOutOpen(f *waveformatex) (uintptr, error) {
 	const (
 		waveMapper   = 0xffffffff
@@ -113,10 +129,16 @@ func waveOutOpen(f *waveformatex) (uintptr, error) {
 	r, _, e := procWaveOutOpen.Call(uintptr(unsafe.Pointer(&w)), waveMapper, uintptr(unsafe.Pointer(f)),
 		0, 0, callbackNull)
 	if e.(windows.Errno) != 0 {
-		return 0, fmt.Errorf("oto: waveOutOpen error: %d", e)
+		return 0, &winmmError{
+			fname: "waveOutOpen",
+			errno: e.(windows.Errno),
+		}
 	}
 	if mmresult(r) != mmsyserrNoerror {
-		return 0, fmt.Errorf("oto: waveOutOpen error: %s", mmresult(r).String())
+		return 0, &winmmError{
+			fname:    "waveOutOpen",
+			mmresult: mmresult(r),
+		}
 	}
 	return w, nil
 }
@@ -124,11 +146,17 @@ func waveOutOpen(f *waveformatex) (uintptr, error) {
 func waveOutClose(hwo uintptr) error {
 	r, _, e := procWaveOutClose.Call(hwo)
 	if e.(windows.Errno) != 0 {
-		return fmt.Errorf("oto: waveOutClose error: %d", e)
+		return &winmmError{
+			fname: "waveOutClose",
+			errno: e.(windows.Errno),
+		}
 	}
 	// WAVERR_STILLPLAYING is ignored.
 	if mmresult(r) != mmsyserrNoerror && mmresult(r) != waveerrStillplaying {
-		return fmt.Errorf("oto: waveOutClose error: %s", mmresult(r).String())
+		return &winmmError{
+			fname:    "waveOutClose",
+			mmresult: mmresult(r),
+		}
 	}
 	return nil
 }
@@ -136,10 +164,16 @@ func waveOutClose(hwo uintptr) error {
 func waveOutPrepareHeader(hwo uintptr, pwh *wavehdr) error {
 	r, _, e := procWaveOutPrepareHeader.Call(hwo, uintptr(unsafe.Pointer(pwh)), unsafe.Sizeof(wavehdr{}))
 	if e.(windows.Errno) != 0 {
-		return fmt.Errorf("oto: waveOutPrepareHeader error: %d", e)
+		return &winmmError{
+			fname: "waveOutPrepareHeader",
+			errno: e.(windows.Errno),
+		}
 	}
 	if mmresult(r) != mmsyserrNoerror {
-		return fmt.Errorf("oto: waveOutPrepareHeader error: %s", mmresult(r).String())
+		return &winmmError{
+			fname:    "waveOutPrepareHeader",
+			mmresult: mmresult(r),
+		}
 	}
 	return nil
 }
@@ -147,10 +181,16 @@ func waveOutPrepareHeader(hwo uintptr, pwh *wavehdr) error {
 func waveOutWrite(hwo uintptr, pwh *wavehdr) error {
 	r, _, e := procWaveOutWrite.Call(hwo, uintptr(unsafe.Pointer(pwh)), unsafe.Sizeof(wavehdr{}))
 	if e.(windows.Errno) != 0 {
-		return fmt.Errorf("oto: waveOutWrite error: %d", e)
+		return &winmmError{
+			fname: "waveOutWrite",
+			errno: e.(windows.Errno),
+		}
 	}
 	if mmresult(r) != mmsyserrNoerror {
-		return fmt.Errorf("oto: waveOutWrite error: %s", mmresult(r).String())
+		return &winmmError{
+			fname:    "waveOutWrite",
+			mmresult: mmresult(r),
+		}
 	}
 	return nil
 }
