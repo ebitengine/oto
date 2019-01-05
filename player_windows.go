@@ -111,6 +111,12 @@ func (p *player) TryWrite(data []byte) (int, error) {
 	}
 
 	if err := headerToWrite.Write(p.out, p.tmp); err != nil {
+		// This error can happen when e.g. a new HDMI connection is detected (#51).
+		const errorNotFound = 1168
+		werr := err.(*winmmError)
+		if werr.fname == "waveOutWrite" && werr.errno == errorNotFound {
+			return 0, nil
+		}
 		return 0, err
 	}
 
