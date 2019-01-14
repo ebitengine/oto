@@ -16,51 +16,28 @@
 package oto
 
 import (
-	"time"
+	"io"
+	"runtime"
 )
 
-// Player is a PCM (pulse-code modulation) audio player. It implements io.Writer, use Write method
-// to play samples.
+// Player is a PCM (pulse-code modulation) audio player.
+// Player implements io.WriteCloser.
+// Use Write method to play samples.
 type Player struct {
-	driver          *driver
-	sampleRate      int
-	channelNum      int
-	bitDepthInBytes int
-	bufferSize      int
+	context *Context
+	r       *io.PipeReader
+	w       *io.PipeWriter
 }
 
-// NewPlayer creates a new, ready-to-use Player.
-//
-// The sampleRate argument specifies the number of samples that should be played during one second.
-// Usual numbers are 44100 or 48000.
-//
-// The channelNum argument specifies the number of channels. One channel is mono playback. Two
-// channels are stereo playback. No other values are supported.
-//
-// The bitDepthInBytes argument specifies the number of bytes per sample per channel. The usual value
-// is 2. Only values 1 and 2 are supported.
-//
-// The bufferSizeInBytes argument specifies the size of the buffer of the Player. This means, how
-// many bytes can Player remember before actually playing them. Bigger buffer can reduce the number
-// of Write calls, thus reducing CPU time. Smaller buffer enables more precise timing. The longest
-// delay between when samples were written and when they started playing is equal to the size of the
-// buffer.
-func NewPlayer(sampleRate, channelNum, bitDepthInBytes, bufferSizeInBytes int) (*Player, error) {
-	d, err := newDriver(sampleRate, channelNum, bitDepthInBytes, bufferSizeInBytes)
-	if err != nil {
-		return nil, err
+func newPlayer(context *Context) *Player {
+	r, w := io.Pipe()
+	p := &Player{
+		context: context,
+		r:       r,
+		w:       w,
 	}
-	return &Player{
-		driver:          d,
-		sampleRate:      sampleRate,
-		channelNum:      channelNum,
-		bitDepthInBytes: bitDepthInBytes,
-		bufferSize:      bufferSizeInBytes,
-	}, nil
-}
-
-func (p *Player) bytesPerSec() int {
-	return p.sampleRate * p.channelNum * p.bitDepthInBytes
+	runtime.SetFinalizer(p, (*Player).Close)
+	return p
 }
 
 // Write writes PCM samples to the Player.
@@ -79,33 +56,26 @@ func (p *Player) bytesPerSec() int {
 // the buffer.
 //
 // Note, that the Player won't start playing anything until the buffer is full.
-func (p *Player) Write(data []byte) (int, error) {
-	written := 0
-	for len(data) > 0 {
-		n, err := p.driver.TryWrite(data)
-		written += n
-		if err != nil {
-			return written, err
-		}
-		data = data[n:]
-		// When not all data is written, the underlying buffer is full.
-		// Mitigate the busy loop by sleeping (#10).
-		if len(data) > 0 {
-			t := time.Second * time.Duration(p.bufferSize) / time.Duration(p.bytesPerSec()) / 8
-			time.Sleep(t)
-		}
-	}
-	return written, nil
+func (p *Player) Write(buf []byte) (int, error) {
+	return p.w.Write(buf)
 }
 
 // Close closes the Player and frees any resources associated with it. The Player is no longer
 // usable after calling Close.
 func (p *Player) Close() error {
-	// Close should be wait until the buffer data is consumed (#36).
-	// This is the simplest (but ugly) fix.
-	// TODO: Implement player's Close to wait the buffer played.
-	time.Sleep(time.Second * time.Duration(p.bufferSize) / time.Duration(p.bytesPerSec()))
-	return p.driver.Close()
+	// Close the pipe writer before RemoveSource, or Read-ing in the mux takes forever.
+	if err := p.w.Close(); err != nil {
+		return err
+	}
+
+	p.context.mux.RemoveSource(p.r)
+	p.context = nil
+
+	// Close the pipe reader after RemoveSource, or ErrClosedPipe happens at Read-ing.
+	if err := p.r.Close(); err != nil {
+		return err
+	}
+	return nil
 }
 
 func max(a, b int) int {
