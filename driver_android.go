@@ -180,7 +180,7 @@ import (
 	"golang.org/x/mobile/app"
 )
 
-type player struct {
+type driver struct {
 	sampleRate     int
 	channelNum     int
 	bytesPerSample int
@@ -191,15 +191,15 @@ type player struct {
 	bufferSize     int
 }
 
-func newPlayer(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*player, error) {
-	p := &player{
+func newDriver(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*driver, error) {
+	p := &driver{
 		sampleRate:     sampleRate,
 		channelNum:     channelNum,
 		bytesPerSample: bytesPerSample,
 		chErr:          make(chan error),
 		chBuffer:       make(chan []byte),
 	}
-	runtime.SetFinalizer(p, (*player).Close)
+	runtime.SetFinalizer(p, (*driver).Close)
 
 	if err := app.RunOnJVM(func(vm, env, ctx uintptr) error {
 		audioTrack := C.jobject(0)
@@ -220,7 +220,7 @@ func newPlayer(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*
 	return p, nil
 }
 
-func (p *player) loop() {
+func (p *driver) loop() {
 	for bufInBytes := range p.chBuffer {
 		var bufInShorts []int16
 		if p.bytesPerSample == 2 {
@@ -254,7 +254,7 @@ func (p *player) loop() {
 	}
 }
 
-func (p *player) TryWrite(data []byte) (int, error) {
+func (p *driver) TryWrite(data []byte) (int, error) {
 	n := min(len(data), p.bufferSize-len(p.tmp))
 	p.tmp = append(p.tmp, data[:n]...)
 
@@ -272,7 +272,7 @@ func (p *player) TryWrite(data []byte) (int, error) {
 	return n, nil
 }
 
-func (p *player) Close() error {
+func (p *driver) Close() error {
 	if p.audioTrack == 0 {
 		return nil
 	}
