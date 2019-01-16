@@ -52,14 +52,14 @@ func (h *header) Write(waveOut uintptr, data []byte) error {
 	return nil
 }
 
-type player struct {
+type driver struct {
 	out        uintptr
 	headers    []*header
 	tmp        []byte
 	bufferSize int
 }
 
-func newPlayer(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*player, error) {
+func newDriver(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*driver, error) {
 	numBlockAlign := channelNum * bytesPerSample
 	f := &waveformatex{
 		wFormatTag:      waveFormatPCM,
@@ -75,12 +75,12 @@ func newPlayer(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*
 	}
 
 	const numBufs = 2
-	p := &player{
+	p := &driver{
 		out:        w,
 		headers:    make([]*header, numBufs),
 		bufferSize: bufferSizeInBytes,
 	}
-	runtime.SetFinalizer(p, (*player).Close)
+	runtime.SetFinalizer(p, (*driver).Close)
 	for i := range p.headers {
 		var err error
 		p.headers[i], err = newHeader(w, p.bufferSize)
@@ -91,7 +91,7 @@ func newPlayer(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*
 	return p, nil
 }
 
-func (p *player) TryWrite(data []byte) (int, error) {
+func (p *driver) TryWrite(data []byte) (int, error) {
 	n := min(len(data), max(0, p.bufferSize-len(p.tmp)))
 	p.tmp = append(p.tmp, data[:n]...)
 	if len(p.tmp) < p.bufferSize {
@@ -124,7 +124,7 @@ func (p *player) TryWrite(data []byte) (int, error) {
 	return n, nil
 }
 
-func (p *player) Close() error {
+func (p *driver) Close() error {
 	runtime.SetFinalizer(p, nil)
 	// TODO: Call waveOutUnprepareHeader here
 	if err := waveOutClose(p.out); err != nil {
