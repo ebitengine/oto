@@ -22,7 +22,7 @@ import (
 // Player is a PCM (pulse-code modulation) audio player. It implements io.Writer, use Write method
 // to play samples.
 type Player struct {
-	driver         *driver
+	player         *player
 	sampleRate     int
 	channelNum     int
 	bytesPerSample int
@@ -46,12 +46,12 @@ type Player struct {
 // delay between when samples were written and when they started playing is equal to the size of the
 // buffer.
 func NewPlayer(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*Player, error) {
-	d, err := newDriver(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes)
+	p, err := newPlayer(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes)
 	if err != nil {
 		return nil, err
 	}
 	return &Player{
-		driver:         d,
+		player:         p,
 		sampleRate:     sampleRate,
 		channelNum:     channelNum,
 		bytesPerSample: bytesPerSample,
@@ -82,7 +82,7 @@ func (p *Player) bytesPerSec() int {
 func (p *Player) Write(data []byte) (int, error) {
 	written := 0
 	for len(data) > 0 {
-		n, err := p.driver.TryWrite(data)
+		n, err := p.player.TryWrite(data)
 		written += n
 		if err != nil {
 			return written, err
@@ -105,7 +105,7 @@ func (p *Player) Close() error {
 	// This is the simplest (but ugly) fix.
 	// TODO: Implement player's Close to wait the buffer played.
 	time.Sleep(time.Second * time.Duration(p.bufferSize) / time.Duration(p.bytesPerSec()))
-	return p.driver.Close()
+	return p.player.Close()
 }
 
 func max(a, b int) int {

@@ -40,7 +40,7 @@ import (
 // As x/mobile/exp/audio/al is broken on macOS (https://github.com/golang/go/issues/15075),
 // and that doesn't support FreeBSD, use OpenAL directly here.
 
-type driver struct {
+type player struct {
 	// alContext represents a pointer to ALCcontext. The type is uintptr since the value
 	// can be 0x18 on macOS, which is invalid as a pointer value, and this might cause
 	// GC errors.
@@ -105,7 +105,7 @@ func alFormat(channelNum, bytesPerSample int) C.ALenum {
 
 const numBufs = 2
 
-func newDriver(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*driver, error) {
+func newPlayer(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*player, error) {
 	name := C.alGetString(C.ALC_DEFAULT_DEVICE_SPECIFIER)
 	d := alDevice(unsafe.Pointer(C.alcOpenDevice((*C.ALCchar)(name))))
 	if d == 0 {
@@ -129,7 +129,7 @@ func newDriver(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*
 		return nil, fmt.Errorf("oto: NewSource: %v", err)
 	}
 
-	p := &driver{
+	p := &player{
 		alContext:    c,
 		alDevice:     d,
 		alSource:     s,
@@ -139,7 +139,7 @@ func newDriver(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*
 		bufs:         make([]C.ALuint, numBufs),
 		bufferSize:   bufferSizeInBytes,
 	}
-	runtime.SetFinalizer(p, (*driver).Close)
+	runtime.SetFinalizer(p, (*player).Close)
 	C.alGenBuffers(C.ALsizei(numBufs), &p.bufs[0])
 	C.alSourcePlay(p.alSource)
 
@@ -150,7 +150,7 @@ func newDriver(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*
 	return p, nil
 }
 
-func (p *driver) TryWrite(data []byte) (int, error) {
+func (p *player) TryWrite(data []byte) (int, error) {
 	if err := p.alDevice.getError(); err != nil {
 		return 0, fmt.Errorf("oto: starting Write: %v", err)
 	}
@@ -198,7 +198,7 @@ func (p *driver) TryWrite(data []byte) (int, error) {
 	return n, nil
 }
 
-func (p *driver) Close() error {
+func (p *player) Close() error {
 	if err := p.alDevice.getError(); err != nil {
 		return fmt.Errorf("oto: starting Close: %v", err)
 	}
