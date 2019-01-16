@@ -61,7 +61,7 @@ import (
 	"unsafe"
 )
 
-type player struct {
+type driver struct {
 	handle         *C.snd_pcm_t
 	buf            []byte
 	bufSamples     int
@@ -73,8 +73,8 @@ func alsaError(err C.int) error {
 	return fmt.Errorf("oto: ALSA error: %s", C.GoString(C.snd_strerror(err)))
 }
 
-func newPlayer(sampleRate, numChans, bytesPerSample, bufferSizeInBytes int) (*player, error) {
-	p := &player{
+func newDriver(sampleRate, numChans, bytesPerSample, bufferSizeInBytes int) (*driver, error) {
+	p := &driver{
 		numChans:       numChans,
 		bytesPerSample: bytesPerSample,
 	}
@@ -123,7 +123,7 @@ func newPlayer(sampleRate, numChans, bytesPerSample, bufferSizeInBytes int) (*pl
 	return p, nil
 }
 
-func (p *player) TryWrite(data []byte) (n int, err error) {
+func (p *driver) TryWrite(data []byte) (n int, err error) {
 	bufSize := p.bufSamples * p.numChans * p.bytesPerSample
 	for len(data) > 0 {
 		toWrite := min(len(data), max(0, bufSize-len(p.buf)))
@@ -154,7 +154,7 @@ func (p *player) TryWrite(data []byte) (n int, err error) {
 	return n, nil
 }
 
-func (p *player) Close() error {
+func (p *driver) Close() error {
 	// drop the remaining unprocessed samples in the main circular buffer
 	if errCode := C.snd_pcm_drop(p.handle); errCode < 0 {
 		return alsaError(errCode)
