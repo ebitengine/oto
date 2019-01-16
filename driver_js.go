@@ -22,7 +22,7 @@ import (
 	"github.com/gopherjs/gopherwasm/js"
 )
 
-type player struct {
+type driver struct {
 	sampleRate     int
 	channelNum     int
 	bytesPerSample int
@@ -37,7 +37,7 @@ type player struct {
 
 const audioBufferSamples = 3200
 
-func newPlayer(sampleRate, channelNum, bytesPerSample, bufferSize int) (*player, error) {
+func newDriver(sampleRate, channelNum, bytesPerSample, bufferSize int) (*driver, error) {
 	class := js.Global().Get("AudioContext")
 	if class == js.Undefined() {
 		class = js.Global().Get("webkitAudioContext")
@@ -45,7 +45,7 @@ func newPlayer(sampleRate, channelNum, bytesPerSample, bufferSize int) (*player,
 	if class == js.Undefined() {
 		return nil, errors.New("oto: audio couldn't be initialized")
 	}
-	p := &player{
+	p := &driver{
 		sampleRate:     sampleRate,
 		channelNum:     channelNum,
 		bytesPerSample: bytesPerSample,
@@ -89,7 +89,7 @@ func nowInSeconds() float64 {
 	return js.Global().Get("performance").Call("now").Float() / 1000.0
 }
 
-func (p *player) TryWrite(data []byte) (int, error) {
+func (p *driver) TryWrite(data []byte) (int, error) {
 	if !p.ready {
 		return 0, nil
 	}
@@ -149,6 +149,6 @@ func (p *player) TryWrite(data []byte) (int, error) {
 	return n, nil
 }
 
-func (p *player) Close() error {
+func (p *driver) Close() error {
 	return nil
 }
