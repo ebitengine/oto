@@ -23,21 +23,21 @@ import (
 )
 
 type driver struct {
-	sampleRate     int
-	channelNum     int
-	bytesPerSample int
-	nextPos        float64
-	tmp            []byte
-	bufferSize     int
-	context        js.Value
-	lastTime       float64
-	lastAudioTime  float64
-	ready          bool
+	sampleRate      int
+	channelNum      int
+	bitDepthInBytes int
+	nextPos         float64
+	tmp             []byte
+	bufferSize      int
+	context         js.Value
+	lastTime        float64
+	lastAudioTime   float64
+	ready           bool
 }
 
 const audioBufferSamples = 3200
 
-func newDriver(sampleRate, channelNum, bytesPerSample, bufferSize int) (*driver, error) {
+func newDriver(sampleRate, channelNum, bitDepthInBytes, bufferSize int) (*driver, error) {
 	class := js.Global().Get("AudioContext")
 	if class == js.Undefined() {
 		class = js.Global().Get("webkitAudioContext")
@@ -46,11 +46,11 @@ func newDriver(sampleRate, channelNum, bytesPerSample, bufferSize int) (*driver,
 		return nil, errors.New("oto: audio couldn't be initialized")
 	}
 	p := &driver{
-		sampleRate:     sampleRate,
-		channelNum:     channelNum,
-		bytesPerSample: bytesPerSample,
-		context:        class.New(),
-		bufferSize:     max(bufferSize, audioBufferSamples*channelNum*bytesPerSample),
+		sampleRate:      sampleRate,
+		channelNum:      channelNum,
+		bitDepthInBytes: bitDepthInBytes,
+		context:         class.New(),
+		bufferSize:      max(bufferSize, audioBufferSamples*channelNum*bitDepthInBytes),
 	}
 
 	setCallback := func(event string) {
@@ -115,11 +115,11 @@ func (p *driver) TryWrite(data []byte) (int, error) {
 
 	// It's too early to enqueue a buffer.
 	// Highly likely, there are two playing buffers now.
-	if c+float64(p.bufferSize/p.bytesPerSample/p.channelNum)/float64(p.sampleRate) < p.nextPos {
+	if c+float64(p.bufferSize/p.bitDepthInBytes/p.channelNum)/float64(p.sampleRate) < p.nextPos {
 		return n, nil
 	}
 
-	le := audioBufferSamples * p.bytesPerSample * p.channelNum
+	le := audioBufferSamples * p.bitDepthInBytes * p.channelNum
 	if len(p.tmp) < le {
 		return n, nil
 	}

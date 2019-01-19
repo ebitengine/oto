@@ -22,11 +22,11 @@ import (
 // Player is a PCM (pulse-code modulation) audio player. It implements io.Writer, use Write method
 // to play samples.
 type Player struct {
-	driver         *driver
-	sampleRate     int
-	channelNum     int
-	bytesPerSample int
-	bufferSize     int
+	driver          *driver
+	sampleRate      int
+	channelNum      int
+	bitDepthInBytes int
+	bufferSize      int
 }
 
 // NewPlayer creates a new, ready-to-use Player.
@@ -37,7 +37,7 @@ type Player struct {
 // The channelNum argument specifies the number of channels. One channel is mono playback. Two
 // channels are stereo playback. No other values are supported.
 //
-// The bytesPerSample argument specifies the number of bytes per sample per channel. The usual value
+// The bitDepthInBytes argument specifies the number of bytes per sample per channel. The usual value
 // is 2. Only values 1 and 2 are supported.
 //
 // The bufferSizeInBytes argument specifies the size of the buffer of the Player. This means, how
@@ -45,22 +45,22 @@ type Player struct {
 // of Write calls, thus reducing CPU time. Smaller buffer enables more precise timing. The longest
 // delay between when samples were written and when they started playing is equal to the size of the
 // buffer.
-func NewPlayer(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*Player, error) {
-	d, err := newDriver(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes)
+func NewPlayer(sampleRate, channelNum, bitDepthInBytes, bufferSizeInBytes int) (*Player, error) {
+	d, err := newDriver(sampleRate, channelNum, bitDepthInBytes, bufferSizeInBytes)
 	if err != nil {
 		return nil, err
 	}
 	return &Player{
-		driver:         d,
-		sampleRate:     sampleRate,
-		channelNum:     channelNum,
-		bytesPerSample: bytesPerSample,
-		bufferSize:     bufferSizeInBytes,
+		driver:          d,
+		sampleRate:      sampleRate,
+		channelNum:      channelNum,
+		bitDepthInBytes: bitDepthInBytes,
+		bufferSize:      bufferSizeInBytes,
 	}, nil
 }
 
 func (p *Player) bytesPerSec() int {
-	return p.sampleRate * p.channelNum * p.bytesPerSample
+	return p.sampleRate * p.channelNum * p.bitDepthInBytes
 }
 
 // Write writes PCM samples to the Player.

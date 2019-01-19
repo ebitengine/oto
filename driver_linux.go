@@ -62,21 +62,21 @@ import (
 )
 
 type driver struct {
-	handle         *C.snd_pcm_t
-	buf            []byte
-	bufSamples     int
-	numChans       int
-	bytesPerSample int
+	handle          *C.snd_pcm_t
+	buf             []byte
+	bufSamples      int
+	numChans        int
+	bitDepthInBytes int
 }
 
 func alsaError(err C.int) error {
 	return fmt.Errorf("oto: ALSA error: %s", C.GoString(C.snd_strerror(err)))
 }
 
-func newDriver(sampleRate, numChans, bytesPerSample, bufferSizeInBytes int) (*driver, error) {
+func newDriver(sampleRate, numChans, bitDepthInBytes, bufferSizeInBytes int) (*driver, error) {
 	p := &driver{
-		numChans:       numChans,
-		bytesPerSample: bytesPerSample,
+		numChans:        numChans,
+		bitDepthInBytes: bitDepthInBytes,
 	}
 
 	// open a default ALSA audio device for blocking stream playback
@@ -86,21 +86,21 @@ func newDriver(sampleRate, numChans, bytesPerSample, bufferSizeInBytes int) (*dr
 
 	// bufferSize is the total size of the main circular buffer fullness of this buffer
 	// oscilates somewhere between bufferSize and bufferSize-periodSize
-	bufferSize := C.snd_pcm_uframes_t(bufferSizeInBytes / (numChans * bytesPerSample))
+	bufferSize := C.snd_pcm_uframes_t(bufferSizeInBytes / (numChans * bitDepthInBytes))
 	// periodSize is the number of samples that will be taken from the main circular
 	// buffer at once, we leave this value to bufferSize, because ALSA will change that
 	// to the maximum viable number, obviously lower than bufferSize
 	periodSize := bufferSize
 
-	// choose the correct sample format according to bytesPerSamples
+	// choose the correct sample format according to bitDepthInBytes
 	var format C.snd_pcm_format_t
-	switch bytesPerSample {
+	switch bitDepthInBytes {
 	case 1:
 		format = C.SND_PCM_FORMAT_S8
 	case 2:
 		format = C.SND_PCM_FORMAT_S16_LE
 	default:
-		panic(fmt.Errorf("oto: bytesPerSample must be 1 or 2, got %d", bytesPerSample))
+		panic(fmt.Errorf("oto: bitDepthInBytes must be 1 or 2, got %d", bitDepthInBytes))
 	}
 
 	// set the device hardware parameters according to sampleRate, numChans, format, bufferSize
@@ -124,7 +124,7 @@ func newDriver(sampleRate, numChans, bytesPerSample, bufferSizeInBytes int) (*dr
 }
 
 func (p *driver) TryWrite(data []byte) (n int, err error) {
-	bufSize := p.bufSamples * p.numChans * p.bytesPerSample
+	bufSize := p.bufSamples * p.numChans * p.bitDepthInBytes
 	for len(data) > 0 {
 		toWrite := min(len(data), max(0, bufSize-len(p.buf)))
 		p.buf = append(p.buf, data[:toWrite]...)
@@ -149,7 +149,7 @@ func (p *driver) TryWrite(data []byte) (n int, err error) {
 			// an error occured while writing samples
 			return 0, alsaError(C.int(wrote))
 		}
-		p.buf = p.buf[int(wrote)*p.numChans*p.bytesPerSample:]
+		p.buf = p.buf[int(wrote)*p.numChans*p.bitDepthInBytes:]
 	}
 	return n, nil
 }
