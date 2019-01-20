@@ -59,14 +59,14 @@ type driver struct {
 	bufferSize int
 }
 
-func newDriver(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*driver, error) {
-	numBlockAlign := channelNum * bytesPerSample
+func newDriver(sampleRate, channelNum, bitDepthInBytes, bufferSizeInBytes int) (*driver, error) {
+	numBlockAlign := channelNum * bitDepthInBytes
 	f := &waveformatex{
 		wFormatTag:      waveFormatPCM,
 		nChannels:       uint16(channelNum),
 		nSamplesPerSec:  uint32(sampleRate),
 		nAvgBytesPerSec: uint32(sampleRate * numBlockAlign),
-		wBitsPerSample:  uint16(bytesPerSample * 8),
+		wBitsPerSample:  uint16(bitDepthInBytes * 8),
 		nBlockAlign:     uint16(numBlockAlign),
 	}
 	w, err := waveOutOpen(f)

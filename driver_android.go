@@ -24,7 +24,7 @@ static jclass android_media_AudioManager;
 static jclass android_media_AudioTrack;
 
 static char* initAudioTrack(uintptr_t java_vm, uintptr_t jni_env,
-    int sampleRate, int channelNum, int bytesPerSample, jobject* audioTrack, int bufferSize) {
+    int sampleRate, int channelNum, int bitDepthInBytes, jobject* audioTrack, int bufferSize) {
   JavaVM* vm = (JavaVM*)java_vm;
   JNIEnv* env = (JNIEnv*)jni_env;
 
@@ -78,7 +78,7 @@ static char* initAudioTrack(uintptr_t java_vm, uintptr_t jni_env,
   }
 
   jint encoding = android_media_AudioFormat_ENCODING_PCM_8BIT;
-  switch (bytesPerSample) {
+  switch (bitDepthInBytes) {
   case 1:
     encoding = android_media_AudioFormat_ENCODING_PCM_8BIT;
     break;
@@ -86,7 +86,7 @@ static char* initAudioTrack(uintptr_t java_vm, uintptr_t jni_env,
     encoding = android_media_AudioFormat_ENCODING_PCM_16BIT;
     break;
   default:
-    return "invalid bytesPerSample";
+    return "invalid bitDepthInBytes";
   }
 
   const jobject tmpAudioTrack =
@@ -107,13 +107,13 @@ static char* initAudioTrack(uintptr_t java_vm, uintptr_t jni_env,
 }
 
 static char* writeToAudioTrack(uintptr_t java_vm, uintptr_t jni_env,
-    jobject audioTrack, int bytesPerSample, void* data, int length) {
+    jobject audioTrack, int bitDepthInBytes, void* data, int length) {
   JavaVM* vm = (JavaVM*)java_vm;
   JNIEnv* env = (JNIEnv*)jni_env;
 
   jbyteArray arrInBytes;
   jshortArray arrInShorts;
-  switch (bytesPerSample) {
+  switch (bitDepthInBytes) {
   case 1:
     arrInBytes = (*env)->NewByteArray(env, length);
     (*env)->SetByteArrayRegion(env, arrInBytes, 0, length, data);
@@ -133,7 +133,7 @@ static char* writeToAudioTrack(uintptr_t java_vm, uintptr_t jni_env,
   if (!write2) {
     write2 = (*env)->GetMethodID(env, android_media_AudioTrack, "write", "([SII)I");
   }
-  switch (bytesPerSample) {
+  switch (bitDepthInBytes) {
   case 1:
     result = (*env)->CallIntMethod(env, audioTrack, write1, arrInBytes, 0, length);
     (*env)->DeleteLocalRef(env, arrInBytes);
@@ -181,23 +181,23 @@ import (
 )
 
 type driver struct {
-	sampleRate     int
-	channelNum     int
-	bytesPerSample int
-	audioTrack     C.jobject
-	chErr          chan error
-	chBuffer       chan []byte
-	tmp            []byte
-	bufferSize     int
+	sampleRate      int
+	channelNum      int
+	bitDepthInBytes int
+	audioTrack      C.jobject
+	chErr           chan error
+	chBuffer        chan []byte
+	tmp             []byte
+	bufferSize      int
 }
 
-func newDriver(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*driver, error) {
+func newDriver(sampleRate, channelNum, bitDepthInBytes, bufferSizeInBytes int) (*driver, error) {
 	p := &driver{
-		sampleRate:     sampleRate,
-		channelNum:     channelNum,
-		bytesPerSample: bytesPerSample,
-		chErr:          make(chan error),
-		chBuffer:       make(chan []byte),
+		sampleRate:      sampleRate,
+		channelNum:      channelNum,
+		bitDepthInBytes: bitDepthInBytes,
+		chErr:           make(chan error),
+		chBuffer:        make(chan []byte),
 	}
 	runtime.SetFinalizer(p, (*driver).Close)
 
@@ -205,7 +205,7 @@ func newDriver(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*
 		audioTrack := C.jobject(0)
 		bufferSize := C.int(bufferSizeInBytes)
 		if msg := C.initAudioTrack(C.uintptr_t(vm), C.uintptr_t(env),
-			C.int(sampleRate), C.int(channelNum), C.int(bytesPerSample),
+			C.int(sampleRate), C.int(channelNum), C.int(bitDepthInBytes),
 			&audioTrack, bufferSize); msg != nil {
 			return errors.New("oto: initAutioTrack failed: " + C.GoString(msg))
 		}
@@ -223,7 +223,7 @@ func newDriver(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*
 func (p *driver) loop() {
 	for bufInBytes := range p.chBuffer {
 		var bufInShorts []int16
-		if p.bytesPerSample == 2 {
+		if p.bitDepthInBytes == 2 {
 			bufInShorts = make([]int16, len(bufInBytes)/2)
 			for i := 0; i < len(bufInShorts); i++ {
 				bufInShorts[i] = int16(bufInBytes[2*i]) | (int16(bufInBytes[2*i+1]) << 8)
@@ -231,14 +231,14 @@ func (p *driver) loop() {
 		}
 		if err := app.RunOnJVM(func(vm, env, ctx uintptr) error {
 			msg := (*C.char)(nil)
-			switch p.bytesPerSample {
+			switch p.bitDepthInBytes {
 			case 1:
 				msg = C.writeToAudioTrack(C.uintptr_t(vm), C.uintptr_t(env),
-					p.audioTrack, C.int(p.bytesPerSample),
+					p.audioTrack, C.int(p.bitDepthInBytes),
 					unsafe.Pointer(&bufInBytes[0]), C.int(len(bufInBytes)))
 			case 2:
 				msg = C.writeToAudioTrack(C.uintptr_t(vm), C.uintptr_t(env),
-					p.audioTrack, C.int(p.bytesPerSample),
+					p.audioTrack, C.int(p.bitDepthInBytes),
 					unsafe.Pointer(&bufInShorts[0]), C.int(len(bufInShorts)))
 			default:
 				panic("not reach")

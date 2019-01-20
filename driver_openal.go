@@ -89,23 +89,23 @@ func (a alDevice) cALCDevice() *C.ALCdevice {
 	return (*C.struct_ALCdevice_struct)(unsafe.Pointer(a))
 }
 
-func alFormat(channelNum, bytesPerSample int) C.ALenum {
+func alFormat(channelNum, bitDepthInBytes int) C.ALenum {
 	switch {
-	case channelNum == 1 && bytesPerSample == 1:
+	case channelNum == 1 && bitDepthInBytes == 1:
 		return C.AL_FORMAT_MONO8
-	case channelNum == 1 && bytesPerSample == 2:
+	case channelNum == 1 && bitDepthInBytes == 2:
 		return C.AL_FORMAT_MONO16
-	case channelNum == 2 && bytesPerSample == 1:
+	case channelNum == 2 && bitDepthInBytes == 1:
 		return C.AL_FORMAT_STEREO8
-	case channelNum == 2 && bytesPerSample == 2:
+	case channelNum == 2 && bitDepthInBytes == 2:
 		return C.AL_FORMAT_STEREO16
 	}
-	panic(fmt.Sprintf("oto: invalid channel num (%d) or bytes per sample (%d)", channelNum, bytesPerSample))
+	panic(fmt.Sprintf("oto: invalid channel num (%d) or bytes per sample (%d)", channelNum, bitDepthInBytes))
 }
 
 const numBufs = 2
 
-func newDriver(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*driver, error) {
+func newDriver(sampleRate, channelNum, bitDepthInBytes, bufferSizeInBytes int) (*driver, error) {
 	name := C.alGetString(C.ALC_DEFAULT_DEVICE_SPECIFIER)
 	d := alDevice(unsafe.Pointer(C.alcOpenDevice((*C.ALCchar)(name))))
 	if d == 0 {
@@ -135,7 +135,7 @@ func newDriver(sampleRate, channelNum, bytesPerSample, bufferSizeInBytes int) (*
 		alSource:     s,
 		alDeviceName: C.GoString((*C.char)(name)),
 		sampleRate:   sampleRate,
-		alFormat:     alFormat(channelNum, bytesPerSample),
+		alFormat:     alFormat(channelNum, bitDepthInBytes),
 		bufs:         make([]C.ALuint, numBufs),
 		bufferSize:   bufferSizeInBytes,
 	}
