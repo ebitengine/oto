@@ -128,6 +128,7 @@ func (m *Mux) Read(buf []byte) (int, error) {
 
 func (m *Mux) Close() error {
 	m.m.Lock()
+	runtime.SetFinalizer(m, nil)
 	m.readers = nil
 	m.closed = true
 	m.m.Unlock()

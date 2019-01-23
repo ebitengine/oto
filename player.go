@@ -63,6 +63,13 @@ func (p *Player) Write(buf []byte) (int, error) {
 // Close closes the Player and frees any resources associated with it. The Player is no longer
 // usable after calling Close.
 func (p *Player) Close() error {
+	runtime.SetFinalizer(p, nil)
+
+	// Already closed
+	if p.context == nil {
+		return nil
+	}
+
 	// Close the pipe writer before RemoveSource, or Read-ing in the mux takes forever.
 	if err := p.w.Close(); err != nil {
 		return err
