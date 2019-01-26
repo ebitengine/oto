@@ -140,6 +140,9 @@ func (m *Mux) AddSource(source io.Reader) {
 	if m.closed {
 		panic("mux: already closed")
 	}
+	if _, ok := m.readers[source]; ok {
+		panic("mux: the io.Reader cannot be added multiple times")
+	}
 	m.readers[source] = bufio.NewReaderSize(source, 256)
 	m.m.Unlock()
 }
@@ -148,6 +151,9 @@ func (m *Mux) RemoveSource(source io.Reader) {
 	m.m.Lock()
 	if m.closed {
 		panic("mux: already closed")
+	}
+	if _, ok := m.readers[source]; !ok {
+		panic("mux: the io.Reader is already removed")
 	}
 	delete(m.readers, source)
 	m.m.Unlock()
