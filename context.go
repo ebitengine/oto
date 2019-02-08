@@ -103,6 +103,8 @@ func (c *Context) NewPlayer() *Player {
 // Close closes the Context and its Players and frees any resources associated with it. The Context is no longer
 // usable after calling Close.
 func (c *Context) Close() error {
+	theContext = nil
+
 	if err := c.driverWriter.Close(); err != nil {
 		return err
 	}
