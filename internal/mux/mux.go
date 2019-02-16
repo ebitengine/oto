@@ -50,7 +50,14 @@ func (m *Mux) Read(buf []byte) (int, error) {
 	}
 
 	if len(m.readers) == 0 {
-		return 0, nil
+		// When there is no reader, Read should return with 0s or Read caller can block forever.
+		// See https://github.com/hajimehoshi/go-mp3/issues/28
+		n := 256
+		if len(buf) < 256 {
+			n = len(buf)
+		}
+		copy(buf, make([]byte, n))
+		return n, nil
 	}
 
 	bs := m.channelNum * m.bitDepthInBytes

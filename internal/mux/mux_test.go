@@ -121,3 +121,22 @@ func TestMux16Bits(t *testing.T) {
 		m.Close()
 	}
 }
+
+func TestNoReader(t *testing.T) {
+	m := mux.New(2, 2)
+	buf := make([]byte, 4096)
+	for i := range buf {
+		buf[i] = 0xff
+	}
+
+	n, err := io.ReadFull(m, buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != len(buf) {
+		t.Errorf("got: %d, want: %d", n, len(buf))
+	}
+	if !bytes.Equal(buf, make([]byte, len(buf))) {
+		t.Errorf("got: %v, want: %v", buf, make([]byte, len(buf)))
+	}
+}
