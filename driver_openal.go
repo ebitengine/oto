@@ -133,7 +133,7 @@ func newDriver(sampleRate, channelNum, bitDepthInBytes, bufferSizeInBytes int) (
 	if d == 0 {
 		return nil, fmt.Errorf("oto: alcOpenDevice must not return null")
 	}
-	c := alContext(uintptr(C._alcCreateContext(C.uintptr_t(d), nil)))
+	c := alContext(C._alcCreateContext(C.uintptr_t(d), nil))
 	if c == 0 {
 		return nil, fmt.Errorf("oto: alcCreateContext must not return null")
 	}
