@@ -21,6 +21,8 @@ package oto
 // #cgo darwin  LDFLAGS: -framework OpenAL
 // #cgo freebsd LDFLAGS: -lopenal
 //
+// #include <stdint.h>
+//
 // #ifdef __APPLE__
 // #include <OpenAL/al.h>
 // #include <OpenAL/alc.h>
@@ -28,6 +30,30 @@ package oto
 // #include <AL/al.h>
 // #include <AL/alc.h>
 // #endif
+//
+// static uintptr_t _alcOpenDevice(const ALCchar* name) {
+//   return (uintptr_t)alcOpenDevice(name);
+// }
+//
+// static ALCboolean _alcCloseDevice(uintptr_t device) {
+//   return alcCloseDevice((void*)device);
+// }
+//
+// static uintptr_t _alcCreateContext(uintptr_t device, const ALCint* attrList) {
+//   return (uintptr_t)alcCreateContext((void*)device, attrList);
+// }
+//
+// static ALCenum _alcGetError(uintptr_t device) {
+//   return alcGetError((void*)device);
+// }
+//
+// static void _alcMakeContextCurrent(uintptr_t context) {
+//   alcMakeContextCurrent((void*)context);
+// }
+//
+// static void _alcDestroyContext(uintptr_t context) {
+//   alcDestroyContext((void*)context);
+// }
 import "C"
 
 import (
@@ -57,17 +83,17 @@ type driver struct {
 	bufferSize int
 }
 
+// alContext is a pointer to OpenAL context.
+// The value is not unsafe.Pointer for C.ALCcontext but uintptr,
+// because device pointer value can be an invalid value as a pointer on macOS,
+// and Cgo pointer checker complains (#65).
 type alContext uintptr
 
-func (a alContext) cALCcontext() *C.ALCcontext {
-	return (*C.struct_ALCcontext_struct)(unsafe.Pointer(a))
-}
-
+// alDevice is a pointer to OpenAL device.
 type alDevice uintptr
 
 func (a alDevice) getError() error {
-	c := C.alcGetError(a.cALCDevice())
-	switch c {
+	switch c := C._alcGetError(C.uintptr_t(a)); c {
 	case C.ALC_NO_ERROR:
 		return nil
 	case C.ALC_INVALID_DEVICE:
@@ -83,10 +109,6 @@ func (a alDevice) getError() error {
 	default:
 		return fmt.Errorf("OpenAL error: code %d", c)
 	}
-}
-
-func (a alDevice) cALCDevice() *C.ALCdevice {
-	return (*C.struct_ALCdevice_struct)(unsafe.Pointer(a))
 }
 
 func alFormat(channelNum, bitDepthInBytes int) C.ALenum {
@@ -107,18 +129,18 @@ const numBufs = 2
 
 func newDriver(sampleRate, channelNum, bitDepthInBytes, bufferSizeInBytes int) (*driver, error) {
 	name := C.alGetString(C.ALC_DEFAULT_DEVICE_SPECIFIER)
-	d := alDevice(unsafe.Pointer(C.alcOpenDevice((*C.ALCchar)(name))))
+	d := alDevice(C._alcOpenDevice((*C.ALCchar)(name)))
 	if d == 0 {
 		return nil, fmt.Errorf("oto: alcOpenDevice must not return null")
 	}
-	c := alContext(unsafe.Pointer(C.alcCreateContext((*C.struct_ALCdevice_struct)(unsafe.Pointer(d)), nil)))
+	c := alContext(uintptr(C._alcCreateContext(C.uintptr_t(d), nil)))
 	if c == 0 {
 		return nil, fmt.Errorf("oto: alcCreateContext must not return null")
 	}
 
 	// Don't check getError until making the current context is done.
 	// Linux might fail this check even though it succeeds (hajimehoshi/ebiten#204).
-	C.alcMakeContextCurrent(c.cALCcontext())
+	C._alcMakeContextCurrent(C.uintptr_t(c))
 	if err := d.getError(); err != nil {
 		return nil, fmt.Errorf("oto: Activate: %v", err)
 	}
@@ -219,13 +241,13 @@ func (p *driver) Close() error {
 	if len(p.bufs) != 0 {
 		C.alDeleteBuffers(C.ALsizei(numBufs), &p.bufs[0])
 	}
-	C.alcDestroyContext(p.alContext.cALCcontext())
+	C._alcDestroyContext(C.uintptr_t(p.alContext))
 
 	if err := p.alDevice.getError(); err != nil {
 		return fmt.Errorf("oto: CloseDevice: %v", err)
 	}
 
-	b := C.alcCloseDevice(p.alDevice.cALCDevice())
+	b := C._alcCloseDevice(C.uintptr_t(p.alDevice))
 	if b == C.ALC_FALSE {
 		return fmt.Errorf("oto: CloseDevice: %s failed to close", p.alDeviceName)
 	}
