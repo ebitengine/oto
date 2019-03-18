@@ -19,7 +19,8 @@
 package oto
 
 /*
-#cgo LDFLAGS: -lasound
+#cgo pkg-config: alsa
+
 #include <alsa/asoundlib.h>
 
 static void check(int *err, int newErr) {
