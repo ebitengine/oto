@@ -10,6 +10,7 @@ A low-level library to play sound. This package offers `io.WriteCloser` to play 
 * macOS
 * Linux
 * FreeBSD
+* OpenBSD
 * Android
 * iOS
 * Web browsers ([GopherJS](https://github.com/gopherjs/gopherjs) and WebAssembly)
@@ -32,4 +33,12 @@ OpenAL is required. Install openal-soft:
 
 ```sh
 pkg install openal-soft
+```
+
+### OpenBSD
+
+OpenAL is required. Install openal:
+
+```sh
+pkg_add -r openal
 ```
