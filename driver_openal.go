@@ -20,8 +20,7 @@ package oto
 
 // #cgo darwin  LDFLAGS: -framework OpenAL
 // #cgo freebsd LDFLAGS: -lopenal
-// #cgo openbsd LDFLAGS: -L/usr/local/lib/ -lopenal
-// #cgo openbsd CFLAGS: -I/usr/local/include/
+// #cgo openbsd pkg-config: openal
 //
 // #include <stdint.h>
 //
