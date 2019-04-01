@@ -23,6 +23,12 @@ import (
 	"github.com/hajimehoshi/oto/internal/mux"
 )
 
+// Context is the main object in Oto. It interacts with the audio drivers.
+//
+// To play sound with Oto, first create a context. Then use the context to create
+// an arbitrary number of players. Then use the players to play sound.
+//
+// There can only be one context at any time. Closing a context and opening a new one is allowed.
 type Context struct {
 	driverWriter *driverWriter
 	mux          *mux.Mux
@@ -157,8 +163,5 @@ func (d *driverWriter) Close() error {
 	// This is the simplest (but ugly) fix.
 	// TODO: Implement player's Close to wait the buffer played.
 	time.Sleep(time.Second * time.Duration(d.bufferSize) / time.Duration(d.bytesPerSecond))
-	if err := d.driver.Close(); err != nil {
-		return err
-	}
-	return nil
+	return d.driver.Close()
 }

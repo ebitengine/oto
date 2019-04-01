@@ -31,6 +31,7 @@ type Mux struct {
 	m sync.RWMutex
 }
 
+// New creates a new Mux with the specified number of channels and bit depth.
 func New(channelNum, bitDepthInBytes int) *Mux {
 	m := &Mux{
 		channelNum:      channelNum,
@@ -41,6 +42,11 @@ func New(channelNum, bitDepthInBytes int) *Mux {
 	return m
 }
 
+// Read reads data from all of its readers, interprets it as samples with the bit depth
+// specified during its creation, then adds all of the samples together and fills the buf
+// slice with the result of this.
+//
+// If there are no readers, Read fills in some zeros to prevent a program from freezing.
 func (m *Mux) Read(buf []byte) (int, error) {
 	m.m.Lock()
 	defer m.m.Unlock()
@@ -133,6 +139,7 @@ func (m *Mux) Read(buf []byte) (int, error) {
 	return l, nil
 }
 
+// Close invalidates the Mux. It doesn't close its readers.
 func (m *Mux) Close() error {
 	m.m.Lock()
 	runtime.SetFinalizer(m, nil)
@@ -142,6 +149,7 @@ func (m *Mux) Close() error {
 	return nil
 }
 
+// AddSource adds a reader to the Mux.
 func (m *Mux) AddSource(source io.Reader) {
 	m.m.Lock()
 	if m.closed {
@@ -154,6 +162,7 @@ func (m *Mux) AddSource(source io.Reader) {
 	m.m.Unlock()
 }
 
+// RemoveSource removes a reader from the Mux.
 func (m *Mux) RemoveSource(source io.Reader) {
 	m.m.Lock()
 	if m.closed {

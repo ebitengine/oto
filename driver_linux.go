@@ -147,7 +147,7 @@ func (p *driver) TryWrite(data []byte) (n int, err error) {
 			continue
 		}
 		if wrote < 0 {
-			// an error occured while writing samples
+			// an error occurred while writing samples
 			return 0, alsaError(C.int(wrote))
 		}
 		p.buf = p.buf[int(wrote)*p.numChans*p.bitDepthInBytes:]
