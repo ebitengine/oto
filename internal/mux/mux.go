@@ -45,6 +45,9 @@ func New(channelNum, bitDepthInBytes int) *Mux {
 // Read reads data from all of its readers, interprets it as samples with the bit depth
 // specified during its creation, then adds all of the samples together and fills the buf
 // slice with the result of this.
+//
+// If there are no reads, or in case all readers got drained before fully filling buf,
+// Read fills the rest of buf with zeros. Therefore, Mux never drains.
 func (m *Mux) Read(buf []byte) (int, error) {
 	m.m.Lock()
 	defer m.m.Unlock()
