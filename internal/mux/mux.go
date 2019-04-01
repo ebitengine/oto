@@ -137,7 +137,7 @@ func (m *Mux) Read(buf []byte) (int, error) {
 	return l, nil
 }
 
-// Close invalidaes the Mux. It doesn't close its readers.
+// Close invalidates the Mux. It doesn't close its readers.
 func (m *Mux) Close() error {
 	m.m.Lock()
 	runtime.SetFinalizer(m, nil)
