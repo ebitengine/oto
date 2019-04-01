@@ -79,10 +79,7 @@ func (p *Player) Close() error {
 	p.context = nil
 
 	// Close the pipe reader after RemoveSource, or ErrClosedPipe happens at Read-ing.
-	if err := p.r.Close(); err != nil {
-		return err
-	}
-	return nil
+	return p.r.Close()
 }
 
 func max(a, b int) int {
