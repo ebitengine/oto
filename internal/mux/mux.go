@@ -47,7 +47,8 @@ func New(channelNum, bitDepthInBytes int) *Mux {
 // slice with the result of this.
 //
 // If there are no readers, or in case all readers got drained before fully filling buf,
-// Read fills the rest of buf with zeros. Therefore, Mux never drains.
+// Read fills the rest of buf with zeros. Therefore, Mux never drains on its own, except
+// when closed.
 func (m *Mux) Read(buf []byte) (int, error) {
 	m.m.Lock()
 	defer m.m.Unlock()
