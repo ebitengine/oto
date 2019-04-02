@@ -18,6 +18,7 @@ package oto
 
 import (
 	"fmt"
+	"runtime"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -128,6 +129,7 @@ func waveOutOpen(f *waveformatex) (uintptr, error) {
 	var w uintptr
 	r, _, e := procWaveOutOpen.Call(uintptr(unsafe.Pointer(&w)), waveMapper, uintptr(unsafe.Pointer(f)),
 		0, 0, callbackNull)
+	runtime.KeepAlive(f)
 	if e.(windows.Errno) != 0 {
 		return 0, &winmmError{
 			fname: "waveOutOpen",
@@ -163,6 +165,7 @@ func waveOutClose(hwo uintptr) error {
 
 func waveOutPrepareHeader(hwo uintptr, pwh *wavehdr) error {
 	r, _, e := procWaveOutPrepareHeader.Call(hwo, uintptr(unsafe.Pointer(pwh)), unsafe.Sizeof(wavehdr{}))
+	runtime.KeepAlive(pwh)
 	if e.(windows.Errno) != 0 {
 		return &winmmError{
 			fname: "waveOutPrepareHeader",
@@ -180,6 +183,7 @@ func waveOutPrepareHeader(hwo uintptr, pwh *wavehdr) error {
 
 func waveOutWrite(hwo uintptr, pwh *wavehdr) error {
 	r, _, e := procWaveOutWrite.Call(hwo, uintptr(unsafe.Pointer(pwh)), unsafe.Sizeof(wavehdr{}))
+	runtime.KeepAlive(pwh)
 	if e.(windows.Errno) != 0 {
 		return &winmmError{
 			fname: "waveOutWrite",
