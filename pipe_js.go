@@ -58,7 +58,7 @@ func (r *pipeReader) Close() error {
 
 type pipeWriter struct {
 	buf      []byte
-	provided   chan struct{}
+	provided chan struct{}
 	consumed chan struct{}
 }
 
