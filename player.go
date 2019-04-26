@@ -25,12 +25,12 @@ import (
 // Use Write method to play samples.
 type Player struct {
 	context *Context
-	r       *io.PipeReader
-	w       *io.PipeWriter
+	r       io.ReadCloser
+	w       io.WriteCloser
 }
 
 func newPlayer(context *Context) *Player {
-	r, w := io.Pipe()
+	r, w := pipe()
 	p := &Player{
 		context: context,
 		r:       r,
