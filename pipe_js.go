@@ -39,7 +39,8 @@ type pipeReader struct {
 }
 
 func (r *pipeReader) Read(buf []byte) (int, error) {
-	// If this returns 0, bufio.Reader might be blocked forever on browsers.
+	// If this returns 0, the caller might block forever on browsers.
+	// For example, bufio.Reader tries to Read until any byte can be read, but context switch never happens on browsers.
 	for len(r.w.buf) == 0 {
 		<-r.w.provided
 	}
