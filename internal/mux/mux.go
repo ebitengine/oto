@@ -88,7 +88,7 @@ func (m *Mux) Read(buf []byte) (int, error) {
 	}
 
 	for _, p := range m.readers {
-		if _, err := p.Discard(l); err != nil {
+		if _, err := p.Discard(l); err != nil && err != io.EOF {
 			return 0, err
 		}
 	}
