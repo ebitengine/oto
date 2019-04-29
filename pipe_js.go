@@ -25,10 +25,8 @@ const pipeBufSize = 4096
 
 // pipe returns a set of an io.ReadCloser and an io.WriteCloser.
 //
-// This is basically same as io.Pipe, but is implemented in more effient way under these assumptions:
-// 1) These works on a single thread environment so that locks are not required.
-// 2) Reading and writing happen equally.
-// 3) Closing doesn't have to do anything special.
+// This is basically same as io.Pipe, but is implemented in more effient way under the assumption that
+// this works on a single thread environment so that locks are not required.
 func pipe() (io.ReadCloser, io.WriteCloser) {
 	w := &pipeWriter{}
 	r := &pipeReader{w: w}
@@ -36,13 +34,26 @@ func pipe() (io.ReadCloser, io.WriteCloser) {
 }
 
 type pipeReader struct {
-	w *pipeWriter
+	w      *pipeWriter
+	closed bool
 }
 
 func (r *pipeReader) Read(buf []byte) (int, error) {
-	// If this returns 0, the caller might block forever on browsers.
+	if r.closed {
+		return 0, io.ErrClosedPipe
+	}
+	if r.w.closed && len(r.w.buf) == 0 {
+		return 0, io.EOF
+	}
+	// If this returns 0 with no errors, the caller might block forever on browsers.
 	// For example, bufio.Reader tries to Read until any byte can be read, but context switch never happens on browsers.
 	for len(r.w.buf) == 0 {
+		if r.closed {
+			return 0, io.ErrClosedPipe
+		}
+		if r.w.closed && len(r.w.buf) == 0 {
+			return 0, io.EOF
+		}
 		runtime.Gosched()
 	}
 	n := copy(buf, r.w.buf)
@@ -51,15 +62,23 @@ func (r *pipeReader) Read(buf []byte) (int, error) {
 }
 
 func (r *pipeReader) Close() error {
+	r.closed = true
 	return nil
 }
 
 type pipeWriter struct {
-	buf []byte
+	buf    []byte
+	closed bool
 }
 
 func (w *pipeWriter) Write(buf []byte) (int, error) {
+	if w.closed {
+		return 0, io.ErrClosedPipe
+	}
 	for len(w.buf) >= pipeBufSize {
+		if w.closed {
+			return 0, io.ErrClosedPipe
+		}
 		runtime.Gosched()
 	}
 	w.buf = append(w.buf, buf...)
@@ -67,5 +86,6 @@ func (w *pipeWriter) Write(buf []byte) (int, error) {
 }
 
 func (w *pipeWriter) Close() error {
+	w.closed = true
 	return nil
 }
