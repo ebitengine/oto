@@ -84,6 +84,8 @@ func (m *Mux) Read(buf []byte) (int, error) {
 	}
 
 	if l == 0 {
+		// Returning 0 without error can block the caller of Read forever. Call Gosched to encourage context switching.
+		runtime.Gosched()
 		return 0, nil
 	}
 
