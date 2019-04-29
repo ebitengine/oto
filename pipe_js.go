@@ -30,6 +30,7 @@ const pipeBufSize = 4096
 func pipe() (io.ReadCloser, io.WriteCloser) {
 	w := &pipeWriter{}
 	r := &pipeReader{w: w}
+	w.r = r
 	return r, w
 }
 
@@ -67,15 +68,22 @@ func (r *pipeReader) Close() error {
 }
 
 type pipeWriter struct {
+	r      *pipeReader
 	buf    []byte
 	closed bool
 }
 
 func (w *pipeWriter) Write(buf []byte) (int, error) {
+	if w.r.closed {
+		return 0, io.ErrClosedPipe
+	}
 	if w.closed {
 		return 0, io.ErrClosedPipe
 	}
 	for len(w.buf) >= pipeBufSize {
+		if w.r.closed {
+			return 0, io.ErrClosedPipe
+		}
 		if w.closed {
 			return 0, io.ErrClosedPipe
 		}
