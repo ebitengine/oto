@@ -18,6 +18,7 @@ package oto
 
 import (
 	"io"
+	"runtime"
 )
 
 const pipeBufSize = 4096
@@ -29,7 +30,7 @@ const pipeBufSize = 4096
 // 2) Reading and writing happen equally.
 // 3) Closing doesn't have to do anything special.
 func pipe() (io.ReadCloser, io.WriteCloser) {
-	w := &pipeWriter{provided: make(chan struct{}), consumed: make(chan struct{})}
+	w := &pipeWriter{}
 	r := &pipeReader{w: w}
 	return r, w
 }
@@ -42,14 +43,10 @@ func (r *pipeReader) Read(buf []byte) (int, error) {
 	// If this returns 0, the caller might block forever on browsers.
 	// For example, bufio.Reader tries to Read until any byte can be read, but context switch never happens on browsers.
 	for len(r.w.buf) == 0 {
-		<-r.w.provided
+		runtime.Gosched()
 	}
-	notify := len(r.w.buf) > pipeBufSize
 	n := copy(buf, r.w.buf)
 	r.w.buf = r.w.buf[n:]
-	if notify {
-		r.w.consumed <- struct{}{}
-	}
 	return n, nil
 }
 
@@ -58,20 +55,14 @@ func (r *pipeReader) Close() error {
 }
 
 type pipeWriter struct {
-	buf      []byte
-	provided chan struct{}
-	consumed chan struct{}
+	buf []byte
 }
 
 func (w *pipeWriter) Write(buf []byte) (int, error) {
-	for len(w.buf) > pipeBufSize {
-		<-w.consumed
+	for len(w.buf) >= pipeBufSize {
+		runtime.Gosched()
 	}
-	notify := len(w.buf) == 0
 	w.buf = append(w.buf, buf...)
-	if notify {
-		w.provided <- struct{}{}
-	}
 	return len(buf), nil
 }
 
