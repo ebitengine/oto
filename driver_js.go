@@ -60,6 +60,11 @@ func newDriver(sampleRate, channelNum, bitDepthInBytes, bufferSize int) (*driver
 				p.ready = true
 			}
 			js.Global().Get("document").Call("removeEventListener", event, f)
+			// Not sure it is safe to call Release inside the same function.
+			// Use goroutine just in case.
+			go func() {
+				f.Release()
+			}()
 			return nil
 		})
 		js.Global().Get("document").Call("addEventListener", event, f)
