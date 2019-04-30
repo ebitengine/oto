@@ -18,7 +18,6 @@ package oto
 
 import (
 	"io"
-	"time"
 )
 
 const pipeBufSize = 4096
@@ -27,75 +26,82 @@ const pipeBufSize = 4096
 //
 // This is basically same as io.Pipe, but is implemented in more effient way under the assumption that
 // this works on a single thread environment so that locks are not required.
-func pipe(bytesPerSecond int) (io.ReadCloser, io.WriteCloser) {
-	d := time.Second * pipeBufSize / time.Duration(bytesPerSecond) / 2
-	w := &pipeWriter{sleepDuration: d}
-	r := &pipeReader{w: w}
+func pipe() (io.ReadCloser, io.WriteCloser) {
+	w := &pipeWriter{
+		consumed: make(chan struct{}),
+		provided: make(chan struct{}),
+		closed:   make(chan struct{}),
+	}
+	r := &pipeReader{
+		w:      w,
+		closed: make(chan struct{}),
+	}
 	w.r = r
 	return r, w
 }
 
 type pipeReader struct {
 	w      *pipeWriter
-	closed bool
+	closed chan struct{}
 }
 
 func (r *pipeReader) Read(buf []byte) (int, error) {
-	if r.closed {
-		return 0, io.ErrClosedPipe
-	}
-	if r.w.closed && len(r.w.buf) == 0 {
-		return 0, io.EOF
-	}
 	// If this returns 0 with no errors, the caller might block forever on browsers.
 	// For example, bufio.Reader tries to Read until any byte can be read, but context switch never happens on browsers.
 	for len(r.w.buf) == 0 {
-		if r.closed {
+		select {
+		case <-r.w.provided:
+		case <-r.w.closed:
+			if len(r.w.buf) == 0 {
+				return 0, io.EOF
+			}
+		case <-r.closed:
 			return 0, io.ErrClosedPipe
 		}
-		if r.w.closed && len(r.w.buf) == 0 {
-			return 0, io.EOF
-		}
-		time.Sleep(r.w.sleepDuration)
 	}
+	notify := len(r.w.buf) >= pipeBufSize && len(buf) > 0
 	n := copy(buf, r.w.buf)
 	r.w.buf = r.w.buf[n:]
+	if notify {
+		go func() {
+			r.w.consumed <- struct{}{}
+		}()
+	}
 	return n, nil
 }
 
 func (r *pipeReader) Close() error {
-	r.closed = true
+	close(r.closed)
 	return nil
 }
 
 type pipeWriter struct {
-	r             *pipeReader
-	buf           []byte
-	closed        bool
-	sleepDuration time.Duration
+	r        *pipeReader
+	buf      []byte
+	closed   chan struct{}
+	consumed chan struct{}
+	provided chan struct{}
 }
 
 func (w *pipeWriter) Write(buf []byte) (int, error) {
-	if w.r.closed {
-		return 0, io.ErrClosedPipe
-	}
-	if w.closed {
-		return 0, io.ErrClosedPipe
-	}
 	for len(w.buf) >= pipeBufSize {
-		if w.r.closed {
+		select {
+		case <-w.consumed:
+		case <-w.r.closed:
+			return 0, io.ErrClosedPipe
+		case <-w.closed:
 			return 0, io.ErrClosedPipe
 		}
-		if w.closed {
-			return 0, io.ErrClosedPipe
-		}
-		time.Sleep(w.sleepDuration)
 	}
+	notify := len(w.buf) == 0 && len(buf) > 0
 	w.buf = append(w.buf, buf...)
+	if notify {
+		w.provided <- struct{}{}
+	}
 	return len(buf), nil
 }
 
 func (w *pipeWriter) Close() error {
-	w.closed = true
+	close(w.closed)
 	return nil
 }

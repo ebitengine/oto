@@ -30,7 +30,7 @@ type Player struct {
 }
 
 func newPlayer(context *Context) *Player {
-	r, w := pipe(context.driverWriter.bytesPerSecond)
+	r, w := pipe()
 	p := &Player{
 		context: context,
 		r:       r,
