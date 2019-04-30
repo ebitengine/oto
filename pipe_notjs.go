@@ -20,6 +20,6 @@ import (
 	"io"
 )
 
-func pipe() (io.ReadCloser, io.WriteCloser) {
+func pipe(bytesPerSecond int) (io.ReadCloser, io.WriteCloser) {
 	return io.Pipe()
 }

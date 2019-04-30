@@ -18,7 +18,7 @@ package oto
 
 import (
 	"io"
-	"runtime"
+	"time"
 )
 
 const pipeBufSize = 4096
@@ -27,8 +27,9 @@ const pipeBufSize = 4096
 //
 // This is basically same as io.Pipe, but is implemented in more effient way under the assumption that
 // this works on a single thread environment so that locks are not required.
-func pipe() (io.ReadCloser, io.WriteCloser) {
-	w := &pipeWriter{}
+func pipe(bytesPerSecond int) (io.ReadCloser, io.WriteCloser) {
+	d := time.Second * pipeBufSize / time.Duration(bytesPerSecond) / 2
+	w := &pipeWriter{sleepDuration: d}
 	r := &pipeReader{w: w}
 	w.r = r
 	return r, w
@@ -55,7 +56,7 @@ func (r *pipeReader) Read(buf []byte) (int, error) {
 		if r.w.closed && len(r.w.buf) == 0 {
 			return 0, io.EOF
 		}
-		runtime.Gosched()
+		time.Sleep(r.w.sleepDuration)
 	}
 	n := copy(buf, r.w.buf)
 	r.w.buf = r.w.buf[n:]
@@ -68,9 +69,10 @@ func (r *pipeReader) Close() error {
 }
 
 type pipeWriter struct {
-	r      *pipeReader
-	buf    []byte
-	closed bool
+	r             *pipeReader
+	buf           []byte
+	closed        bool
+	sleepDuration time.Duration
 }
 
 func (w *pipeWriter) Write(buf []byte) (int, error) {
@@ -87,7 +89,7 @@ func (w *pipeWriter) Write(buf []byte) (int, error) {
 		if w.closed {
 			return 0, io.ErrClosedPipe
 		}
-		runtime.Gosched()
+		time.Sleep(w.sleepDuration)
 	}
 	w.buf = append(w.buf, buf...)
 	return len(buf), nil
