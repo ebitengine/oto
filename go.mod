@@ -1,7 +1,7 @@
 module github.com/hajimehoshi/oto
 
 require (
-	github.com/gopherjs/gopherjs master
+	github.com/gopherjs/gopherjs v0.0.0-20190430165422-3e4dfb77656c
 	golang.org/x/exp v0.0.0-20180710024300-14dda7b62fcd // indirect
 	golang.org/x/image v0.0.0-20180708004352-c73c2afc3b81 // indirect
 	golang.org/x/mobile v0.0.0-20180806140643-507816974b79
