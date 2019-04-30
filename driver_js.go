@@ -18,8 +18,7 @@ package oto
 
 import (
 	"errors"
-
-	"github.com/gopherjs/gopherwasm/js"
+	"syscall/js"
 )
 
 type driver struct {
@@ -54,13 +53,14 @@ func newDriver(sampleRate, channelNum, bitDepthInBytes, bufferSize int) (*driver
 	}
 
 	setCallback := func(event string) {
-		var f js.Callback
-		f = js.NewCallback(func(arguments []js.Value) {
+		var f js.Func
+		f = js.FuncOf(func(this js.Value, arguments []js.Value) interface{} {
 			if !p.ready {
 				p.context.Call("resume")
 				p.ready = true
 			}
 			js.Global().Get("document").Call("removeEventListener", event, f)
+			return nil
 		})
 		js.Global().Get("document").Call("addEventListener", event, f)
 	}
