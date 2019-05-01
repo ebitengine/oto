@@ -32,6 +32,7 @@ type driver struct {
 	lastTime        float64
 	lastAudioTime   float64
 	ready           bool
+	callbacks       map[string]js.Func
 }
 
 const audioBufferSamples = 3200
@@ -52,7 +53,7 @@ func newDriver(sampleRate, channelNum, bitDepthInBytes, bufferSize int) (*driver
 		bufferSize:      max(bufferSize, audioBufferSamples*channelNum*bitDepthInBytes),
 	}
 
-	setCallback := func(event string) {
+	setCallback := func(event string) js.Func {
 		var f js.Func
 		f = js.FuncOf(func(this js.Value, arguments []js.Value) interface{} {
 			if !p.ready {
@@ -60,18 +61,16 @@ func newDriver(sampleRate, channelNum, bitDepthInBytes, bufferSize int) (*driver
 				p.ready = true
 			}
 			js.Global().Get("document").Call("removeEventListener", event, f)
-			// Not sure it is safe to call Release inside the same function.
-			// Use goroutine just in case.
-			go func() {
-				f.Release()
-			}()
 			return nil
 		})
 		js.Global().Get("document").Call("addEventListener", event, f)
+		p.callbacks[event] = f
+		return f
 	}
 
 	// Browsers require user interaction to start the audio.
 	// https://developers.google.com/web/updates/2017/09/autoplay-policy-changes#webaudio
+	p.callbacks = map[string]js.Func{}
 	setCallback("touchend")
 	setCallback("keyup")
 	setCallback("mouseup")
@@ -155,5 +154,12 @@ func (p *driver) TryWrite(data []byte) (int, error) {
 }
 
 func (p *driver) Close() error {
+	for event, f := range p.callbacks {
+		// https://developer.mozilla.org/en-US/docs/Web/API/EventTarget/removeEventListener
+		// "Calling removeEventListener() with arguments that do not identify any currently registered EventListener on the EventTarget has no effect."
+		js.Global().Get("document").Call("removeEventListener", event, f)
+		f.Release()
+	}
+	p.callbacks = nil
 	return nil
 }
