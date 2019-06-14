@@ -130,8 +130,8 @@ func (p *driver) TryWrite(data []byte) (int, error) {
 
 	buf := p.context.Call("createBuffer", p.channelNum, audioBufferSamples, p.sampleRate)
 	l, r := toLR(p.tmp[:le])
-	tl := js.TypedArrayOf(l)
-	tr := js.TypedArrayOf(r)
+	tl, freel := float32SliceToTypedArray(l)
+	tr, freer := float32SliceToTypedArray(r)
 	if buf.Get("copyToChannel") != js.Undefined() {
 		buf.Call("copyToChannel", tl, 0, 0)
 		buf.Call("copyToChannel", tr, 1, 0)
@@ -140,8 +140,8 @@ func (p *driver) TryWrite(data []byte) (int, error) {
 		buf.Call("getChannelData", 0).Call("set", tl)
 		buf.Call("getChannelData", 1).Call("set", tr)
 	}
-	tl.Release()
-	tr.Release()
+	freel()
+	freer()
 
 	s := p.context.Call("createBufferSource")
 	s.Set("buffer", buf)
