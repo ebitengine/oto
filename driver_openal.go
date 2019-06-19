@@ -128,11 +128,13 @@ func alFormat(channelNum, bitDepthInBytes int) C.ALenum {
 
 const numBufs = 2
 
-func newDriver(sampleRate, channelNum, bitDepthInBytes, bufferSizeInBytes int) (*driver, error) {
+func newDriver(sampleRate, channelNum, bitDepthInBytes, bufferSizeInBytes int) (tryWriteCloser, error) {
 	name := C.alGetString(C.ALC_DEFAULT_DEVICE_SPECIFIER)
 	d := alDevice(C._alcOpenDevice((*C.ALCchar)(name)))
 	if d == 0 {
-		return nil, fmt.Errorf("oto: alcOpenDevice must not return null")
+		// No device was found. Return the dummy device (#77).
+		// TODO: Retry to open the device when possible.
+		return newDummyDriver(sampleRate, channelNum, bitDepthInBytes), nil
 	}
 	c := alContext(C._alcCreateContext(C.uintptr_t(d), nil))
 	if c == 0 {

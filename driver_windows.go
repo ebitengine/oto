@@ -72,7 +72,7 @@ func newDriver(sampleRate, channelNum, bitDepthInBytes, bufferSizeInBytes int) (
 	w, err := waveOutOpen(f)
 	const elementNotFound = 1168
 	if e, ok := err.(*winmmError); ok && e.errno == elementNotFound {
-		// No device was found. Return the dummy device.
+		// No device was found. Return the dummy device (#77).
 		// TODO: Retry to open the device when possible.
 		return newDummyDriver(sampleRate, channelNum, bitDepthInBytes), nil
 	}
