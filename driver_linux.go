@@ -81,7 +81,9 @@ func newDriver(sampleRate, numChans, bitDepthInBytes, bufferSizeInBytes int) (tr
 	}
 
 	// open a default ALSA audio device for blocking stream playback
-	if errCode := C.snd_pcm_open(&p.handle, C.CString("default"), C.SND_PCM_STREAM_PLAYBACK, 0); errCode < 0 {
+	cs := C.CString("default")
+	defer C.free(unsafe.Pointer(cs))
+	if errCode := C.snd_pcm_open(&p.handle, cs, C.SND_PCM_STREAM_PLAYBACK, 0); errCode < 0 {
 		return nil, alsaError(errCode)
 	}
 
