@@ -132,9 +132,7 @@ func newDriver(sampleRate, channelNum, bitDepthInBytes, bufferSizeInBytes int) (
 	name := C.alGetString(C.ALC_DEFAULT_DEVICE_SPECIFIER)
 	d := alDevice(C._alcOpenDevice((*C.ALCchar)(name)))
 	if d == 0 {
-		// No device was found. Return the dummy device (#77).
-		// TODO: Retry to open the device when possible.
-		return newDummyDriver(sampleRate, channelNum, bitDepthInBytes), nil
+		return nil, fmt.Errorf("oto: alcOpenDevice must not return null")
 	}
 	c := alContext(C._alcCreateContext(C.uintptr_t(d), nil))
 	if c == 0 {
