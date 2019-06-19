@@ -74,7 +74,7 @@ func alsaError(err C.int) error {
 	return fmt.Errorf("oto: ALSA error: %s", C.GoString(C.snd_strerror(err)))
 }
 
-func newDriver(sampleRate, numChans, bitDepthInBytes, bufferSizeInBytes int) (*driver, error) {
+func newDriver(sampleRate, numChans, bitDepthInBytes, bufferSizeInBytes int) (tryWriteCloser, error) {
 	p := &driver{
 		numChans:        numChans,
 		bitDepthInBytes: bitDepthInBytes,

@@ -37,7 +37,7 @@ type driver struct {
 
 const audioBufferSamples = 3200
 
-func newDriver(sampleRate, channelNum, bitDepthInBytes, bufferSize int) (*driver, error) {
+func newDriver(sampleRate, channelNum, bitDepthInBytes, bufferSize int) (tryWriteCloser, error) {
 	class := js.Global().Get("AudioContext")
 	if class == js.Undefined() {
 		class = js.Global().Get("webkitAudioContext")

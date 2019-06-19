@@ -191,7 +191,7 @@ type driver struct {
 	bufferSize      int
 }
 
-func newDriver(sampleRate, channelNum, bitDepthInBytes, bufferSizeInBytes int) (*driver, error) {
+func newDriver(sampleRate, channelNum, bitDepthInBytes, bufferSizeInBytes int) (tryWriteCloser, error) {
 	p := &driver{
 		sampleRate:      sampleRate,
 		channelNum:      channelNum,
