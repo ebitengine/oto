@@ -122,8 +122,14 @@ func (c *Context) Close() error {
 	return <-c.errCh
 }
 
+type tryWriteCloser interface {
+	io.Closer
+
+	TryWrite([]byte) (int, error)
+}
+
 type driverWriter struct {
-	driver         *driver
+	driver         tryWriteCloser
 	bufferSize     int
 	bytesPerSecond int
 

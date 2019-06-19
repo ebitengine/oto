@@ -59,7 +59,7 @@ type driver struct {
 	bufferSize int
 }
 
-func newDriver(sampleRate, channelNum, bitDepthInBytes, bufferSizeInBytes int) (*driver, error) {
+func newDriver(sampleRate, channelNum, bitDepthInBytes, bufferSizeInBytes int) (tryWriteCloser, error) {
 	numBlockAlign := channelNum * bitDepthInBytes
 	f := &waveformatex{
 		wFormatTag:      waveFormatPCM,
@@ -70,6 +70,12 @@ func newDriver(sampleRate, channelNum, bitDepthInBytes, bufferSizeInBytes int) (
 		nBlockAlign:     uint16(numBlockAlign),
 	}
 	w, err := waveOutOpen(f)
+	const elementNotFound = 1168
+	if e, ok := err.(*winmmError); ok && e.errno == elementNotFound {
+		// No device was found. Return the dummy device.
+		// TODO: Retry to open the device when possible.
+		return newDummyDriver(sampleRate, channelNum, bitDepthInBytes), nil
+	}
 	if err != nil {
 		return nil, err
 	}
