@@ -129,7 +129,7 @@ func alFormat(channelNum, bitDepthInBytes int) C.ALenum {
 const numBufs = 2
 
 func newDriver(sampleRate, channelNum, bitDepthInBytes, bufferSizeInBytes int) (tryWriteCloser, error) {
-	name := C.alGetString(C.ALC_DEFAULT_DEVICE_SPECIFIER)
+	name := C.alcGetString(nil, C.ALC_DEFAULT_DEVICE_SPECIFIER)
 	d := alDevice(C._alcOpenDevice((*C.ALCchar)(name)))
 	if d == 0 {
 		return nil, fmt.Errorf("oto: alcOpenDevice must not return null")
