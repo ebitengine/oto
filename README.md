@@ -17,12 +17,18 @@ A low-level library to play sound. This package offers `io.WriteCloser` to play 
 
 ## Prerequisite
 
-### macOS / iOS
+### macOS
+
+Oto requies `OpenAL.framework`, but this is automatically linked.
+
+### iOS
 
 Oto requies these frameworks:
 
-* AVFoundation.framework
-* OpenAL.framework
+* `AVFoundation.framework`
+* `OpenAL.framework`
+
+Add them to "Linked Frameworks and Libraries" on your Xcode project.
 
 ### Linux
 
