@@ -41,7 +41,7 @@ package oto
 //   }
 //
 //   NSObject* value = [notification.userInfo valueForKey:AVAudioSessionInterruptionTypeKey];
-//   AVAudioSessionInterruptionType interruptionType = [value intValue];
+//   AVAudioSessionInterruptionType interruptionType = [(NSNumber*)value intValue];
 //   switch (interruptionType) {
 //   case AVAudioSessionInterruptionTypeBegan:
 //     alcContext_ = alcGetCurrentContext();
