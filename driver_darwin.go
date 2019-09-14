@@ -86,7 +86,7 @@ func newDriver(sampleRate, channelNum, bitDepthInBytes, bufferSizeInBytes int) (
 	}
 
 	flags := C.kAudioFormatFlagIsPacked
-	if bitDepthInBytes != 8 {
+	if bitDepthInBytes != 1 {
 		flags |= C.kAudioFormatFlagIsSignedInteger
 	}
 	desc := C.AudioStreamBasicDescription{
