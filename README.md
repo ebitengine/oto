@@ -19,14 +19,14 @@ A low-level library to play sound. This package offers `io.WriteCloser` to play 
 
 ### macOS
 
-Oto requies `OpenAL.framework`, but this is automatically linked.
+Oto requies `AudioToolbox.framework`, but this is automatically linked.
 
 ### iOS
 
 Oto requies these frameworks:
 
 * `AVFoundation.framework`
-* `OpenAL.framework`
+* `AudioToolbox.framework`
 
 Add them to "Linked Frameworks and Libraries" on your Xcode project.
 

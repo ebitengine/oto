@@ -17,39 +17,38 @@
 package oto
 
 // #cgo CFLAGS: -x objective-c
-// #cgo LDFLAGS: -framework Foundation -framework OpenAL -framework AVFoundation
+// #cgo LDFLAGS: -framework Foundation -framework AVFoundation
 //
 // #import <AVFoundation/AVFoundation.h>
-// #include <OpenAL/al.h>
-// #include <OpenAL/alc.h>
+// #import <AudioToolbox/AudioToolbox.h>
 //
 // @interface OtoInterruptObserver : NSObject {
 // }
+//
+// @property (nonatomic) AudioUnit audioUnit;
 //
 // - (void) onAudioSessionEvent: (NSNotification*)notification;
 //
 // @end
 //
-// @implementation OtoInterruptObserver
-//
-// ALCcontext* alcContext_ = NULL;
+// @implementation OtoInterruptObserver {
+//   AudioUnit _audioUnit;
+// }
 //
 // - (void) onAudioSessionEvent: (NSNotification *) notification
 // {
 //   if (![notification.name isEqualToString:AVAudioSessionInterruptionNotification]) {
 //     return;
 //   }
-//
+// 
 //   NSObject* value = [notification.userInfo valueForKey:AVAudioSessionInterruptionTypeKey];
 //   AVAudioSessionInterruptionType interruptionType = [(NSNumber*)value intValue];
 //   switch (interruptionType) {
 //   case AVAudioSessionInterruptionTypeBegan:
-//     alcContext_ = alcGetCurrentContext();
-//     alcMakeContextCurrent(NULL);
+//     AudioOutputUnitStop([self audioUnit]);
 //     break;
 //   case AVAudioSessionInterruptionTypeEnded:
-//     alcMakeContextCurrent(alcContext_);
-//     alcProcessContext(alcContext_);
+//     AudioOutputUnitStart([self audioUnit]);
 //     break;
 //   default:
 //     NSAssert(NO, @"unexpected AVAudioSessionInterruptionType: %d", interruptionType);
@@ -59,15 +58,22 @@ package oto
 //
 // @end
 //
-// static void initialize() {
+// // Handle interruption events, or Siri would stop the audio (#80).
+// static void setNotificationHandler(AudioUnit audioUnit) {
 //   AVAudioSession* session = [AVAudioSession sharedInstance];
-//   [[NSNotificationCenter defaultCenter] addObserver: [[OtoInterruptObserver alloc] init]
+//   OtoInterruptObserver* observer = [[OtoInterruptObserver alloc] init];
+//   observer.audioUnit = audioUnit;
+//   [[NSNotificationCenter defaultCenter] addObserver: observer
 //                                            selector: @selector(onAudioSessionEvent:)
 //                                                name: AVAudioSessionInterruptionNotification
 //                                              object: session];
 // }
 import "C"
 
-func init() {
-	C.initialize()
+func setNotificationHandler(driver *driver) {
+	C.setNotificationHandler(driver.audioUnit)
+}
+
+func componentSubType() C.OSType {
+	return C.kAudioUnitSubType_RemoteIO
 }

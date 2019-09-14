@@ -12,13 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// +build darwin freebsd openbsd
+// +build freebsd openbsd
 // +build !js
 // +build !android
 
 package oto
 
-// #cgo darwin  LDFLAGS: -framework OpenAL
 // #cgo freebsd pkg-config: openal
 // #cgo openbsd pkg-config: openal
 //
