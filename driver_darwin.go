@@ -40,6 +40,7 @@ type driver struct {
 	bufSize         int
 	channelNum      int
 	bitDepthInBytes int
+	m               sync.Mutex
 }
 
 var (
@@ -150,6 +151,9 @@ func oto_render(inRefCon unsafe.Pointer,
 	ioData *C.AudioBufferList) C.OSStatus {
 
 	d := getDriver()
+	d.m.Lock()
+	defer d.m.Unlock()
+
 	s := d.channelNum * d.bitDepthInBytes
 	n := int(inNumberFrames) * s
 	if n > len(d.buf) {
@@ -166,6 +170,9 @@ func oto_render(inRefCon unsafe.Pointer,
 }
 
 func (d *driver) TryWrite(data []byte) (int, error) {
+	d.m.Lock()
+	defer d.m.Unlock()
+
 	n := d.bufSize - len(d.buf)
 	if n > len(data) {
 		n = len(data)
@@ -175,6 +182,9 @@ func (d *driver) TryWrite(data []byte) (int, error) {
 }
 
 func (d *driver) Close() error {
+	d.m.Lock()
+	defer d.m.Unlock()
+
 	if osstatus := C.AudioOutputUnitStop(d.audioUnit); osstatus != C.noErr {
 		return fmt.Errorf("oto: AudioOutputUnitStop failed: %d", osstatus)
 	}
