@@ -44,7 +44,7 @@ type driver struct {
 
 var (
 	theDriver *driver
-	driverM sync.Mutex
+	driverM   sync.Mutex
 )
 
 func setDriver(d *driver) {
@@ -160,6 +160,7 @@ func oto_render(inRefCon unsafe.Pointer,
 		*(*byte)(unsafe.Pointer(uintptr(ioData.mBuffers[0].mData) + uintptr(i))) = d.buf[i]
 	}
 	d.buf = d.buf[n:]
+	ioData.mBuffers[0].mDataByteSize = C.UInt32(n)
 
 	return C.noErr
 }
