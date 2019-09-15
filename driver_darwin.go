@@ -157,7 +157,7 @@ func oto_render(inRefCon unsafe.Pointer,
 	s := d.channelNum * d.bitDepthInBytes
 	n := int(inNumberFrames) * s
 	if n > len(d.buf) {
-		n = len(d.buf) / s * s
+		n = len(d.buf)
 	}
 
 	for i := 0; i < n; i++ {
