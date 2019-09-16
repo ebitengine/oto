@@ -100,13 +100,18 @@ func newDriver(sampleRate, channelNum, bitDepthInBytes, bufferSizeInBytes int) (
 		return nil, fmt.Errorf("oto: AudioQueueNewFormat with StreamFormat failed: %d", osstatus)
 	}
 
+	nbuf := bufferSizeInBytes / queueBufferSize
+	if nbuf <= 1 {
+		nbuf = 2
+	}
+
 	d := &driver{
 		audioQueue:      audioQueue,
 		sampleRate:      sampleRate,
 		channelNum:      channelNum,
 		bitDepthInBytes: bitDepthInBytes,
-		bufSize:         bufferSizeInBytes / queueBufferSize * queueBufferSize,
-		buffers:         make([]C.AudioQueueBufferRef, bufferSizeInBytes/queueBufferSize),
+		bufSize:         nbuf * queueBufferSize,
+		buffers:         make([]C.AudioQueueBufferRef, nbuf),
 		chWrite:         make(chan []byte),
 		chWritten:       make(chan int),
 	}
