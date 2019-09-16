@@ -20,26 +20,25 @@ package oto
 //
 // #import <AudioToolbox/AudioToolbox.h>
 //
-// OSStatus oto_render(void *inRefCon,
-//     AudioUnitRenderActionFlags *ioActionFlags,
-//     AudioTimeStamp *inTimeStamp,
-//     UInt32 inBusNumber,
-//     UInt32 inNumberFrames,
-//     AudioBufferList *ioData);
+// void oto_render(void* inUserData, AudioQueueRef inAQ, AudioQueueBufferRef inBuffer);
 import "C"
 
 import (
 	"fmt"
+	"runtime"
 	"sync"
 	"unsafe"
 )
 
+const queueBufferSize = 1024
+
 type driver struct {
-	audioUnit       C.AudioUnit
+	audioQueue      C.AudioQueueRef
 	buf             []byte
 	bufSize         int
 	channelNum      int
 	bitDepthInBytes int
+	buffers         []C.AudioQueueBufferRef
 	m               sync.Mutex
 }
 
@@ -71,21 +70,6 @@ func getDriver() *driver {
 // See https://stackoverflow.com/questions/2196869/how-do-you-convert-an-iphone-osstatus-code-to-something-useful
 
 func newDriver(sampleRate, channelNum, bitDepthInBytes, bufferSizeInBytes int) (tryWriteCloser, error) {
-	cd := C.AudioComponentDescription{
-		componentType:         C.kAudioUnitType_Output,
-		componentSubType:      componentSubType(),
-		componentManufacturer: C.kAudioUnitManufacturer_Apple,
-	}
-	comp := C.AudioComponentFindNext(nil, &cd)
-	if comp == nil {
-		return nil, fmt.Errorf("oto: AudioComponentFindNext must not return nil")
-	}
-
-	var audioUnit C.AudioUnit
-	if osstatus := C.AudioComponentInstanceNew(comp, &audioUnit); osstatus != C.noErr {
-		return nil, fmt.Errorf("oto: AudioComponentInstanceNew failed: %d", osstatus)
-	}
-
 	flags := C.kAudioFormatFlagIsPacked
 	if bitDepthInBytes != 1 {
 		flags |= C.kAudioFormatFlagIsSignedInteger
@@ -100,73 +84,65 @@ func newDriver(sampleRate, channelNum, bitDepthInBytes, bufferSizeInBytes int) (
 		mChannelsPerFrame: C.UInt32(channelNum),
 		mBitsPerChannel:   C.UInt32(8 * bitDepthInBytes),
 	}
-	if osstatus := C.AudioUnitSetProperty(
-		audioUnit,
-		C.kAudioUnitProperty_StreamFormat,
-		C.kAudioUnitScope_Input,
+	var audioQueue C.AudioQueueRef
+	if osstatus := C.AudioQueueNewOutput(
+		&desc,
+		(C.AudioQueueOutputCallback)(C.oto_render),
+		nil,
+		(C.CFRunLoopRef)(0),
+		(C.CFStringRef)(0),
 		0,
-		unsafe.Pointer(&desc),
-		C.UInt32(unsafe.Sizeof(desc))); osstatus != C.noErr {
-		return nil, fmt.Errorf("oto: AudioUnitSetProperty with StreamFormat failed: %d", osstatus)
+		&audioQueue); osstatus != C.noErr {
+		return nil, fmt.Errorf("oto: AudioQueueNewFormat with StreamFormat failed: %d", osstatus)
 	}
 
 	d := &driver{
-		audioUnit:       audioUnit,
+		audioQueue:      audioQueue,
 		channelNum:      channelNum,
 		bitDepthInBytes: bitDepthInBytes,
-		bufSize:         bufferSizeInBytes,
+		bufSize:         bufferSizeInBytes / queueBufferSize * queueBufferSize,
+		buffers:         make([]C.AudioQueueBufferRef, bufferSizeInBytes / queueBufferSize),
 	}
+	runtime.SetFinalizer(d, (*driver).Close)
 	// Set the driver before setting the rendering callback.
 	setDriver(d)
 
-	input := C.AURenderCallbackStruct{
-		inputProc: C.AURenderCallback(C.oto_render),
-	}
-	if osstatus := C.AudioUnitSetProperty(
-		audioUnit,
-		C.kAudioUnitProperty_SetRenderCallback,
-		C.kAudioUnitScope_Global,
-		0,
-		unsafe.Pointer(&input),
-		C.UInt32(unsafe.Sizeof(input))); osstatus != C.noErr {
-		return nil, fmt.Errorf("oto: AudioUnitSetProperty with SetRenderCallback failed: %d", osstatus)
+	for i := 0; i < len(d.buffers); i++ {
+		C.AudioQueueAllocateBuffer(audioQueue, C.UInt32(queueBufferSize), &d.buffers[i])
+		d.buffers[i].mAudioDataByteSize = C.UInt32(queueBufferSize)
+		for j := 0; j < queueBufferSize; j++ {
+			*(*byte)(unsafe.Pointer(uintptr(unsafe.Pointer(d.buffers[i].mAudioData)) + uintptr(j))) = 0
+		}
+		C.AudioQueueEnqueueBuffer(audioQueue, d.buffers[i], 0, nil)
 	}
 
-	if osstatus := C.AudioUnitInitialize(audioUnit); osstatus != C.noErr {
-		return nil, fmt.Errorf("oto: AudioUnitInitialize failed: %d", osstatus)
-	}
+	C.AudioQueueStart(audioQueue, nil)
 
-	if osstatus := C.AudioOutputUnitStart(audioUnit); osstatus != C.noErr {
-		return nil, fmt.Errorf("oto: AudioOutputUnitStart failed: %d", osstatus)
-	}
 	return d, nil
 }
 
 //export oto_render
-func oto_render(inRefCon unsafe.Pointer,
-	ioActionFlags *C.AudioUnitRenderActionFlags,
-	inTimeStamp *C.AudioTimeStamp,
-	inBusNumber C.UInt32,
-	inNumberFrames C.UInt32,
-	ioData *C.AudioBufferList) C.OSStatus {
-
+func oto_render(inUserData unsafe.Pointer, inAQ C.AudioQueueRef, inBuffer C.AudioQueueBufferRef) {
 	d := getDriver()
 	d.m.Lock()
 	defer d.m.Unlock()
 
-	s := d.channelNum * d.bitDepthInBytes
-	n := int(inNumberFrames) * s
+	n := queueBufferSize
 	if n > len(d.buf) {
 		n = len(d.buf)
 	}
 
 	for i := 0; i < n; i++ {
-		*(*byte)(unsafe.Pointer(uintptr(ioData.mBuffers[0].mData) + uintptr(i))) = d.buf[i]
+		*(*byte)(unsafe.Pointer(uintptr(inBuffer.mAudioData) + uintptr(i))) = d.buf[i]
+	}
+	for i := n; i < queueBufferSize; i++ {
+		// TODO: Is there a better way to surppress choppy sound?
+		*(*byte)(unsafe.Pointer(uintptr(inBuffer.mAudioData) + uintptr(i))) = 0
 	}
 	d.buf = d.buf[n:]
-	ioData.mBuffers[0].mDataByteSize = C.UInt32(n)
+	// Do not update mAudioDataByteSize, or the buffer is not used any more.
 
-	return C.noErr
+	C.AudioQueueEnqueueBuffer(inAQ, inBuffer, 0, nil)
 }
 
 func (d *driver) TryWrite(data []byte) (int, error) {
@@ -185,16 +161,21 @@ func (d *driver) Close() error {
 	d.m.Lock()
 	defer d.m.Unlock()
 
-	if osstatus := C.AudioOutputUnitStop(d.audioUnit); osstatus != C.noErr {
-		return fmt.Errorf("oto: AudioOutputUnitStop failed: %d", osstatus)
+	runtime.SetFinalizer(d, nil)
+
+	for _, b := range d.buffers {
+		if osstatus := C.AudioQueueFreeBuffer(d.audioQueue, b); osstatus != C.noErr {
+			return fmt.Errorf("oto: AudioQueueFreeBuffer failed: %d", osstatus)
+		}
 	}
-	if osstatus := C.AudioUnitUninitialize(d.audioUnit); osstatus != C.noErr {
-		return fmt.Errorf("oto: AudioUnitUninitialize failed: %d", osstatus)
+
+	if osstatus := C.AudioQueueStop(d.audioQueue, C.false); osstatus != C.noErr {
+		return fmt.Errorf("oto: AudioQueueStop failed: %d", osstatus)
 	}
-	if osstatus := C.AudioComponentInstanceDispose(d.audioUnit); osstatus != C.noErr {
-		return fmt.Errorf("oto: AudioComponentInstanceDispose failed: %d", osstatus)
+	if osstatus := C.AudioQueueDispose(d.audioQueue, C.false); osstatus != C.noErr {
+		return fmt.Errorf("oto: AudioQueueDispose failed: %d", osstatus)
 	}
-	d.audioUnit = nil
+	d.audioQueue = nil
 	setDriver(nil)
 	return nil
 }

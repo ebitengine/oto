@@ -25,14 +25,14 @@ package oto
 // @interface OtoInterruptObserver : NSObject {
 // }
 //
-// @property (nonatomic) AudioUnit audioUnit;
+// @property (nonatomic) AudioQueueRef audioQueue;
 //
 // - (void) onAudioSessionEvent: (NSNotification*)notification;
 //
 // @end
 //
 // @implementation OtoInterruptObserver {
-//   AudioUnit _audioUnit;
+//   AudioQueueRef _audioQueue;
 // }
 //
 // - (void) onAudioSessionEvent: (NSNotification *) notification
@@ -45,10 +45,10 @@ package oto
 //   AVAudioSessionInterruptionType interruptionType = [(NSNumber*)value intValue];
 //   switch (interruptionType) {
 //   case AVAudioSessionInterruptionTypeBegan:
-//     AudioOutputUnitStop([self audioUnit]);
+//     AudioQueuePause([self audioQueue]);
 //     break;
 //   case AVAudioSessionInterruptionTypeEnded:
-//     AudioOutputUnitStart([self audioUnit]);
+//     AudioQueueStart([self audioQueue], nil);
 //     break;
 //   default:
 //     NSAssert(NO, @"unexpected AVAudioSessionInterruptionType: %d", interruptionType);
@@ -59,10 +59,10 @@ package oto
 // @end
 //
 // // Handle interruption events, or Siri would stop the audio (#80).
-// static void setNotificationHandler(AudioUnit audioUnit) {
+// static void setNotificationHandler(AudioQueueRef audioQueue) {
 //   AVAudioSession* session = [AVAudioSession sharedInstance];
 //   OtoInterruptObserver* observer = [[OtoInterruptObserver alloc] init];
-//   observer.audioUnit = audioUnit;
+//   observer.audioQueue = audioQueue;
 //   [[NSNotificationCenter defaultCenter] addObserver: observer
 //                                            selector: @selector(onAudioSessionEvent:)
 //                                                name: AVAudioSessionInterruptionNotification
@@ -71,7 +71,7 @@ package oto
 import "C"
 
 func setNotificationHandler(driver *driver) {
-	C.setNotificationHandler(driver.audioUnit)
+	C.setNotificationHandler(driver.audioQueue)
 }
 
 func componentSubType() C.OSType {
