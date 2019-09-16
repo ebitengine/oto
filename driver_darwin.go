@@ -120,15 +120,21 @@ func newDriver(sampleRate, channelNum, bitDepthInBytes, bufferSizeInBytes int) (
 	setDriver(d)
 
 	for i := 0; i < len(d.buffers); i++ {
-		C.AudioQueueAllocateBuffer(audioQueue, C.UInt32(queueBufferSize), &d.buffers[i])
+		if osstatus := C.AudioQueueAllocateBuffer(audioQueue, C.UInt32(queueBufferSize), &d.buffers[i]); osstatus != C.noErr {
+			return nil, fmt.Errorf("oto: AudioQueueAllocateBuffer failed: %d", osstatus)
+		}
 		d.buffers[i].mAudioDataByteSize = C.UInt32(queueBufferSize)
 		for j := 0; j < queueBufferSize; j++ {
 			*(*byte)(unsafe.Pointer(uintptr(unsafe.Pointer(d.buffers[i].mAudioData)) + uintptr(j))) = 0
 		}
-		C.AudioQueueEnqueueBuffer(audioQueue, d.buffers[i], 0, nil)
+		if osstatus := C.AudioQueueEnqueueBuffer(audioQueue, d.buffers[i], 0, nil); osstatus != C.noErr {
+			return nil, fmt.Errorf("oto: AudioQueueEnqueueBuffer failed: %d", osstatus)
+		}
 	}
 
-	C.AudioQueueStart(audioQueue, nil)
+	if osstatus := C.AudioQueueStart(audioQueue, nil); osstatus != C.noErr {
+		return nil, fmt.Errorf("oto: AudioQueueStart failed: %d", osstatus)
+	}
 
 	return d, nil
 }
@@ -165,6 +171,7 @@ loop:
 	}
 	// Do not update mAudioDataByteSize, or the buffer is not used correctly any more.
 
+	// TODO: Check errors?
 	C.AudioQueueEnqueueBuffer(inAQ, inBuffer, 0, nil)
 }
 
