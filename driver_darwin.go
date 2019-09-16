@@ -27,19 +27,23 @@ import (
 	"fmt"
 	"runtime"
 	"sync"
+	"time"
 	"unsafe"
 )
 
-const queueBufferSize = 1024
+const queueBufferSize = 4096
 
 type driver struct {
 	audioQueue      C.AudioQueueRef
 	buf             []byte
 	bufSize         int
+	sampleRate      int
 	channelNum      int
 	bitDepthInBytes int
 	buffers         []C.AudioQueueBufferRef
-	m               sync.Mutex
+
+	chWrite   chan []byte
+	chWritten chan int
 }
 
 var (
@@ -98,10 +102,13 @@ func newDriver(sampleRate, channelNum, bitDepthInBytes, bufferSizeInBytes int) (
 
 	d := &driver{
 		audioQueue:      audioQueue,
+		sampleRate:      sampleRate,
 		channelNum:      channelNum,
 		bitDepthInBytes: bitDepthInBytes,
 		bufSize:         bufferSizeInBytes / queueBufferSize * queueBufferSize,
-		buffers:         make([]C.AudioQueueBufferRef, bufferSizeInBytes / queueBufferSize),
+		buffers:         make([]C.AudioQueueBufferRef, bufferSizeInBytes/queueBufferSize),
+		chWrite:         make(chan []byte),
+		chWritten:       make(chan int),
 	}
 	runtime.SetFinalizer(d, (*driver).Close)
 	// Set the driver before setting the rendering callback.
@@ -124,43 +131,54 @@ func newDriver(sampleRate, channelNum, bitDepthInBytes, bufferSizeInBytes int) (
 //export oto_render
 func oto_render(inUserData unsafe.Pointer, inAQ C.AudioQueueRef, inBuffer C.AudioQueueBufferRef) {
 	d := getDriver()
-	d.m.Lock()
-	defer d.m.Unlock()
 
-	n := queueBufferSize
-	if n > len(d.buf) {
-		n = len(d.buf)
+	var buf []byte
+loop:
+	for len(buf) < queueBufferSize {
+		// Set the timer. When the application is in background or being switched, the driver's buffer is not
+		// updated and it is needed to fill the buffer with zeros.
+		s := time.Second * queueBufferSize / time.Duration(d.sampleRate*d.channelNum*d.bitDepthInBytes)
+		t := time.NewTicker(s)
+		defer t.Stop()
+
+		select {
+		case dbuf := <-d.chWrite:
+			n := queueBufferSize - len(buf)
+			if n > len(dbuf) {
+				n = len(dbuf)
+			}
+			buf = append(buf, dbuf[:n]...)
+			d.chWritten <- n
+		case <-t.C:
+			buf = append(buf, make([]byte, queueBufferSize-len(buf))...)
+			break loop
+		}
 	}
 
-	for i := 0; i < n; i++ {
-		*(*byte)(unsafe.Pointer(uintptr(inBuffer.mAudioData) + uintptr(i))) = d.buf[i]
+	for i := 0; i < queueBufferSize; i++ {
+		*(*byte)(unsafe.Pointer(uintptr(inBuffer.mAudioData) + uintptr(i))) = buf[i]
 	}
-	for i := n; i < queueBufferSize; i++ {
-		// TODO: Is there a better way to surppress choppy sound?
-		*(*byte)(unsafe.Pointer(uintptr(inBuffer.mAudioData) + uintptr(i))) = 0
-	}
-	d.buf = d.buf[n:]
-	// Do not update mAudioDataByteSize, or the buffer is not used any more.
+	// Do not update mAudioDataByteSize, or the buffer is not used correctly any more.
 
 	C.AudioQueueEnqueueBuffer(inAQ, inBuffer, 0, nil)
 }
 
 func (d *driver) TryWrite(data []byte) (int, error) {
-	d.m.Lock()
-	defer d.m.Unlock()
-
 	n := d.bufSize - len(d.buf)
 	if n > len(data) {
 		n = len(data)
 	}
 	d.buf = append(d.buf, data[:n]...)
+	// Use the buffer only when the buffer length is enough to avoid choppy sound.
+	for len(d.buf) >= queueBufferSize {
+		d.chWrite <- d.buf
+		n := <-d.chWritten
+		d.buf = d.buf[n:]
+	}
 	return n, nil
 }
 
 func (d *driver) Close() error {
-	d.m.Lock()
-	defer d.m.Unlock()
-
 	runtime.SetFinalizer(d, nil)
 
 	for _, b := range d.buffers {

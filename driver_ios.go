@@ -40,7 +40,7 @@ package oto
 //   if (![notification.name isEqualToString:AVAudioSessionInterruptionNotification]) {
 //     return;
 //   }
-// 
+//
 //   NSObject* value = [notification.userInfo valueForKey:AVAudioSessionInterruptionTypeKey];
 //   AVAudioSessionInterruptionType interruptionType = [(NSNumber*)value intValue];
 //   switch (interruptionType) {
