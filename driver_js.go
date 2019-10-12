@@ -29,8 +29,6 @@ type driver struct {
 	tmp             []byte
 	bufferSize      int
 	context         js.Value
-	lastTime        float64
-	lastAudioTime   float64
 	ready           bool
 	callbacks       map[string]js.Func
 }
@@ -89,10 +87,6 @@ func toLR(data []byte) ([]float32, []float32) {
 	return l, r
 }
 
-func nowInSeconds() float64 {
-	return js.Global().Get("performance").Call("now").Float() / 1000.0
-}
-
 func (p *driver) TryWrite(data []byte) (int, error) {
 	if !p.ready {
 		return 0, nil
@@ -102,16 +96,6 @@ func (p *driver) TryWrite(data []byte) (int, error) {
 	p.tmp = append(p.tmp, data[:n]...)
 
 	c := p.context.Get("currentTime").Float()
-	now := nowInSeconds()
-
-	if p.lastTime != 0 && p.lastAudioTime != 0 && p.lastAudioTime >= c && p.lastTime != now {
-		// Unfortunately, currentTime might not be precise enough on some devices
-		// (e.g. Android Chrome). Adjust the audio time with OS clock.
-		c = p.lastAudioTime + now - p.lastTime
-	}
-
-	p.lastAudioTime = c
-	p.lastTime = now
 
 	if p.nextPos < c {
 		p.nextPos = c
