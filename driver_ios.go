@@ -37,6 +37,10 @@ func componentSubType() C.OSType {
 
 //export oto_setErrorByNotification
 func oto_setErrorByNotification(s C.OSStatus, from *C.char) {
+	if theDriver.err != nil {
+		return
+	}
+
 	gofrom := C.GoString(from)
-	theDriver.errorByNotification = fmt.Errorf("oto: %s at notification failed: %d", gofrom, s)
+	theDriver.err = fmt.Errorf("oto: %s at notification failed: %d", gofrom, s)
 }

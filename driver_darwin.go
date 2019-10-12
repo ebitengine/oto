@@ -42,7 +42,7 @@ type driver struct {
 	bitDepthInBytes int
 	buffers         []C.AudioQueueBufferRef
 
-	errorByNotification error
+	err error
 
 	chWrite   chan []byte
 	chWritten chan int
@@ -173,13 +173,16 @@ loop:
 	}
 	// Do not update mAudioDataByteSize, or the buffer is not used correctly any more.
 
-	// TODO: Check errors?
-	C.AudioQueueEnqueueBuffer(inAQ, inBuffer, 0, nil)
+	if osstatus := C.AudioQueueEnqueueBuffer(inAQ, inBuffer, 0, nil); osstatus != C.noErr {
+		if d.err != nil {
+			d.err = fmt.Errorf("oto: AudioQueueEnqueueBuffer at oto_render failed: %d", d.err)
+		}
+	}
 }
 
 func (d *driver) TryWrite(data []byte) (int, error) {
-	if d.errorByNotification != nil {
-		return 0, d.errorByNotification
+	if d.err != nil {
+		return 0, d.err
 	}
 
 	n := d.bufSize - len(d.buf)
