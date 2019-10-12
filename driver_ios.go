@@ -16,64 +16,26 @@
 
 package oto
 
-// #cgo CFLAGS: -x objective-c
 // #cgo LDFLAGS: -framework Foundation -framework AVFoundation
 //
-// #import <AVFoundation/AVFoundation.h>
 // #import <AudioToolbox/AudioToolbox.h>
 //
-// @interface OtoInterruptObserver : NSObject {
-// }
-//
-// @property (nonatomic) AudioQueueRef audioQueue;
-//
-// - (void) onAudioSessionEvent: (NSNotification*)notification;
-//
-// @end
-//
-// @implementation OtoInterruptObserver {
-//   AudioQueueRef _audioQueue;
-// }
-//
-// - (void) onAudioSessionEvent: (NSNotification *) notification
-// {
-//   if (![notification.name isEqualToString:AVAudioSessionInterruptionNotification]) {
-//     return;
-//   }
-//
-//   NSObject* value = [notification.userInfo valueForKey:AVAudioSessionInterruptionTypeKey];
-//   AVAudioSessionInterruptionType interruptionType = [(NSNumber*)value intValue];
-//   switch (interruptionType) {
-//   case AVAudioSessionInterruptionTypeBegan:
-//     AudioQueuePause([self audioQueue]);
-//     break;
-//   case AVAudioSessionInterruptionTypeEnded:
-//     AudioQueueStart([self audioQueue], nil);
-//     break;
-//   default:
-//     NSAssert(NO, @"unexpected AVAudioSessionInterruptionType: %d", interruptionType);
-//     break;
-//   }
-// }
-//
-// @end
-//
-// // Handle interruption events, or Siri would stop the audio (#80).
-// static void setNotificationHandler(AudioQueueRef audioQueue) {
-//   AVAudioSession* session = [AVAudioSession sharedInstance];
-//   OtoInterruptObserver* observer = [[OtoInterruptObserver alloc] init];
-//   observer.audioQueue = audioQueue;
-//   [[NSNotificationCenter defaultCenter] addObserver: observer
-//                                            selector: @selector(onAudioSessionEvent:)
-//                                                name: AVAudioSessionInterruptionNotification
-//                                              object: session];
-// }
+// void oto_setNotificationHandler(AudioQueueRef audioQueue);
 import "C"
 
+import (
+	"fmt"
+)
+
 func setNotificationHandler(driver *driver) {
-	C.setNotificationHandler(driver.audioQueue)
+	C.oto_setNotificationHandler(driver.audioQueue)
 }
 
 func componentSubType() C.OSType {
 	return C.kAudioUnitSubType_RemoteIO
+}
+
+//export oto_setErrorByNotification
+func oto_setErrorByNotification(s C.OSStatus, from *C.char) {
+	theDriver.errorByNotification = fmt.Errorf("oto: %s at notification failed: %d", from, s)
 }

@@ -42,6 +42,8 @@ type driver struct {
 	bitDepthInBytes int
 	buffers         []C.AudioQueueBufferRef
 
+	errorByNotification error
+
 	chWrite   chan []byte
 	chWritten chan int
 }
@@ -176,6 +178,10 @@ loop:
 }
 
 func (d *driver) TryWrite(data []byte) (int, error) {
+	if d.errorByNotification != nil {
+		return 0, d.errorByNotification
+	}
+
 	n := d.bufSize - len(d.buf)
 	if n > len(data) {
 		n = len(data)
