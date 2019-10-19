@@ -99,7 +99,7 @@ func newDriver(sampleRate, numChans, bitDepthInBytes, bufferSizeInBytes int) (tr
 	var format C.snd_pcm_format_t
 	switch bitDepthInBytes {
 	case 1:
-		format = C.SND_PCM_FORMAT_S8
+		format = C.SND_PCM_FORMAT_U8
 	case 2:
 		format = C.SND_PCM_FORMAT_S16_LE
 	default:
