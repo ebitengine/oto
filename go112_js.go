@@ -27,3 +27,9 @@ func float32SliceToTypedArray(s []float32) (js.Value, func()) {
 	a := js.TypedArrayOf(s)
 	return a.Value, func() { a.Release() }
 }
+
+func isAudioWorkletAvailable() bool {
+	// float32SliceToTypedArray's freeing function must be called. However, it is impossible to pass Float32Array 
+	// to worklet without calling them. Forbid Audio Worklet on Go 1.12 or older.
+	return false
+}

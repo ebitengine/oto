@@ -35,3 +35,7 @@ func float32SliceToTypedArray(s []float32) (js.Value, func()) {
 	buf := a.Get("buffer")
 	return js.Global().Get("Float32Array").New(buf, a.Get("byteOffset"), a.Get("byteLength").Int()/4), func() {}
 }
+
+func isAudioWorkletAvailable() bool {
+	return true
+}
