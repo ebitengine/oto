@@ -36,6 +36,17 @@ func float32SliceToTypedArray(s []float32) (js.Value, func()) {
 	return js.Global().Get("Float32Array").New(buf, a.Get("byteOffset"), a.Get("byteLength").Int()/4), func() {}
 }
 
+func copyFloat32sToJS(v js.Value, s []float32) {
+	h := (*reflect.SliceHeader)(unsafe.Pointer(&s))
+	h.Len *= 4
+	h.Cap *= 4
+	bs := *(*[]byte)(unsafe.Pointer(h))
+
+	a := js.Global().Get("Uint8Array").New(v.Get("buffer"))
+	js.CopyBytesToJS(a, bs)
+	runtime.KeepAlive(s)
+}
+
 func isAudioWorkletAvailable() bool {
 	return true
 }

@@ -30,13 +30,15 @@ type driver struct {
 	bitDepthInBytes int
 	nextPos         float64
 	tmp             []byte
-	sent            int
 	bufferSize      int
 	context         js.Value
-	workletNode     js.Value
 	ready           bool
 	callbacks       map[string]js.Func
-	cond            *sync.Cond
+
+	// For Audio Worklet
+	workletNode js.Value
+	bufs        [][]js.Value
+	cond        *sync.Cond
 }
 
 const audioBufferSamples = 3200
@@ -64,15 +66,13 @@ class EbitenAudioWorkletProcessor extends AudioWorkletProcessor {
     this.buffers_ = [[], []];
     this.offsets_ = [0, 0];
     this.offsetsInArray_ = [0, 0];
+    this.consumed_ = [];
 
     this.port.onmessage = (e) => {
       const bufs = e.data;
       for (let ch = 0; ch < bufs.length; ch++) {
-        if (bufs[ch].length === 0) {
-          return;
-        }
         this.buffers_[ch].push(bufs[ch]);
-      };
+      }
     };
   }
 
@@ -85,10 +85,20 @@ class EbitenAudioWorkletProcessor extends AudioWorkletProcessor {
     while (this.buffers_[ch][0].length <= i - this.offsets_[ch]) {
       this.offsets_[ch] += this.buffers_[ch][0].length;
       this.offsetsInArray_[ch] = 0;
-      this.buffers_[ch].shift();
+      const buf = this.buffers_[ch].shift();
+      this.appendConsumedBuffer(ch, buf);
     }
     this.offsetsInArray_[ch]++;
     return this.buffers_[ch][0][i - this.offsets_[ch]];
+  }
+
+  appendConsumedBuffer(ch, buf) {
+    let idx = this.consumed_.length - 1;
+    if (idx < 0 || this.consumed_[idx][ch]) {
+      this.consumed_.push([]);
+      idx++;
+    }
+    this.consumed_[idx][ch] = buf;
   }
 
   process(inputs, outputs, parameters) {
@@ -110,7 +120,11 @@ class EbitenAudioWorkletProcessor extends AudioWorkletProcessor {
       }
     }
 
-    this.port.postMessage(out[0].length)
+    for (let bufs of this.consumed_) {
+      this.port.postMessage(bufs, bufs.map(buf => buf.buffer));
+    }
+    this.consumed_ = [];
+
     return true;
   }
 }
@@ -158,18 +172,30 @@ registerProcessor('ebiten-audio-worklet-processor', EbitenAudioWorkletProcessor)
 	}
 
 	if node != js.Undefined() {
+		s := p.bufferSize / p.channelNum / p.bitDepthInBytes / 2
+		p.bufs = [][]js.Value{
+			{
+				js.Global().Get("Float32Array").New(s),
+				js.Global().Get("Float32Array").New(s),
+			},
+			{
+				js.Global().Get("Float32Array").New(s),
+				js.Global().Get("Float32Array").New(s),
+			},
+		}
+
 		node.Get("port").Set("onmessage", js.FuncOf(func(this js.Value, args []js.Value) interface{} {
 			p.cond.L.Lock()
 			defer p.cond.L.Unlock()
 
-			n := args[0].Get("data").Int() * p.bitDepthInBytes * p.channelNum
-			if n == 0 {
-				return nil
+			bufs := args[0].Get("data")
+			var arr []js.Value
+			for i := 0; i < bufs.Length(); i++ {
+				arr = append(arr, bufs.Index(i))
 			}
 
-			notify := len(p.tmp) == p.bufferSize && len(p.tmp) == p.sent
-			p.tmp = p.tmp[n:]
-			p.sent -= n
+			notify := len(p.bufs) == 0
+			p.bufs = append(p.bufs, arr)
 			if notify {
 				p.cond.Signal()
 			}
@@ -226,23 +252,20 @@ func (p *driver) TryWrite(data []byte) (int, error) {
 		n := min(len(data), max(0, p.bufferSize-len(p.tmp)))
 		p.tmp = append(p.tmp, data[:n]...)
 
-		if len(p.tmp) < p.bufferSize {
+		if len(p.tmp) < p.bufferSize/2 {
 			return n, nil
 		}
 
-		for len(p.tmp) == p.bufferSize && len(p.tmp) == p.sent {
+		for len(p.bufs) == 0 {
 			p.cond.Wait()
 		}
 
-		if len(p.tmp) == p.sent {
-			return n, nil
-		}
-
-		l, r := toLR(p.tmp[p.sent:])
-		// As Audio Worklet is available only on Go 1.13 and newer, freeing functions don't have to be
-		// called. See isAudioWorkletAvailable.
-		tl, _ := float32SliceToTypedArray(l)
-		tr, _ := float32SliceToTypedArray(r)
+		l, r := toLR(p.tmp[:p.bufferSize/2])
+		tl := p.bufs[0][0]
+		tr := p.bufs[0][1]
+		copyFloat32sToJS(tl, l)
+		copyFloat32sToJS(tr, r)
+		p.tmp = p.tmp[p.bufferSize/2:]
 
 		bufs := js.Global().Get("Array").New()
 		bufs.Call("push", tl, tr)
@@ -251,7 +274,7 @@ func (p *driver) TryWrite(data []byte) (int, error) {
 
 		p.workletNode.Get("port").Call("postMessage", bufs, transfers)
 
-		p.sent = len(p.tmp)
+		p.bufs = p.bufs[1:]
 
 		return n, nil
 	}

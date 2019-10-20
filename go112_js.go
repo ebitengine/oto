@@ -28,8 +28,11 @@ func float32SliceToTypedArray(s []float32) (js.Value, func()) {
 	return a.Value, func() { a.Release() }
 }
 
+func copyFloat32sToJS(v js.Value, s []float32) {
+	panic("oto: copyFloat32sToJS is not implemented on Go 1.12 or older")
+}
+
 func isAudioWorkletAvailable() bool {
-	// float32SliceToTypedArray's freeing function must be called. However, it is impossible to pass Float32Array 
-	// to worklet without calling them. Forbid Audio Worklet on Go 1.12 or older.
+	// As copyFloat32sToJS is not implemented on Go 1.12 or older, Audio Worklet is not available.
 	return false
 }
