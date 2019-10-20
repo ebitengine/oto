@@ -41,24 +41,33 @@ type driver struct {
 	cond        *sync.Cond
 }
 
+type warn struct {
+	msg string
+}
+
+func (w *warn) Error() string {
+	return w.msg
+}
+
 const audioBufferSamples = 3200
 
-func newDriver(sampleRate, channelNum, bitDepthInBytes, bufferSize int) (tryWriteCloser, error) {
-	class := js.Global().Get("AudioContext")
-	if class == js.Undefined() {
-		class = js.Global().Get("webkitAudioContext")
-	}
-	if class == js.Undefined() {
-		return nil, errors.New("oto: audio couldn't be initialized")
+func tryAudioWorklet(context js.Value, channelNum int) (js.Value, error) {
+	if js.Global().Get("AudioWorkletNode") == js.Undefined() {
+		return js.Undefined(), nil
 	}
 
-	options := js.Global().Get("Object").New()
-	options.Set("sampleRate", sampleRate)
-	context := class.New(options)
+	if !isAudioWorkletAvailable() {
+		return js.Undefined(), nil
+	}
 
-	var node js.Value
-	if js.Global().Get("AudioWorkletNode") != js.Undefined() && isAudioWorkletAvailable() {
-		script := `
+	worklet := context.Get("audioWorklet")
+	if worklet == js.Undefined() {
+		return js.Undefined(), &warn{
+			msg: "AudioWorklet is not available due to the insecure context. See https://developer.mozilla.org/en-US/docs/Web/API/AudioWorklet",
+		}
+	}
+
+	script := `
 class EbitenAudioWorkletProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
@@ -130,28 +139,53 @@ class EbitenAudioWorkletProcessor extends AudioWorkletProcessor {
 }
 
 registerProcessor('ebiten-audio-worklet-processor', EbitenAudioWorkletProcessor);`
-		scriptURL := "data:application/javascript;base64," + base64.StdEncoding.EncodeToString([]byte(script))
+	scriptURL := "data:application/javascript;base64," + base64.StdEncoding.EncodeToString([]byte(script))
 
-		ch := make(chan error)
-		context.Get("audioWorklet").Call("addModule", scriptURL).Call("then", js.FuncOf(func(js.Value, []js.Value) interface{} {
-			close(ch)
-			return nil
-		})).Call("catch", js.FuncOf(func(this js.Value, args []js.Value) interface{} {
-			err := args[0]
-			ch <- fmt.Errorf("oto: error at addModule: %s: %s", err.Get("name").String(), err.Get("message").String())
-			close(ch)
-			return nil
-		}))
-		if err := <-ch; err != nil {
+	ch := make(chan error)
+	worklet.Call("addModule", scriptURL).Call("then", js.FuncOf(func(js.Value, []js.Value) interface{} {
+		close(ch)
+		return nil
+	})).Call("catch", js.FuncOf(func(this js.Value, args []js.Value) interface{} {
+		err := args[0]
+		ch <- fmt.Errorf("oto: error at addModule: %s: %s", err.Get("name").String(), err.Get("message").String())
+		close(ch)
+		return nil
+	}))
+	if err := <-ch; err != nil {
+		return js.Undefined(), err
+	}
+
+	options := js.Global().Get("Object").New()
+	arr := js.Global().Get("Array").New()
+	arr.Call("push", channelNum)
+	options.Set("outputChannelCount", arr)
+
+	node := js.Global().Get("AudioWorkletNode").New(context, "ebiten-audio-worklet-processor", options)
+	node.Call("connect", context.Get("destination"))
+
+	return node, nil
+}
+
+func newDriver(sampleRate, channelNum, bitDepthInBytes, bufferSize int) (tryWriteCloser, error) {
+	class := js.Global().Get("AudioContext")
+	if class == js.Undefined() {
+		class = js.Global().Get("webkitAudioContext")
+	}
+	if class == js.Undefined() {
+		return nil, errors.New("oto: audio couldn't be initialized")
+	}
+
+	options := js.Global().Get("Object").New()
+	options.Set("sampleRate", sampleRate)
+	context := class.New(options)
+
+	node, err := tryAudioWorklet(context, channelNum)
+	if err != nil {
+		w, ok := err.(*warn)
+		if !ok {
 			return nil, err
 		}
-
-		options := js.Global().Get("Object").New()
-		arr := js.Global().Get("Array").New()
-		arr.Call("push", channelNum)
-		options.Set("outputChannelCount", arr)
-		node = js.Global().Get("AudioWorkletNode").New(context, "ebiten-audio-worklet-processor", options)
-		node.Call("connect", context.Get("destination"))
+		js.Global().Get("console").Call("warn", w.Error())
 	}
 
 	bs := bufferSize
