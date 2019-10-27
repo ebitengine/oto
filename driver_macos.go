@@ -13,6 +13,7 @@
 // limitations under the License.
 
 // +build darwin,!ios
+// +build !js
 
 package oto
 
