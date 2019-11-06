@@ -31,16 +31,20 @@ import (
 	"unsafe"
 )
 
-const queueBufferSize = 4096
+const baseQueueBufferSize = 1024
 
-type driver struct {
-	audioQueue      C.AudioQueueRef
-	buf             []byte
-	bufSize         int
-	sampleRate      int
+type audioInfo struct {
 	channelNum      int
 	bitDepthInBytes int
-	buffers         []C.AudioQueueBufferRef
+}
+
+type driver struct {
+	audioQueue C.AudioQueueRef
+	buf        []byte
+	bufSize    int
+	sampleRate int
+	audioInfo  *audioInfo
+	buffers    []C.AudioQueueBufferRef
 
 	err error
 
@@ -90,11 +94,17 @@ func newDriver(sampleRate, channelNum, bitDepthInBytes, bufferSizeInBytes int) (
 		mChannelsPerFrame: C.UInt32(channelNum),
 		mBitsPerChannel:   C.UInt32(8 * bitDepthInBytes),
 	}
+
+	audioInfo := &audioInfo{
+		channelNum:      channelNum,
+		bitDepthInBytes: bitDepthInBytes,
+	}
+
 	var audioQueue C.AudioQueueRef
 	if osstatus := C.AudioQueueNewOutput(
 		&desc,
 		(C.AudioQueueOutputCallback)(C.oto_render),
-		nil,
+		unsafe.Pointer(audioInfo),
 		(C.CFRunLoopRef)(0),
 		(C.CFStringRef)(0),
 		0,
@@ -102,20 +112,20 @@ func newDriver(sampleRate, channelNum, bitDepthInBytes, bufferSizeInBytes int) (
 		return nil, fmt.Errorf("oto: AudioQueueNewFormat with StreamFormat failed: %d", osstatus)
 	}
 
+	queueBufferSize := baseQueueBufferSize * channelNum * bitDepthInBytes
 	nbuf := bufferSizeInBytes / queueBufferSize
 	if nbuf <= 1 {
 		nbuf = 2
 	}
 
 	d := &driver{
-		audioQueue:      audioQueue,
-		sampleRate:      sampleRate,
-		channelNum:      channelNum,
-		bitDepthInBytes: bitDepthInBytes,
-		bufSize:         nbuf * queueBufferSize,
-		buffers:         make([]C.AudioQueueBufferRef, nbuf),
-		chWrite:         make(chan []byte),
-		chWritten:       make(chan int),
+		audioQueue: audioQueue,
+		sampleRate: sampleRate,
+		audioInfo:  audioInfo,
+		bufSize:    nbuf * queueBufferSize,
+		buffers:    make([]C.AudioQueueBufferRef, nbuf),
+		chWrite:    make(chan []byte),
+		chWritten:  make(chan int),
 	}
 	runtime.SetFinalizer(d, (*driver).Close)
 	// Set the driver before setting the rendering callback.
@@ -143,6 +153,9 @@ func newDriver(sampleRate, channelNum, bitDepthInBytes, bufferSizeInBytes int) (
 
 //export oto_render
 func oto_render(inUserData unsafe.Pointer, inAQ C.AudioQueueRef, inBuffer C.AudioQueueBufferRef) {
+	audioInfo := (*audioInfo)(inUserData)
+	queueBufferSize := baseQueueBufferSize * audioInfo.channelNum * audioInfo.bitDepthInBytes
+
 	d := getDriver()
 
 	var buf []byte
@@ -150,7 +163,7 @@ loop:
 	for len(buf) < queueBufferSize {
 		// Set the timer. When the application is in background or being switched, the driver's buffer is not
 		// updated and it is needed to fill the buffer with zeros.
-		s := time.Second * queueBufferSize / time.Duration(d.sampleRate*d.channelNum*d.bitDepthInBytes)
+		s := time.Second * time.Duration(queueBufferSize) / time.Duration(d.sampleRate*d.audioInfo.channelNum*d.audioInfo.bitDepthInBytes)
 		t := time.NewTicker(s)
 		defer t.Stop()
 
@@ -191,6 +204,7 @@ func (d *driver) TryWrite(data []byte) (int, error) {
 	}
 	d.buf = append(d.buf, data[:n]...)
 	// Use the buffer only when the buffer length is enough to avoid choppy sound.
+	queueBufferSize := baseQueueBufferSize * d.audioInfo.channelNum * d.audioInfo.bitDepthInBytes
 	for len(d.buf) >= queueBufferSize {
 		d.chWrite <- d.buf
 		n := <-d.chWritten
