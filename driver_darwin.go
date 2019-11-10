@@ -159,25 +159,35 @@ func oto_render(inUserData unsafe.Pointer, inAQ C.AudioQueueRef, inBuffer C.Audi
 	d := getDriver()
 
 	var buf []byte
-loop:
-	for len(buf) < queueBufferSize {
-		// Set the timer. When the application is in background or being switched, the driver's buffer is not
-		// updated and it is needed to fill the buffer with zeros.
-		s := time.Second * time.Duration(queueBufferSize) / time.Duration(d.sampleRate*d.audioInfo.channelNum*d.audioInfo.bitDepthInBytes)
-		t := time.NewTicker(s)
-		defer t.Stop()
 
+	// Set the timer. When the application is in background or being switched, the driver's buffer is not
+	// updated and it is needed to fill the buffer with zeros.
+	s := time.Second * time.Duration(queueBufferSize) / time.Duration(d.sampleRate*d.audioInfo.channelNum*d.audioInfo.bitDepthInBytes)
+	t := time.NewTicker(s)
+	defer t.Stop()
+	ch := t.C
+
+	paused := false
+
+	for len(buf) < queueBufferSize {
 		select {
 		case dbuf := <-d.chWrite:
+			if paused {
+				C.AudioQueueStart(inAQ, nil)
+				paused = false
+			}
 			n := queueBufferSize - len(buf)
 			if n > len(dbuf) {
 				n = len(dbuf)
 			}
 			buf = append(buf, dbuf[:n]...)
 			d.chWritten <- n
-		case <-t.C:
-			buf = append(buf, make([]byte, queueBufferSize-len(buf))...)
-			break loop
+		case <-ch:
+			if !paused {
+				C.AudioQueuePause(inAQ)
+				paused = true
+			}
+			ch = nil
 		}
 	}
 
