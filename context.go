@@ -82,9 +82,9 @@ func NewContext(sampleRate, channelNum, bitDepthInBytes, bufferSizeInBytes int) 
 	}
 	theContext = c
 	go func() {
-        if c.driverWriter == nil || c.mux == nil {
-            return
-        }
+		if c.driverWriter == nil || c.mux == nil {
+			return
+		}
 		if _, err := io.Copy(c.driverWriter, c.mux); err != nil {
 			c.errCh <- err
 		}
