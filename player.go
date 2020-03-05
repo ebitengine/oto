@@ -36,7 +36,6 @@ func newPlayer(context *Context) *Player {
 		r:       r,
 		w:       w,
 	}
-	runtime.SetFinalizer(p, (*Player).Close)
 	return p
 }
 
