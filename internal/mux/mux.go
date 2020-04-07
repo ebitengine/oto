@@ -62,8 +62,20 @@ func (m *Mux) Read(buf []byte) (int, error) {
 		if len(buf) < 256 {
 			n = len(buf)
 		}
-		copy(buf, make([]byte, n))
-		return n, nil
+
+		switch m.bitDepthInBytes {
+		case 1:
+			const offset = 128
+			for i := 0; i < n; i++ {
+				buf[i] = offset
+			}
+			return n, nil
+		case 2:
+			copy(buf, make([]byte, n))
+			return n, nil
+		default:
+			panic("not reached")
+		}
 	}
 
 	bs := m.channelNum * m.bitDepthInBytes
