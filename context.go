@@ -122,6 +122,14 @@ func (c *Context) Close() error {
 	return <-c.errCh
 }
 
+// Write creates a new Player, writes to it, and closes it after the Write.
+func (c *Context) Write(buf []byte) (int, error) {
+	p := c.NewPlayer()
+	defer p.Close()
+
+	return p.Write(buf)
+}
+
 type tryWriteCloser interface {
 	io.Closer
 
