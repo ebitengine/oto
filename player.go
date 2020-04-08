@@ -75,7 +75,6 @@ func (p *Player) Close() error {
 	p.context.mux.RemoveSource(p.r)
 	p.context = nil
 
-	// Close the pipe reader after RemoveSource, or ErrClosedPipe happens at Read-ing.
 	return nil
 }
 
