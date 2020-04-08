@@ -17,9 +17,55 @@
 package oto
 
 import (
+	"bytes"
 	"io"
+	"sync"
+
+	"github.com/hajimehoshi/oto/internal/mux"
 )
 
-func pipe() (io.ReadCloser, io.WriteCloser) {
-	return io.Pipe()
+type concurrentBufferReader struct {
+	buf *bytes.Buffer
+	m   *sync.Mutex
+}
+
+func (r concurrentBufferReader) Len() int {
+	r.m.Lock()
+	defer r.m.Unlock()
+
+	return r.buf.Len()
+}
+
+func (r concurrentBufferReader) Read(buf []byte) (int, error) {
+	r.m.Lock()
+	defer r.m.Unlock()
+
+	return r.buf.Read(buf)
+}
+
+type concurrentBufferWriter struct {
+	buf *bytes.Buffer
+	m   *sync.Mutex
+}
+
+func (w concurrentBufferWriter) Write(buf []byte) (int, error) {
+	w.m.Lock()
+	defer w.m.Unlock()
+
+	return w.buf.Write(buf)
+}
+
+func pipe() (mux.LenReader, io.Writer) {
+	var buf bytes.Buffer
+	var m sync.Mutex
+
+	r := concurrentBufferReader{
+		buf: &buf,
+		m:   &m,
+	}
+	w := concurrentBufferWriter{
+		buf: &buf,
+		m:   &m,
+	}
+	return r, w
 }
