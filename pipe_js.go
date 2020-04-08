@@ -20,6 +20,12 @@ import (
 	"io"
 )
 
+// pipe returns a buffer that can safely act as a LenReader or io.Writer
+//
+// This is basically same as the _notjs pipe(), but is implemented more
+// effeciently. Because javascript is inherently single-threaded, synchronous
+// access to a buffer is safe. So, the additional synchronization is not
+// required.
 func pipe() (mux.LenReader, io.Writer) {
 	var buf bytes.Buffer
 	return buf, buf

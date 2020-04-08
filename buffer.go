@@ -12,21 +12,35 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// +build !js
-
 package oto
 
 import (
-	"io"
-
-	"github.com/hajimehoshi/oto/internal/mux"
+	"bytes"
+	"sync"
 )
 
-// pipe returns a buffer that can safely act as a LenReader or io.Writer
-//
-// This is basically the same as the _js pipe(), but with a locking mechanism
-// to ensure concurrent access is safe.
-func pipe() (mux.LenReader, io.Writer) {
-	b := mux.NewConcurrentBuffer()
-	return b, b
+type concurrentBuffer struct {
+	buf *bytes.Buffer
+	m   *sync.Mutex
+}
+
+func (b concurrentBuffer) Len() int {
+	b.m.Lock()
+	defer b.m.Unlock()
+
+	return b.buf.Len()
+}
+
+func (b concurrentBuffer) Read(buf []byte) (int, error) {
+	b.m.Lock()
+	defer b.m.Unlock()
+
+	return b.buf.Read(buf)
+}
+
+func (b concurrentBuffer) Write(buf []byte) (int, error) {
+	b.m.Lock()
+	defer b.m.Unlock()
+
+	return b.buf.Write(buf)
 }
