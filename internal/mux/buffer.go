@@ -19,35 +19,29 @@ import (
 	"sync"
 )
 
-// NewConcurrentBuffer returns a ready-to-use ConcurrentBuffer.
-func NewConcurrentBuffer() ConcurrentBuffer {
-	return ConcurrentBuffer{
-		buf: &bytes.Buffer{},
-		m:   &sync.Mutex{},
-	}
-}
-
 // ConcurrentBuffer provides a bytes.Buffer that is safe for concurrent use.
 type ConcurrentBuffer struct {
-	buf *bytes.Buffer
-	m   *sync.Mutex
+	buf bytes.Buffer
+	m   sync.Mutex
 }
 
-func (b ConcurrentBuffer) Len() int {
+// Len returns the number of bytes currently available to be read from the
+// buffer.
+func (b *ConcurrentBuffer) Len() int {
 	b.m.Lock()
 	defer b.m.Unlock()
 
 	return b.buf.Len()
 }
 
-func (b ConcurrentBuffer) Read(buf []byte) (int, error) {
+func (b *ConcurrentBuffer) Read(buf []byte) (int, error) {
 	b.m.Lock()
 	defer b.m.Unlock()
 
 	return b.buf.Read(buf)
 }
 
-func (b ConcurrentBuffer) Write(buf []byte) (int, error) {
+func (b *ConcurrentBuffer) Write(buf []byte) (int, error) {
 	b.m.Lock()
 	defer b.m.Unlock()
 
