@@ -51,7 +51,7 @@ func TestBufferConcurrentWrites(t *testing.T) {
 
 	for _, b := range out {
 		if b != 1 {
-			t.Errorf("Expected to find all 1s in the buffer, but there was a '%v'", b)
+			t.Errorf("expected to find all 1s in the buffer, but there was a '%v'", b)
 			break
 		}
 	}

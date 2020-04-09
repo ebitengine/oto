@@ -142,8 +142,8 @@ func TestNoReader(t *testing.T) {
 }
 
 func TestEmptyBuffersDontBlock(t *testing.T) {
-	w1 := bytes.Buffer{} // mux.NewConcurrentBuffer()
-	w2 := bytes.Buffer{} // mux.NewConcurrentBuffer()
+	w1 := bytes.Buffer{}
+	w2 := bytes.Buffer{}
 	m := mux.New(1, 1)
 	m.AddSource(&w1)
 	m.AddSource(&w2)
@@ -152,9 +152,9 @@ func TestEmptyBuffersDontBlock(t *testing.T) {
 	buf := make([]byte, 100)
 	n, err := m.Read(buf)
 	if err != nil {
-		t.Errorf("Expected read to return without error, but the error was: %v", err)
+		t.Fatal(err)
 	}
 	if n != 100 {
-		t.Errorf("Expected read to read %v bytes, but it read %v", 100, n)
+		t.Errorf("read: len: got: %v want: %v", n, 100)
 	}
 }
