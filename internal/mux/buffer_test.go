@@ -48,7 +48,7 @@ func TestBufferConcurrentWrites(t *testing.T) {
 	out := make([]byte, concurrency)
 	n, err := b.Read(out)
 	if err != nil {
-		t.Errorf("Expected no error from Read, but it returned: %v", err)
+		t.Fatal(err)
 	}
 	if n != concurrency {
 		t.Errorf("read bytes: got: %v, want: %v", n, concurrency)
