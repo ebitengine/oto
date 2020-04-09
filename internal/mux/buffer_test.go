@@ -18,7 +18,6 @@ import (
 	"io"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/hajimehoshi/oto/internal/mux"
 )
@@ -26,7 +25,7 @@ import (
 const concurrency = 1000
 
 func TestBufferConcurrentWrites(t *testing.T) {
-	b := mux.NewConcurrentBuffer()
+	b := &mux.ConcurrentBuffer{}
 
 	ch := make(chan struct{})
 	var wg sync.WaitGroup
@@ -46,12 +45,8 @@ func TestBufferConcurrentWrites(t *testing.T) {
 	}
 
 	out := make([]byte, concurrency)
-	n, err := b.Read(out)
-	if err != nil {
+	if _, err := io.ReadFull(b, out); err != nil {
 		t.Fatal(err)
-	}
-	if n != concurrency {
-		t.Errorf("read bytes: got: %v, want: %v", n, concurrency)
 	}
 
 	for _, b := range out {
@@ -63,41 +58,46 @@ func TestBufferConcurrentWrites(t *testing.T) {
 }
 
 func TestConcurrentReadWrites(t *testing.T) {
-	b := mux.NewConcurrentBuffer()
+	b := mux.ConcurrentBuffer{}
 	ch := make(chan struct{})
+	doneWriting := make(chan struct{})
 	var wg sync.WaitGroup
 	wg.Add(2)
 	go func() {
+		defer wg.Done()
+
 		<-ch
 		for i := 0; i < concurrency; i++ {
 			b.Write([]byte{1})
 		}
-		wg.Done()
-	}()
-	timeout := make(chan struct{})
-	go func() {
-		time.Sleep(time.Second)
-		timeout <- struct{}{}
+		doneWriting <- struct{}{}
 	}()
 	go func() {
 		defer wg.Done()
+
 		<-ch
-		buf := make([]byte, 1)
-		i := 0
+
+		bytesRead := 0
 		for {
+			lastRead := false
 			select {
-			case <-timeout:
-				t.Errorf("Reached timeout while waiting for more data. Expected to receive %v bytes, but only received %v.", concurrency, i)
-				return
+			case <-doneWriting:
+				lastRead = true
 			default:
-				n, err := b.Read(buf)
-				if err != nil && err != io.EOF {
-					t.Errorf("Expected only nil and io.EOF errors from Read, but it returned: %v", err)
+			}
+
+			buf := make([]byte, concurrency)
+			n, err := b.Read(buf)
+			if err != nil && err != io.EOF {
+				t.Errorf("b.Read error: got: %v want: %v or %v", err, nil, io.EOF)
+			}
+			bytesRead += n
+
+			if lastRead {
+				if bytesRead != concurrency {
+					t.Errorf("total bytes read: got: %v want: %v", bytesRead, concurrency)
 				}
-				i = i + n
-				if i == concurrency {
-					return
-				}
+				break
 			}
 		}
 	}()
