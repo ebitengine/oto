@@ -27,6 +27,6 @@ import (
 // This is basically the same as the _js pipe(), but with a locking mechanism
 // to ensure concurrent access is safe.
 func pipe() (mux.LenReader, io.Writer) {
-	b := mux.NewConcurrentBuffer()
+	b := &mux.ConcurrentBuffer{}
 	return b, b
 }
