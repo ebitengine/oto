@@ -51,7 +51,7 @@ func TestBufferConcurrentWrites(t *testing.T) {
 		t.Errorf("Expected no error from Read, but it returned: %v", err)
 	}
 	if n != concurrency {
-		t.Errorf("Expected Read to return %v bytes, but it returned %v", concurrency, n)
+		t.Errorf("read bytes: got: %v, want: %v", n, concurrency)
 	}
 
 	for _, b := range out {
