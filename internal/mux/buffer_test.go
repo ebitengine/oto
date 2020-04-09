@@ -42,7 +42,7 @@ func TestBufferConcurrentWrites(t *testing.T) {
 	wg.Wait()
 
 	if l := b.Len(); l != concurrency {
-		t.Errorf("Expected Len to be %v, but it was %v", concurrency, l)
+		t.Errorf("b.Len: got: %v, want: %v", l, concurrency)
 	}
 
 	out := make([]byte, concurrency)
