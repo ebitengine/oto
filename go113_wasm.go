@@ -13,25 +13,22 @@
 // limitations under the License.
 
 // +build go1.13
-// +build !wasm
+// +build wasm
 
 package oto
 
 import (
-	"bytes"
-	"encoding/binary"
+	"reflect"
 	"runtime"
 	"syscall/js"
+	"unsafe"
 )
 
-func sliceToByteSlice(s interface{}) (bs []byte) {
-	var b bytes.Buffer
-	binary.Write(&b, binary.LittleEndian, s)
-	return b.Bytes()
-}
-
 func float32SliceToTypedArray(s []float32) (js.Value, func()) {
-	bs := sliceToByteSlice(s)
+	h := (*reflect.SliceHeader)(unsafe.Pointer(&s))
+	h.Len *= 4
+	h.Cap *= 4
+	bs := *(*[]byte)(unsafe.Pointer(h))
 
 	a := js.Global().Get("Uint8Array").New(len(bs))
 	js.CopyBytesToJS(a, bs)
@@ -41,7 +38,10 @@ func float32SliceToTypedArray(s []float32) (js.Value, func()) {
 }
 
 func copyFloat32sToJS(v js.Value, s []float32) {
-	bs := sliceToByteSlice(s)
+	h := (*reflect.SliceHeader)(unsafe.Pointer(&s))
+	h.Len *= 4
+	h.Cap *= 4
+	bs := *(*[]byte)(unsafe.Pointer(h))
 
 	a := js.Global().Get("Uint8Array").New(v.Get("buffer"))
 	js.CopyBytesToJS(a, bs)
