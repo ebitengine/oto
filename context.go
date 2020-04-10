@@ -90,15 +90,6 @@ func NewContext(sampleRate, channelNum, bitDepthInBytes, bufferSizeInBytes int) 
 	return c, nil
 }
 
-// NewPlayer is a short-hand of creating a Context by NewContext and a Player by the context's NewPlayer.
-func NewPlayer(sampleRate, channelNum, bitDepthInBytes, bufferSizeInBytes int) (*Player, error) {
-	c, err := NewContext(sampleRate, channelNum, bitDepthInBytes, bufferSizeInBytes)
-	if err != nil {
-		return nil, err
-	}
-	return c.NewPlayer(), nil
-}
-
 // NewPlayer creates a new, ready-to-use Player belonging to the Context.
 func (c *Context) NewPlayer() *Player {
 	p := newPlayer(c)
