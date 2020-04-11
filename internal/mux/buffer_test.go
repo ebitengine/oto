@@ -59,48 +59,36 @@ func TestBufferConcurrentWrites(t *testing.T) {
 
 func TestConcurrentReadWrites(t *testing.T) {
 	b := mux.ConcurrentBuffer{}
-	ch := make(chan struct{})
-	doneWriting := make(chan struct{})
-	var wg sync.WaitGroup
-	wg.Add(2)
-	go func() {
-		defer wg.Done()
+	done := make(chan struct{})
 
-		<-ch
+	go func() {
 		for i := 0; i < concurrency; i++ {
 			b.Write([]byte{1})
 		}
-		doneWriting <- struct{}{}
+		done <- struct{}{}
 	}()
-	go func() {
-		defer wg.Done()
 
-		<-ch
-
-		bytesRead := 0
-		for {
-			lastRead := false
-			select {
-			case <-doneWriting:
-				lastRead = true
-			default:
-			}
-
-			buf := make([]byte, concurrency)
-			n, err := b.Read(buf)
-			if err != nil && err != io.EOF {
-				t.Errorf("b.Read error: got: %v want: %v or %v", err, nil, io.EOF)
-			}
-			bytesRead += n
-
-			if lastRead {
-				if bytesRead != concurrency {
-					t.Errorf("total bytes read: got: %v want: %v", bytesRead, concurrency)
-				}
-				break
-			}
+	bytesRead := 0
+	for {
+		lastRead := false
+		select {
+		case <-done:
+			lastRead = true
+		default:
 		}
-	}()
-	close(ch)
-	wg.Wait()
+
+		buf := make([]byte, concurrency)
+		n, err := b.Read(buf)
+		if err != nil && err != io.EOF {
+			t.Errorf("b.Read error: got: %v want: %v or %v", err, nil, io.EOF)
+		}
+		bytesRead += n
+
+		if lastRead {
+			if bytesRead != concurrency {
+				t.Errorf("total bytes read: got: %v want: %v", bytesRead, concurrency)
+			}
+			break
+		}
+	}
 }
