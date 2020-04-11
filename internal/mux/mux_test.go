@@ -150,11 +150,7 @@ func TestEmptyBuffersDontBlock(t *testing.T) {
 
 	w1.Write(make([]byte, 100))
 	buf := make([]byte, 100)
-	n, err := m.Read(buf)
-	if err != nil {
+	if _, err := io.ReadFull(m, buf); err != nil {
 		t.Fatal(err)
-	}
-	if n != 100 {
-		t.Errorf("read: len: got: %v want: %v", n, 100)
 	}
 }

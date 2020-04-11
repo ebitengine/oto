@@ -88,9 +88,14 @@ func (m *Mux) Read(buf []byte) (int, error) {
 	if minBufferSize > 256 {
 		minBufferSize = 256
 	}
+	readyBuffers := make([]LenReader, 0, len(m.buffers))
 	for buf := range m.buffers {
 		l := buf.Len()
-		if l > 0 && l < minBufferSize {
+		if l <= 0 {
+			continue
+		}
+		readyBuffers = append(readyBuffers, buf)
+		if l < minBufferSize {
 			minBufferSize = l
 		}
 	}
@@ -104,14 +109,10 @@ func (m *Mux) Read(buf []byte) (int, error) {
 		return 0, nil
 	}
 
-	bufs := make([][]byte, 0, len(m.buffers))
-	for buf := range m.buffers {
-		if buf.Len() == 0 {
-			continue
-		}
+	bufs := make([][]byte, 0, len(readyBuffers))
+	for _, buf := range readyBuffers {
 		sl := make([]byte, l)
-		_, err := buf.Read(sl)
-		if err != nil && err != io.EOF {
+		if _, err := io.ReadFull(buf, sl); err != nil {
 			return 0, err
 		}
 		bufs = append(bufs, sl)
