@@ -27,18 +27,18 @@ const concurrency = 1000
 func TestBufferConcurrentWrites(t *testing.T) {
 	b := &mux.ConcurrentBuffer{}
 
-	ch := make(chan struct{})
-	var wg sync.WaitGroup
-	wg.Add(concurrency)
+	var done, start sync.WaitGroup
+	done.Add(concurrency)
+	start.Add(1)
 	for i := 0; i < concurrency; i++ {
 		go func() {
-			<-ch
+			start.Wait()
 			b.Write([]byte{1})
-			wg.Done()
+			done.Done()
 		}()
 	}
-	close(ch)
-	wg.Wait()
+	start.Done()
+	done.Wait()
 
 	if l := b.Len(); l != concurrency {
 		t.Errorf("b.Len: got: %v, want: %v", l, concurrency)
