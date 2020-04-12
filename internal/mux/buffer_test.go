@@ -65,7 +65,7 @@ func TestConcurrentReadWrites(t *testing.T) {
 		for i := 0; i < concurrency; i++ {
 			b.Write([]byte{1})
 		}
-		done <- struct{}{}
+		close(done)
 	}()
 
 	bytesRead := 0
