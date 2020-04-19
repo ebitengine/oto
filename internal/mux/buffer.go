@@ -23,6 +23,7 @@ import (
 type ConcurrentBuffer struct {
 	buf bytes.Buffer
 	m   sync.Mutex
+	ch  chan struct{}
 }
 
 // Len returns the number of bytes currently available to be read from the
@@ -38,12 +39,24 @@ func (b *ConcurrentBuffer) Read(buf []byte) (int, error) {
 	b.m.Lock()
 	defer b.m.Unlock()
 
-	return b.buf.Read(buf)
+	n, err := b.buf.Read(buf)
+	if b.ch != nil && b.buf.Len() == 0 {
+		b.ch <- struct{}{}
+		close(b.ch)
+		b.ch = nil
+	}
+	return n, err
 }
 
 func (b *ConcurrentBuffer) Write(buf []byte) (int, error) {
 	b.m.Lock()
-	defer b.m.Unlock()
+	n, err := b.buf.Write(buf)
 
-	return b.buf.Write(buf)
+	ch := make(chan struct{})
+	b.ch = ch
+	b.m.Unlock()
+
+	<-ch
+
+	return n, err
 }
