@@ -140,17 +140,3 @@ func TestNoReader(t *testing.T) {
 		t.Errorf("got: %v, want: %v", buf, make([]byte, len(buf)))
 	}
 }
-
-func TestEmptyBuffersDontBlock(t *testing.T) {
-	w1 := bytes.Buffer{}
-	w2 := bytes.Buffer{}
-	m := mux.New(1, 1)
-	m.AddSource(&w1)
-	m.AddSource(&w2)
-
-	w1.Write(make([]byte, 100))
-	buf := make([]byte, 100)
-	if _, err := io.ReadFull(m, buf); err != nil {
-		t.Fatal(err)
-	}
-}

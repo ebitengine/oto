@@ -18,8 +18,6 @@ package oto
 import (
 	"io"
 	"runtime"
-
-	"github.com/hajimehoshi/oto/internal/mux"
 )
 
 // Player is a PCM (pulse-code modulation) audio player.
@@ -27,8 +25,8 @@ import (
 // Use Write method to play samples.
 type Player struct {
 	context *Context
-	r       mux.LenReader
-	w       io.Writer
+	r       io.ReadCloser
+	w       io.WriteCloser
 }
 
 func newPlayer(context *Context) *Player {
@@ -72,10 +70,16 @@ func (p *Player) Close() error {
 		return nil
 	}
 
+	// Close the pipe writer before RemoveSource, or Read-ing in the mux takes forever.
+	if err := p.w.Close(); err != nil {
+		return err
+	}
+
 	p.context.mux.RemoveSource(p.r)
 	p.context = nil
 
-	return nil
+	// Close the pipe reader after RemoveSource, or ErrClosedPipe happens at Read-ing.
+	return p.r.Close()
 }
 
 func max(a, b int) int {

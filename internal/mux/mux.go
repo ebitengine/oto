@@ -15,23 +15,17 @@
 package mux
 
 import (
+	"bufio"
 	"io"
 	"runtime"
 	"sync"
 )
 
-// LenReader is the interface required to mux sources together.
-// Both Len() and Read() should conform to the interface defined by bytes.Buffer
-type LenReader interface {
-	Read(buf []byte) (int, error)
-	Len() int
-}
-
 // Mux is a multiplexer for multiple io.Reader objects.
 type Mux struct {
 	channelNum      int
 	bitDepthInBytes int
-	buffers         map[LenReader]struct{}
+	readers         map[io.Reader]*bufio.Reader
 	closed          bool
 
 	m sync.RWMutex
@@ -42,7 +36,7 @@ func New(channelNum, bitDepthInBytes int) *Mux {
 	m := &Mux{
 		channelNum:      channelNum,
 		bitDepthInBytes: bitDepthInBytes,
-		buffers:         map[LenReader]struct{}{},
+		readers:         map[io.Reader]*bufio.Reader{},
 	}
 	runtime.SetFinalizer(m, (*Mux).Close)
 	return m
@@ -61,7 +55,7 @@ func (m *Mux) Read(buf []byte) (int, error) {
 		return 0, io.EOF
 	}
 
-	if len(m.buffers) == 0 {
+	if len(m.readers) == 0 {
 		// When there is no reader, Read should return with 0s or Read caller can block forever.
 		// See https://github.com/hajimehoshi/go-mp3/issues/28
 		n := 256
@@ -84,24 +78,22 @@ func (m *Mux) Read(buf []byte) (int, error) {
 		}
 	}
 
-	minBufferSize := len(buf)
-	if minBufferSize > 256 {
-		minBufferSize = 256
-	}
-	readyBuffers := make([]LenReader, 0, len(m.buffers))
-	for buf := range m.buffers {
-		l := buf.Len()
-		if l <= 0 {
-			continue
-		}
-		readyBuffers = append(readyBuffers, buf)
-		if l < minBufferSize {
-			minBufferSize = l
-		}
-	}
-
 	bs := m.channelNum * m.bitDepthInBytes
-	l := minBufferSize / bs * bs
+	l := len(buf)
+	l = l / bs * bs // Adjust the length in order not to mix different channels.
+
+	bufs := map[*bufio.Reader][]byte{}
+	for _, p := range m.readers {
+		peeked, err := p.Peek(l)
+		if err != nil && err != bufio.ErrBufferFull && err != io.EOF {
+			return 0, err
+		}
+		if l > len(peeked) {
+			l = len(peeked)
+			l = l / bs * bs
+		}
+		bufs[p] = peeked[:l]
+	}
 
 	if l == 0 {
 		// Returning 0 without error can block the caller of Read forever. Call Gosched to encourage context switching.
@@ -109,13 +101,10 @@ func (m *Mux) Read(buf []byte) (int, error) {
 		return 0, nil
 	}
 
-	bufs := make([][]byte, 0, len(readyBuffers))
-	for _, buf := range readyBuffers {
-		sl := make([]byte, l)
-		if _, err := io.ReadFull(buf, sl); err != nil {
+	for _, p := range m.readers {
+		if _, err := p.Discard(l); err != nil && err != io.EOF {
 			return 0, err
 		}
-		bufs = append(bufs, sl)
 	}
 
 	switch m.bitDepthInBytes {
@@ -168,34 +157,34 @@ func (m *Mux) Read(buf []byte) (int, error) {
 func (m *Mux) Close() error {
 	m.m.Lock()
 	runtime.SetFinalizer(m, nil)
-	m.buffers = nil
+	m.readers = nil
 	m.closed = true
 	m.m.Unlock()
 	return nil
 }
 
 // AddSource adds a reader to the Mux.
-func (m *Mux) AddSource(source LenReader) {
+func (m *Mux) AddSource(source io.Reader) {
 	m.m.Lock()
 	if m.closed {
 		panic("mux: already closed")
 	}
-	if _, ok := m.buffers[source]; ok {
-		panic("mux: the LenReader cannot be added multiple times")
+	if _, ok := m.readers[source]; ok {
+		panic("mux: the io.Reader cannot be added multiple times")
 	}
-	m.buffers[source] = struct{}{}
+	m.readers[source] = bufio.NewReaderSize(source, 256)
 	m.m.Unlock()
 }
 
 // RemoveSource removes a reader from the Mux.
-func (m *Mux) RemoveSource(source LenReader) {
+func (m *Mux) RemoveSource(source io.Reader) {
 	m.m.Lock()
 	if m.closed {
 		panic("mux: already closed")
 	}
-	if _, ok := m.buffers[source]; !ok {
-		panic("mux: the LenReader is already removed")
+	if _, ok := m.readers[source]; !ok {
+		panic("mux: the io.Reader is already removed")
 	}
-	delete(m.buffers, source)
+	delete(m.readers, source)
 	m.m.Unlock()
 }

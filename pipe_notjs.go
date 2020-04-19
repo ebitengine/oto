@@ -18,15 +18,8 @@ package oto
 
 import (
 	"io"
-
-	"github.com/hajimehoshi/oto/internal/mux"
 )
 
-// pipe returns a buffer that can safely act as a LenReader or io.Writer
-//
-// This is basically the same as the _js pipe(), but with a locking mechanism
-// to ensure concurrent access is safe.
-func pipe() (mux.LenReader, io.Writer) {
-	b := &mux.ConcurrentBuffer{}
-	return b, b
+func pipe() (io.ReadCloser, io.WriteCloser) {
+	return io.Pipe()
 }
