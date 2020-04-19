@@ -24,7 +24,13 @@ import (
 
 const concurrency = 1000
 
+func TestBufferWriteBlocksOnRead(t *testing.T) {
+	t.Fatal("todo")
+}
+
 func TestBufferConcurrentWrites(t *testing.T) {
+	t.Fatal("todo")
+
 	b := &mux.ConcurrentBuffer{}
 
 	var done, start sync.WaitGroup
