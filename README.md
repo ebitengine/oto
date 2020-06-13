@@ -40,6 +40,10 @@ apt install libasound2-dev
 
 In most cases this command must be run by root user or through `sudo` command.
 
+#### Building for Linux i386
+
+Along with `GOARCH`, set `CGO_ENABLED=1`. If you're on amd64, make sure to install 32-bit libasound. On Arch, enable multilib by uncommenting the [multilib] section in `/etc/pacman.conf`
+
 ### FreeBSD
 
 OpenAL is required. Install openal-soft:
