@@ -42,7 +42,7 @@ In most cases this command must be run by root user or through `sudo` command.
 
 #### Building for Linux i386
 
-Along with `GOARCH`, set `CGO_ENABLED=1`. If you're on amd64, make sure to install 32-bit libasound. On Arch, enable multilib by uncommenting the [multilib] section in `/etc/pacman.conf`
+Along with `GOARCH`, set `CGO_ENABLED=1` (see [here](https://golang.org/cmd/cgo/#hdr-Using_cgo_with_the_go_command)). Make sure to install the shared libraries for the target platform.
 
 ### FreeBSD
 
