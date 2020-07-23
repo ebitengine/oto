@@ -162,8 +162,7 @@ func oto_render(inUserData unsafe.Pointer, inAQ C.AudioQueueRef, inBuffer C.Audi
 
 	var buf []byte
 
-	// Set the timer. When the application is in background or being switched, the driver's buffer is not
-	// updated and it is needed to fill the buffer with zeros.
+	// Set the timer. When the input does not come, the audio must be paused.
 	s := time.Second * time.Duration(queueBufferSize) / time.Duration(d.sampleRate*d.audioInfo.channelNum*d.audioInfo.bitDepthInBytes)
 	t := time.NewTicker(s)
 	defer t.Stop()
