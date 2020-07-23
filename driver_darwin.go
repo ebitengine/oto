@@ -174,7 +174,10 @@ func oto_render(inUserData unsafe.Pointer, inAQ C.AudioQueueRef, inBuffer C.Audi
 		select {
 		case dbuf := <-d.chWrite:
 			if paused {
-				C.AudioQueueStart(inAQ, nil)
+				if osstatus := C.AudioQueueStart(inAQ, nil); osstatus != C.noErr && d.err == nil {
+					d.err = fmt.Errorf("oto: AudioQueueStart at oto_render failed: %d", osstatus)
+					return
+				}
 				paused = false
 			}
 			n := queueBufferSize - len(buf)
@@ -185,7 +188,10 @@ func oto_render(inUserData unsafe.Pointer, inAQ C.AudioQueueRef, inBuffer C.Audi
 			d.chWritten <- n
 		case <-ch:
 			if !paused {
-				C.AudioQueuePause(inAQ)
+				if osstatus := C.AudioQueuePause(inAQ); osstatus != C.noErr && d.err == nil {
+					d.err = fmt.Errorf("oto: AudioQueuePause at oto_render failed: %d", osstatus)
+					return
+				}
 				paused = true
 			}
 			ch = nil
@@ -197,10 +203,8 @@ func oto_render(inUserData unsafe.Pointer, inAQ C.AudioQueueRef, inBuffer C.Audi
 	}
 	// Do not update mAudioDataByteSize, or the buffer is not used correctly any more.
 
-	if osstatus := C.AudioQueueEnqueueBuffer(inAQ, inBuffer, 0, nil); osstatus != C.noErr {
-		if d.err == nil {
-			d.err = fmt.Errorf("oto: AudioQueueEnqueueBuffer at oto_render failed: %d", osstatus)
-		}
+	if osstatus := C.AudioQueueEnqueueBuffer(inAQ, inBuffer, 0, nil); osstatus != C.noErr && d.err == nil {
+		d.err = fmt.Errorf("oto: AudioQueueEnqueueBuffer at oto_render failed: %d", osstatus)
 	}
 }
 
