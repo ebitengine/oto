@@ -18,14 +18,14 @@
 
 #include "_cgo_export.h"
 
-@interface OtoInterruptObserver : NSObject {
+@interface OtoNotificationObserver : NSObject {
 }
 
 @property(nonatomic) AudioQueueRef audioQueue;
 
 @end
 
-@implementation OtoInterruptObserver {
+@implementation OtoNotificationObserver {
   AudioQueueRef _audioQueue;
 }
 
@@ -39,9 +39,9 @@
 
 @end
 
-// oto_setNotificationHandler sets a handler for interruption events.
+// oto_setNotificationHandler sets a handler for sleep/wake notifications.
 void oto_setNotificationHandler(AudioQueueRef audioQueue) {
-  OtoInterruptObserver *observer = [[OtoInterruptObserver alloc] init];
+  OtoNotificationObserver *observer = [[OtoNotificationObserver alloc] init];
   observer.audioQueue = audioQueue;
 
   [[[NSWorkspace sharedWorkspace] notificationCenter]
