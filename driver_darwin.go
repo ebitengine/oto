@@ -47,11 +47,14 @@ type driver struct {
 	sampleRate int
 	audioInfo  *audioInfo
 	buffers    []C.AudioQueueBufferRef
+	paused     bool
 
 	err error
 
 	chWrite   chan []byte
 	chWritten chan int
+
+	m sync.Mutex
 }
 
 var (
@@ -168,18 +171,10 @@ func oto_render(inUserData unsafe.Pointer, inAQ C.AudioQueueRef, inBuffer C.Audi
 	defer t.Stop()
 	ch := t.C
 
-	paused := false
-
 	for len(buf) < queueBufferSize {
 		select {
 		case dbuf := <-d.chWrite:
-			if paused {
-				if osstatus := C.AudioQueueStart(inAQ, nil); osstatus != C.noErr && d.err == nil {
-					d.err = fmt.Errorf("oto: AudioQueueStart at oto_render failed: %d", osstatus)
-					return
-				}
-				paused = false
-			}
+			d.resume()
 			n := queueBufferSize - len(buf)
 			if n > len(dbuf) {
 				n = len(dbuf)
@@ -187,13 +182,7 @@ func oto_render(inUserData unsafe.Pointer, inAQ C.AudioQueueRef, inBuffer C.Audi
 			buf = append(buf, dbuf[:n]...)
 			d.chWritten <- n
 		case <-ch:
-			if !paused {
-				if osstatus := C.AudioQueuePause(inAQ); osstatus != C.noErr && d.err == nil {
-					d.err = fmt.Errorf("oto: AudioQueuePause at oto_render failed: %d", osstatus)
-					return
-				}
-				paused = true
-			}
+			d.pause()
 			ch = nil
 		}
 	}
@@ -203,14 +192,15 @@ func oto_render(inUserData unsafe.Pointer, inAQ C.AudioQueueRef, inBuffer C.Audi
 	}
 	// Do not update mAudioDataByteSize, or the buffer is not used correctly any more.
 
-	if osstatus := C.AudioQueueEnqueueBuffer(inAQ, inBuffer, 0, nil); osstatus != C.noErr && d.err == nil {
-		d.err = fmt.Errorf("oto: AudioQueueEnqueueBuffer at oto_render failed: %d", osstatus)
-	}
+	d.enqueueBuffer(inBuffer)
 }
 
 func (d *driver) TryWrite(data []byte) (int, error) {
-	if d.err != nil {
-		return 0, d.err
+	d.m.Lock()
+	err := d.err
+	d.m.Unlock()
+	if err != nil {
+		return 0, err
 	}
 
 	n := d.bufSize - len(d.buf)
@@ -248,8 +238,55 @@ func (d *driver) Close() error {
 	return nil
 }
 
+func (d *driver) enqueueBuffer(buffer C.AudioQueueBufferRef) {
+	d.m.Lock()
+	defer d.m.Unlock()
+
+	if osstatus := C.AudioQueueEnqueueBuffer(d.audioQueue, buffer, 0, nil); osstatus != C.noErr && d.err == nil {
+		d.err = fmt.Errorf("oto: AudioQueueEnqueueBuffer failed: %d", osstatus)
+		return
+	}
+}
+
+func (d *driver) resume() {
+	d.m.Lock()
+	defer d.m.Unlock()
+
+	if !d.paused {
+		return
+	}
+	if osstatus := C.AudioQueueStart(d.audioQueue, nil); osstatus != C.noErr && d.err == nil {
+		d.err = fmt.Errorf("oto: AudioQueueStart failed: %d", osstatus)
+		return
+	}
+	d.paused = false
+}
+
+func (d *driver) pause() {
+	d.m.Lock()
+	defer d.m.Unlock()
+
+	if d.paused {
+		return
+	}
+	if osstatus := C.AudioQueuePause(d.audioQueue); osstatus != C.noErr && d.err == nil {
+		d.err = fmt.Errorf("oto: AudioQueuePause failed: %d", osstatus)
+		return
+	}
+	d.paused = true
+}
+
 func setNotificationHandler(driver *driver) {
 	C.oto_setNotificationHandler(driver.audioQueue)
+}
+
+//export oto_setGlobalPause
+func oto_setGlobalPause(paused C.int) {
+	if paused != 0 {
+		theDriver.pause()
+	} else {
+		theDriver.resume()
+	}
 }
 
 //export oto_setErrorByNotification

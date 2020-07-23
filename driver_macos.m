@@ -30,17 +30,11 @@
 }
 
 - (void)receiveSleepNote:(NSNotification *)note {
-  OSStatus status = AudioQueuePause([self audioQueue]);
-  if (status != noErr) {
-    oto_setErrorByNotification(status, "AudioQueuePause");
-  }
+  oto_setGlobalPause(YES);
 }
 
 - (void)receiveWakeNote:(NSNotification *)note {
-  OSStatus status = AudioQueueStart([self audioQueue], nil);
-  if (status != noErr) {
-    oto_setErrorByNotification(status, "AudioQueueStart");
-  }
+  oto_setGlobalPause(NO);
 }
 
 @end
