@@ -17,12 +17,10 @@
 
 package oto
 
+// #cgo LDFLAGS: -framework AppKit
+//
 // #import <AudioToolbox/AudioToolbox.h>
 import "C"
-
-func setNotificationHandler(driver *driver) {
-	// Do nothing
-}
 
 func componentSubType() C.OSType {
 	return C.kAudioUnitSubType_DefaultOutput

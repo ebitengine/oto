@@ -21,6 +21,8 @@ package oto
 // #import <AudioToolbox/AudioToolbox.h>
 //
 // void oto_render(void* inUserData, AudioQueueRef inAQ, AudioQueueBufferRef inBuffer);
+//
+// void oto_setNotificationHandler(AudioQueueRef audioQueue);
 import "C"
 
 import (
@@ -241,4 +243,18 @@ func (d *driver) Close() error {
 	d.audioQueue = nil
 	setDriver(nil)
 	return nil
+}
+
+func setNotificationHandler(driver *driver) {
+	C.oto_setNotificationHandler(driver.audioQueue)
+}
+
+//export oto_setErrorByNotification
+func oto_setErrorByNotification(s C.OSStatus, from *C.char) {
+	if theDriver.err != nil {
+		return
+	}
+
+	gofrom := C.GoString(from)
+	theDriver.err = fmt.Errorf("oto: %s at notification failed: %d", gofrom, s)
 }
