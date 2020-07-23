@@ -221,12 +221,6 @@ func (d *driver) TryWrite(data []byte) (int, error) {
 func (d *driver) Close() error {
 	runtime.SetFinalizer(d, nil)
 
-	for _, b := range d.buffers {
-		if osstatus := C.AudioQueueFreeBuffer(d.audioQueue, b); osstatus != C.noErr {
-			return fmt.Errorf("oto: AudioQueueFreeBuffer failed: %d", osstatus)
-		}
-	}
-
 	if osstatus := C.AudioQueueStop(d.audioQueue, C.false); osstatus != C.noErr {
 		return fmt.Errorf("oto: AudioQueueStop failed: %d", osstatus)
 	}
