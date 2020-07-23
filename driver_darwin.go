@@ -71,7 +71,9 @@ func setDriver(d *driver) {
 	}
 	theDriver = d
 
-	setNotificationHandler(d)
+	if d != nil {
+		setNotificationHandler(d)
+	}
 }
 
 func getDriver() *driver {
