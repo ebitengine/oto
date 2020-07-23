@@ -198,8 +198,8 @@ func oto_render(inUserData unsafe.Pointer, inAQ C.AudioQueueRef, inBuffer C.Audi
 	// Do not update mAudioDataByteSize, or the buffer is not used correctly any more.
 
 	if osstatus := C.AudioQueueEnqueueBuffer(inAQ, inBuffer, 0, nil); osstatus != C.noErr {
-		if d.err != nil {
-			d.err = fmt.Errorf("oto: AudioQueueEnqueueBuffer at oto_render failed: %d", d.err)
+		if d.err == nil {
+			d.err = fmt.Errorf("oto: AudioQueueEnqueueBuffer at oto_render failed: %d", osstatus)
 		}
 	}
 }
