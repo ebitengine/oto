@@ -22,10 +22,6 @@ package oto
 // #import <AudioToolbox/AudioToolbox.h>
 import "C"
 
-import (
-	"fmt"
-)
-
 func componentSubType() C.OSType {
 	return C.kAudioUnitSubType_RemoteIO
 }
