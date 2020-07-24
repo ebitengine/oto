@@ -22,14 +22,11 @@
 @interface OtoInterruptObserver : NSObject {
 }
 
-@property (nonatomic) AudioQueueRef audioQueue;
-
 - (void) onAudioSessionEvent: (NSNotification*)notification;
 
 @end
 
 @implementation OtoInterruptObserver {
-  AudioQueueRef _audioQueue;
 }
 
 - (void) onAudioSessionEvent: (NSNotification *)notification
@@ -42,17 +39,11 @@
   AVAudioSessionInterruptionType interruptionType = [(NSNumber*)value intValue];
   switch (interruptionType) {
   case AVAudioSessionInterruptionTypeBegan: {
-    OSStatus status = AudioQueuePause([self audioQueue]);
-    if (status != noErr) {
-      oto_setErrorByNotification(status, "AudioQueuePause");
-    }
+    oto_setGlobalPause(YES);
     break;
   }
   case AVAudioSessionInterruptionTypeEnded: {
-    OSStatus status = AudioQueueStart([self audioQueue], nil);
-    if (status != noErr) {
-      oto_setErrorByNotification(status, "AudioQueueStart");
-    }
+    oto_setGlobalPause(NO);
     break;
   }
   default:
@@ -69,7 +60,6 @@
 void oto_setNotificationHandler(AudioQueueRef audioQueue) {
   AVAudioSession* session = [AVAudioSession sharedInstance];
   OtoInterruptObserver* observer = [[OtoInterruptObserver alloc] init];
-  observer.audioQueue = audioQueue;
   [[NSNotificationCenter defaultCenter] addObserver: observer
                                            selector: @selector(onAudioSessionEvent:)
                                                name: AVAudioSessionInterruptionNotification
