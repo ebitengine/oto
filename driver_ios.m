@@ -56,7 +56,8 @@
     break;
   }
   default:
-    NSAssert(NO, @"unexpected AVAudioSessionInterruptionType: %d", interruptionType);
+    NSAssert(NO, @"unexpected AVAudioSessionInterruptionType: %lu",
+             (unsigned long)(interruptionType));
     break;
   }
 }
