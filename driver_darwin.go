@@ -281,6 +281,8 @@ func oto_setGlobalPause(paused C.int) {
 	if paused != 0 {
 		theDriver.pause()
 	} else {
+		// Audio doesn't work soon after recovering from sleeping. Wait for a while
+		// (hajimehoshi/ebiten#1259).
 		time.Sleep(500 * time.Millisecond)
 		theDriver.resume()
 	}
