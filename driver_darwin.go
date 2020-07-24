@@ -281,6 +281,7 @@ func oto_setGlobalPause(paused C.int) {
 	if paused != 0 {
 		theDriver.pause()
 	} else {
+		time.Sleep(500 * time.Millisecond)
 		theDriver.resume()
 	}
 }
