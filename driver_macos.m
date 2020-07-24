@@ -21,12 +21,9 @@
 @interface OtoNotificationObserver : NSObject {
 }
 
-@property(nonatomic) AudioQueueRef audioQueue;
-
 @end
 
 @implementation OtoNotificationObserver {
-  AudioQueueRef _audioQueue;
 }
 
 - (void)receiveSleepNote:(NSNotification *)note {
@@ -42,7 +39,6 @@
 // oto_setNotificationHandler sets a handler for sleep/wake notifications.
 void oto_setNotificationHandler(AudioQueueRef audioQueue) {
   OtoNotificationObserver *observer = [[OtoNotificationObserver alloc] init];
-  observer.audioQueue = audioQueue;
 
   [[[NSWorkspace sharedWorkspace] notificationCenter]
       addObserver:observer
