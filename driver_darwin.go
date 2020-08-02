@@ -41,13 +41,14 @@ type audioInfo struct {
 }
 
 type driver struct {
-	audioQueue C.AudioQueueRef
-	buf        []byte
-	bufSize    int
-	sampleRate int
-	audioInfo  *audioInfo
-	buffers    []C.AudioQueueBufferRef
-	paused     bool
+	audioQueue    C.AudioQueueRef
+	buf           []byte
+	bufSize       int
+	sampleRate    int
+	audioInfo     *audioInfo
+	buffers       []C.AudioQueueBufferRef
+	paused        bool
+	lastPauseTime time.Time
 
 	err error
 
@@ -176,7 +177,7 @@ func oto_render(inUserData unsafe.Pointer, inAQ C.AudioQueueRef, inBuffer C.Audi
 	for len(buf) < queueBufferSize {
 		select {
 		case dbuf := <-d.chWrite:
-			d.resume()
+			d.resume(false)
 			n := queueBufferSize - len(buf)
 			if n > len(dbuf) {
 				n = len(dbuf)
@@ -244,9 +245,22 @@ func (d *driver) enqueueBuffer(buffer C.AudioQueueBufferRef) {
 	}
 }
 
-func (d *driver) resume() {
+func (d *driver) resume(afterSleep bool) {
 	d.m.Lock()
 	defer d.m.Unlock()
+
+	// Audio doesn't work soon after recovering from sleeping. Wait for a while
+	// (hajimehoshi/ebiten#1259).
+	if afterSleep {
+		// After short-time sleeping, 500ms more sleeping is enough. However, after long-time sleeping, it
+		// looks like 1 second more sleeping are required (hajimehoshi/ebiten#1280).
+		// This is tested on MacBook Pro 2020 macOS 10.15.6.
+		if time.Now().Sub(d.lastPauseTime) < 30*time.Second {
+			time.Sleep(500 * time.Millisecond)
+		} else {
+			time.Sleep(time.Second)
+		}
+	}
 
 	if !d.paused {
 		return
@@ -270,6 +284,7 @@ func (d *driver) pause() {
 		return
 	}
 	d.paused = true
+	d.lastPauseTime = time.Now()
 }
 
 func setNotificationHandler(driver *driver) {
@@ -281,10 +296,7 @@ func oto_setGlobalPause(paused C.int) {
 	if paused != 0 {
 		theDriver.pause()
 	} else {
-		// Audio doesn't work soon after recovering from sleeping. Wait for a while
-		// (hajimehoshi/ebiten#1259).
-		time.Sleep(500 * time.Millisecond)
-		theDriver.resume()
+		theDriver.resume(true)
 	}
 }
 
