@@ -16,11 +16,6 @@
 
 package oto
 
-import (
-	"fmt"
-	"unsafe"
-)
-
 type driver struct {
 }
 
