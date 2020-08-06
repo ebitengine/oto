@@ -13,6 +13,7 @@
 // limitations under the License.
 
 // +build darwin,!ios,!js
+// +build !noaudio
 
 #import <AppKit/AppKit.h>
 

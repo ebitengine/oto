@@ -1,4 +1,4 @@
-// Copyright 2019 The Oto Authors
+// Copyright 2017 The Oto Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,17 +12,28 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// +build darwin,ios
-// +build !js
-// +build !noaudio
+// +build noaudio
 
 package oto
 
-// #cgo LDFLAGS: -framework Foundation -framework AVFoundation
-//
-// #import <AudioToolbox/AudioToolbox.h>
-import "C"
+import (
+	"fmt"
+	"unsafe"
+)
 
-func componentSubType() C.OSType {
-	return C.kAudioUnitSubType_RemoteIO
+type driver struct {
+}
+
+func newDriver(sampleRate, numChans, bitDepthInBytes, bufferSizeInBytes int) (tryWriteCloser, error) {
+	p := &driver{}
+
+	return p, nil
+}
+
+func (p *driver) TryWrite(data []byte) (n int, err error) {
+	return n, nil
+}
+
+func (p *driver) Close() error {
+	return nil
 }

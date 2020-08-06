@@ -13,6 +13,7 @@
 // limitations under the License.
 
 // +build darwin,ios
+// +build !noaudio
 
 #import <AVFoundation/AVFoundation.h>
 #import <AudioToolbox/AudioToolbox.h>

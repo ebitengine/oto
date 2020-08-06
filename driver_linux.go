@@ -15,6 +15,7 @@
 // +build !js
 // +build !android
 // +build !ios
+// +build !noaudio
 
 package oto
 

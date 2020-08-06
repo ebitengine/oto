@@ -14,6 +14,7 @@
 
 // +build darwin,!ios
 // +build !js
+// +build !noaudio
 
 package oto
 

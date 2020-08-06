@@ -15,6 +15,7 @@
 // +build freebsd openbsd
 // +build !js
 // +build !android
+// +build !noaudio
 
 package oto
 
