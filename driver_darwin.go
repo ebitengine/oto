@@ -159,7 +159,7 @@ func newDriver(sampleRate, channelNum, bitDepthInBytes, bufferSizeInBytes int) (
 }
 
 func audioQueueStartWithRetrying(audioQueue C.AudioQueueRef) error {
-	const maxRetry = 3
+	const maxRetry = 6
 	for i := 0; i < maxRetry; i++ {
 		osstatus := C.AudioQueueStart(audioQueue, nil)
 		if osstatus == C.noErr {
