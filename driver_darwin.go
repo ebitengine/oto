@@ -152,11 +152,26 @@ func newDriver(sampleRate, channelNum, bitDepthInBytes, bufferSizeInBytes int) (
 		}
 	}
 
-	if osstatus := C.AudioQueueStart(audioQueue, nil); osstatus != C.noErr {
-		return nil, fmt.Errorf("oto: AudioQueueStart failed: %d", osstatus)
+	if err := audioQueueStartWithRetrying(audioQueue); err != nil {
+		return nil, err
 	}
-
 	return d, nil
+}
+
+func audioQueueStartWithRetrying(audioQueue C.AudioQueueRef) error {
+	const maxRetry = 3
+	for i := 0; i < maxRetry; i++ {
+		osstatus := C.AudioQueueStart(audioQueue, nil)
+		if osstatus == C.noErr {
+			return nil
+		}
+		if osstatus == C.AVAudioSessionErrorCodeCannotStartPlaying && i < maxRetry-1 {
+			time.Sleep(100 * time.Millisecond * (1 << uint(i)))
+			continue
+		}
+		return fmt.Errorf("oto: AudioQueueStart failed: %d", osstatus)
+	}
+	return fmt.Errorf("oto: AudioQueuStart has been failing: %d", C.AVAudioSessionErrorCodeCannotStartPlaying)
 }
 
 //export oto_render
@@ -265,8 +280,8 @@ func (d *driver) resume(afterSleep bool) {
 	if !d.paused {
 		return
 	}
-	if osstatus := C.AudioQueueStart(d.audioQueue, nil); osstatus != C.noErr && d.err == nil {
-		d.err = fmt.Errorf("oto: AudioQueueStart failed: %d", osstatus)
+	if err := audioQueueStartWithRetrying(d.audioQueue); err != nil && d.err == nil {
+		d.err = err
 		return
 	}
 	d.paused = false
