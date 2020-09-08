@@ -171,7 +171,7 @@ func audioQueueStartWithRetrying(audioQueue C.AudioQueueRef) error {
 		}
 		return fmt.Errorf("oto: AudioQueueStart failed: %d", osstatus)
 	}
-	return fmt.Errorf("oto: AudioQueuStart has been failing: %d", C.AVAudioSessionErrorCodeCannotStartPlaying)
+	return fmt.Errorf("oto: AudioQueueStart has been failing: %d", C.AVAudioSessionErrorCodeCannotStartPlaying)
 }
 
 //export oto_render
