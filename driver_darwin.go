@@ -165,8 +165,10 @@ func audioQueueStartWithRetrying(audioQueue C.AudioQueueRef) error {
 		if osstatus == C.noErr {
 			return nil
 		}
-		if osstatus == C.AVAudioSessionErrorCodeCannotStartPlaying && i < maxRetry-1 {
-			time.Sleep(100 * time.Millisecond * (1 << uint(i)))
+		if osstatus == C.AVAudioSessionErrorCodeCannotStartPlaying {
+			if i < maxRetry-1 {
+				time.Sleep(100 * time.Millisecond * (1 << uint(i)))
+			}
 			continue
 		}
 		return fmt.Errorf("oto: AudioQueueStart failed: %d", osstatus)
