@@ -222,6 +222,9 @@ func (d *driver) TryWrite(data []byte) (int, error) {
 }
 
 func (d *driver) Close() error {
+	d.m.Lock()
+	defer d.m.Unlock()
+
 	runtime.SetFinalizer(d, nil)
 
 	if osstatus := C.AudioQueueStop(d.audioQueue, C.false); osstatus != C.noErr {
