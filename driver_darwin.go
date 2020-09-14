@@ -287,6 +287,16 @@ func (d *driver) pause() {
 	d.lastPauseTime = time.Now()
 }
 
+func (d *driver) setError(err error) {
+	d.m.Lock()
+	defer d.m.Unlock()
+
+	if theDriver.err != nil {
+		return
+	}
+	theDriver.err = err
+}
+
 func setNotificationHandler(driver *driver) {
 	C.oto_setNotificationHandler(driver.audioQueue)
 }
@@ -302,10 +312,6 @@ func oto_setGlobalPause(paused C.int) {
 
 //export oto_setErrorByNotification
 func oto_setErrorByNotification(s C.OSStatus, from *C.char) {
-	if theDriver.err != nil {
-		return
-	}
-
 	gofrom := C.GoString(from)
-	theDriver.err = fmt.Errorf("oto: %s at notification failed: %d", gofrom, s)
+	theDriver.setError(fmt.Errorf("oto: %s at notification failed: %d", gofrom, s))
 }
