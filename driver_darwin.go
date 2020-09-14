@@ -269,7 +269,7 @@ func (d *driver) resume(afterSleep bool) {
 		return
 	}
 	if osstatus := C.AudioQueueStart(d.audioQueue, nil); osstatus != C.noErr && d.err == nil {
-		d.err = fmt.Errorf("oto: AudioQueueStart failed: %d", osstatus)
+		d.err = fmt.Errorf("oto: AudioQueueStart for resuming failed: %d", osstatus)
 		return
 	}
 	d.paused = false
