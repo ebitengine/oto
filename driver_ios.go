@@ -17,7 +17,7 @@
 
 package oto
 
-// #cgo LDFLAGS: -framework Foundation -framework AVFoundation
+// #cgo LDFLAGS: -framework Foundation -framework AVFoundation -framework UIKit
 //
 // #import <AudioToolbox/AudioToolbox.h>
 import "C"

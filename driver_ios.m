@@ -16,21 +16,35 @@
 
 #import <AVFoundation/AVFoundation.h>
 #import <AudioToolbox/AudioToolbox.h>
+#import <UIKit/UIKit.h>
 
 #include "_cgo_export.h"
 
-@interface OtoInterruptObserver : NSObject {
+@interface OtoNotificationObserver : NSObject {
 }
 
-- (void) onAudioSessionEvent: (NSNotification*)notification;
+- (void)onAudioSessionInterruption:(NSNotification *)notification;
+- (void)onApplicationDidEnterBackground:(NSNotification *)notification;
+- (void)onApplicationWillEnterForeground:(NSNotification *)notification;
 
 @end
 
-@implementation OtoInterruptObserver {
+@implementation OtoNotificationObserver {
+  int backgroundCount_;
+  int prevBackgroundCount_;
 }
 
-- (void) onAudioSessionEvent: (NSNotification *)notification
-{
+- (void)updateState {
+  if (prevBackgroundCount_ == 0 && backgroundCount_ == 1) {
+    oto_setGlobalPause();
+  }
+  if (prevBackgroundCount_ == 1 && backgroundCount_ == 0) {
+    oto_setGlobalResume();
+  }
+  prevBackgroundCount_ = backgroundCount_;
+}
+
+- (void)onAudioSessionInterruption:(NSNotification *)notification {
   if (![notification.name isEqualToString:AVAudioSessionInterruptionNotification]) {
     return;
   }
@@ -39,11 +53,13 @@
   AVAudioSessionInterruptionType interruptionType = [(NSNumber*)value intValue];
   switch (interruptionType) {
   case AVAudioSessionInterruptionTypeBegan: {
-    oto_setGlobalPause(YES);
+    backgroundCount_++;
+    [self updateState];
     break;
   }
   case AVAudioSessionInterruptionTypeEnded: {
-    oto_setGlobalPause(NO);
+    backgroundCount_--;
+    [self updateState];
     break;
   }
   default:
@@ -53,15 +69,36 @@
   }
 }
 
+- (void)onApplicationDidEnterBackground:(NSNotification *)notification {
+  backgroundCount_++;
+  [self updateState];
+}
+
+- (void)onApplicationWillEnterForeground:(NSNotification *)notification {
+  backgroundCount_--;
+  [self updateState];
+}
+
 @end
 
 // oto_setNotificationHandler sets a handler for interruption events.
 // Without the handler, Siri would stop the audio (#80).
 void oto_setNotificationHandler(AudioQueueRef audioQueue) {
   AVAudioSession* session = [AVAudioSession sharedInstance];
-  OtoInterruptObserver* observer = [[OtoInterruptObserver alloc] init];
-  [[NSNotificationCenter defaultCenter] addObserver: observer
-                                           selector: @selector(onAudioSessionEvent:)
-                                               name: AVAudioSessionInterruptionNotification
-                                             object: session];
+  OtoNotificationObserver *observer = [[OtoNotificationObserver alloc] init];
+  [[NSNotificationCenter defaultCenter]
+      addObserver:observer
+         selector:@selector(onAudioSessionInterruption:)
+             name:AVAudioSessionInterruptionNotification
+           object:session];
+  [[NSNotificationCenter defaultCenter]
+      addObserver:observer
+         selector:@selector(onApplicationDidEnterBackground:)
+             name:UIApplicationDidEnterBackgroundNotification
+           object:session];
+  [[NSNotificationCenter defaultCenter]
+      addObserver:observer
+         selector:@selector(onApplicationWillEnterForeground:)
+             name:UIApplicationWillEnterForegroundNotification
+           object:session];
 }

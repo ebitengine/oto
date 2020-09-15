@@ -27,11 +27,11 @@
 }
 
 - (void)receiveSleepNote:(NSNotification *)note {
-  oto_setGlobalPause(YES);
+  oto_setGlobalPause();
 }
 
 - (void)receiveWakeNote:(NSNotification *)note {
-  oto_setGlobalPause(NO);
+  oto_setGlobalResume();
 }
 
 @end

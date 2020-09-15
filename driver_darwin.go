@@ -305,12 +305,13 @@ func setNotificationHandler(driver *driver) {
 }
 
 //export oto_setGlobalPause
-func oto_setGlobalPause(paused C.int) {
-	if paused != 0 {
-		theDriver.pause()
-	} else {
-		theDriver.resume(true)
-	}
+func oto_setGlobalPause() {
+	theDriver.pause()
+}
+
+//export oto_setGlobalResume
+func oto_setGlobalResume() {
+	theDriver.resume(true)
 }
 
 //export oto_setErrorByNotification
