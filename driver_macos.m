@@ -51,3 +51,8 @@ void oto_setNotificationHandler(AudioQueueRef audioQueue) {
              name:NSWorkspaceDidWakeNotification
            object:NULL];
 }
+
+bool oto_isBackground(void) {
+  // TODO: Should this be implemented?
+  return false;
+}

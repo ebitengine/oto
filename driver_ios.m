@@ -24,8 +24,6 @@
 }
 
 - (void)onAudioSessionInterruption:(NSNotification *)notification;
-- (void)onApplicationDidEnterBackground:(NSNotification *)notification;
-- (void)onApplicationWillEnterForeground:(NSNotification *)notification;
 
 @end
 
@@ -58,14 +56,6 @@
   }
 }
 
-- (void)onApplicationDidEnterBackground:(NSNotification *)notification {
-  oto_setBackground();
-}
-
-- (void)onApplicationWillEnterForeground:(NSNotification *)notification {
-  oto_setForeground();
-}
-
 @end
 
 // oto_setNotificationHandler sets a handler for interruption events.
@@ -78,14 +68,23 @@ void oto_setNotificationHandler(AudioQueueRef audioQueue) {
          selector:@selector(onAudioSessionInterruption:)
              name:AVAudioSessionInterruptionNotification
            object:session];
-  [[NSNotificationCenter defaultCenter]
-      addObserver:observer
-         selector:@selector(onApplicationDidEnterBackground:)
-             name:UIApplicationDidEnterBackgroundNotification
-           object:session];
-  [[NSNotificationCenter defaultCenter]
-      addObserver:observer
-         selector:@selector(onApplicationWillEnterForeground:)
-             name:UIApplicationWillEnterForegroundNotification
-           object:session];
+
+  // The notifications UIApplicationDidEnterBackgroundNotification and
+  // UIApplicationWillEnterForegroundNotification were not reliable: at least,
+  // they were not notified at iPod touch A2178.
+  //
+  // Instead, check the background state via UIApplication actively.
+}
+
+bool oto_isBackground(void) {
+  if ([NSThread isMainThread]) {
+    return [[UIApplication sharedApplication] applicationState] ==
+           UIApplicationStateBackground;
+  }
+
+  __block bool background = false;
+  dispatch_sync(dispatch_get_main_queue(), ^{
+    background = oto_isBackground();
+  });
+  return background;
 }

@@ -23,6 +23,7 @@ package oto
 // void oto_render(void* inUserData, AudioQueueRef inAQ, AudioQueueBufferRef inBuffer);
 //
 // void oto_setNotificationHandler(AudioQueueRef audioQueue);
+// bool oto_isBackground(void);
 import "C"
 
 import (
@@ -49,9 +50,6 @@ type driver struct {
 	buffers       []C.AudioQueueBufferRef
 	paused        bool
 	lastPauseTime time.Time
-
-	background     bool
-	backgroundCond *sync.Cond
 
 	err error
 
@@ -138,7 +136,6 @@ func newDriver(sampleRate, channelNum, bitDepthInBytes, bufferSizeInBytes int) (
 		chWrite:    make(chan []byte),
 		chWritten:  make(chan int),
 	}
-	d.backgroundCond = sync.NewCond(&d.m)
 	runtime.SetFinalizer(d, (*driver).Close)
 	// Set the driver before setting the rendering callback.
 	setDriver(d)
@@ -257,7 +254,6 @@ func (d *driver) enqueueBuffer(buffer C.AudioQueueBufferRef) {
 
 	if osstatus := C.AudioQueueEnqueueBuffer(d.audioQueue, buffer, 0, nil); osstatus != C.noErr && d.err == nil {
 		d.err = fmt.Errorf("oto: AudioQueueEnqueueBuffer failed: %d", osstatus)
-		d.backgroundCond.Signal()
 		return
 	}
 }
@@ -279,11 +275,7 @@ func (d *driver) resume(afterSleep bool) bool {
 		}
 	}
 
-	for d.background && d.err == nil {
-		// As backgroundCond shares the same mutex as d.m, Wait unlocks the mutex.
-		d.backgroundCond.Wait()
-	}
-	if d.err != nil {
+	if C.oto_isBackground() {
 		return false
 	}
 
@@ -304,7 +296,6 @@ func (d *driver) pause() {
 	}
 	if osstatus := C.AudioQueuePause(d.audioQueue); osstatus != C.noErr && d.err == nil {
 		d.err = fmt.Errorf("oto: AudioQueuePause failed: %d", osstatus)
-		d.backgroundCond.Signal()
 		return
 	}
 	d.paused = true
@@ -319,21 +310,6 @@ func (d *driver) setError(err error) {
 		return
 	}
 	theDriver.err = err
-	d.backgroundCond.Signal()
-}
-
-func (d *driver) setForeground() {
-	d.backgroundCond.L.Lock()
-	d.background = false
-	d.backgroundCond.Signal()
-	d.backgroundCond.L.Unlock()
-}
-
-func (d *driver) setBackground() {
-	d.backgroundCond.L.Lock()
-	d.background = true
-	d.backgroundCond.Signal()
-	d.backgroundCond.L.Unlock()
 }
 
 func setNotificationHandler(driver *driver) {
@@ -354,14 +330,4 @@ func oto_setGlobalResume() {
 func oto_setErrorByNotification(s C.OSStatus, from *C.char) {
 	gofrom := C.GoString(from)
 	theDriver.setError(fmt.Errorf("oto: %s at notification failed: %d", gofrom, s))
-}
-
-//export oto_setForeground
-func oto_setForeground() {
-	theDriver.setForeground()
-}
-
-//export oto_setBackground
-func oto_setBackground() {
-	theDriver.setBackground()
 }
