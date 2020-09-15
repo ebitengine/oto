@@ -30,18 +30,6 @@
 @end
 
 @implementation OtoNotificationObserver {
-  int backgroundCount_;
-  int prevBackgroundCount_;
-}
-
-- (void)updateState {
-  if (prevBackgroundCount_ == 0 && backgroundCount_ == 1) {
-    oto_setGlobalPause();
-  }
-  if (prevBackgroundCount_ == 1 && backgroundCount_ == 0) {
-    oto_setGlobalResume();
-  }
-  prevBackgroundCount_ = backgroundCount_;
 }
 
 - (void)onAudioSessionInterruption:(NSNotification *)notification {
@@ -53,13 +41,14 @@
   AVAudioSessionInterruptionType interruptionType = [(NSNumber*)value intValue];
   switch (interruptionType) {
   case AVAudioSessionInterruptionTypeBegan: {
-    backgroundCount_++;
-    [self updateState];
+    oto_setGlobalPause();
     break;
   }
   case AVAudioSessionInterruptionTypeEnded: {
-    backgroundCount_--;
-    [self updateState];
+    // AVAudioSessionInterruptionTypeBegan and Ended might not be paired when
+    // Siri is used. Then, incrementing and decrementing a counter with this
+    // notification doesn't work.
+    oto_setGlobalResume();
     break;
   }
   default:
@@ -70,13 +59,11 @@
 }
 
 - (void)onApplicationDidEnterBackground:(NSNotification *)notification {
-  backgroundCount_++;
-  [self updateState];
+  oto_setBackground();
 }
 
 - (void)onApplicationWillEnterForeground:(NSNotification *)notification {
-  backgroundCount_--;
-  [self updateState];
+  oto_setForeground();
 }
 
 @end

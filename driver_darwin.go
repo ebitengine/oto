@@ -50,6 +50,9 @@ type driver struct {
 	paused        bool
 	lastPauseTime time.Time
 
+	background     bool
+	backgroundCond *sync.Cond
+
 	err error
 
 	chWrite   chan []byte
@@ -127,13 +130,14 @@ func newDriver(sampleRate, channelNum, bitDepthInBytes, bufferSizeInBytes int) (
 	}
 
 	d := &driver{
-		audioQueue: audioQueue,
-		sampleRate: sampleRate,
-		audioInfo:  audioInfo,
-		bufSize:    nbuf * queueBufferSize,
-		buffers:    make([]C.AudioQueueBufferRef, nbuf),
-		chWrite:    make(chan []byte),
-		chWritten:  make(chan int),
+		audioQueue:     audioQueue,
+		sampleRate:     sampleRate,
+		audioInfo:      audioInfo,
+		bufSize:        nbuf * queueBufferSize,
+		buffers:        make([]C.AudioQueueBufferRef, nbuf),
+		chWrite:        make(chan []byte),
+		chWritten:      make(chan int),
+		backgroundCond: sync.NewCond(&sync.Mutex{}),
 	}
 	runtime.SetFinalizer(d, (*driver).Close)
 	// Set the driver before setting the rendering callback.
@@ -265,9 +269,12 @@ func (d *driver) resume(afterSleep bool) {
 		}
 	}
 
-	if !d.paused {
-		return
+	d.backgroundCond.L.Lock()
+	for d.background {
+		d.backgroundCond.Wait()
 	}
+	d.backgroundCond.L.Unlock()
+
 	if osstatus := C.AudioQueueStart(d.audioQueue, nil); osstatus != C.noErr && d.err == nil {
 		d.err = fmt.Errorf("oto: AudioQueueStart for resuming failed: %d", osstatus)
 		return
@@ -300,6 +307,20 @@ func (d *driver) setError(err error) {
 	theDriver.err = err
 }
 
+func (d *driver) setForeground() {
+	d.backgroundCond.L.Lock()
+	d.background = false
+	d.backgroundCond.Signal()
+	d.backgroundCond.L.Unlock()
+}
+
+func (d *driver) setBackground() {
+	d.backgroundCond.L.Lock()
+	d.background = true
+	d.backgroundCond.Signal()
+	d.backgroundCond.L.Unlock()
+}
+
 func setNotificationHandler(driver *driver) {
 	C.oto_setNotificationHandler(driver.audioQueue)
 }
@@ -318,4 +339,14 @@ func oto_setGlobalResume() {
 func oto_setErrorByNotification(s C.OSStatus, from *C.char) {
 	gofrom := C.GoString(from)
 	theDriver.setError(fmt.Errorf("oto: %s at notification failed: %d", gofrom, s))
+}
+
+//export oto_setForeground
+func oto_setForeground() {
+	theDriver.setForeground()
+}
+
+//export oto_setBackground
+func oto_setBackground() {
+	theDriver.setBackground()
 }
