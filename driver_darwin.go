@@ -130,15 +130,15 @@ func newDriver(sampleRate, channelNum, bitDepthInBytes, bufferSizeInBytes int) (
 	}
 
 	d := &driver{
-		audioQueue:     audioQueue,
-		sampleRate:     sampleRate,
-		audioInfo:      audioInfo,
-		bufSize:        nbuf * queueBufferSize,
-		buffers:        make([]C.AudioQueueBufferRef, nbuf),
-		chWrite:        make(chan []byte),
-		chWritten:      make(chan int),
-		backgroundCond: sync.NewCond(&sync.Mutex{}),
+		audioQueue: audioQueue,
+		sampleRate: sampleRate,
+		audioInfo:  audioInfo,
+		bufSize:    nbuf * queueBufferSize,
+		buffers:    make([]C.AudioQueueBufferRef, nbuf),
+		chWrite:    make(chan []byte),
+		chWritten:  make(chan int),
 	}
+	d.backgroundCond = sync.NewCond(&d.m)
 	runtime.SetFinalizer(d, (*driver).Close)
 	// Set the driver before setting the rendering callback.
 	setDriver(d)
@@ -181,7 +181,16 @@ func oto_render(inUserData unsafe.Pointer, inAQ C.AudioQueueRef, inBuffer C.Audi
 	for len(buf) < queueBufferSize {
 		select {
 		case dbuf := <-d.chWrite:
-			d.resume(false)
+			for !d.resume(false) {
+				d.m.Lock()
+				err := d.err
+				d.m.Unlock()
+				if err != nil {
+					return
+				}
+
+				time.Sleep(time.Second)
+			}
 			n := queueBufferSize - len(buf)
 			if n > len(dbuf) {
 				n = len(dbuf)
@@ -252,7 +261,7 @@ func (d *driver) enqueueBuffer(buffer C.AudioQueueBufferRef) {
 	}
 }
 
-func (d *driver) resume(afterSleep bool) {
+func (d *driver) resume(afterSleep bool) bool {
 	d.m.Lock()
 	defer d.m.Unlock()
 
@@ -269,17 +278,20 @@ func (d *driver) resume(afterSleep bool) {
 		}
 	}
 
-	d.backgroundCond.L.Lock()
-	for d.background {
+	for d.background && d.err == nil {
+		// As backgroundCond shares the same mutex as d.m, Wait unlocks the mutex.
 		d.backgroundCond.Wait()
 	}
-	d.backgroundCond.L.Unlock()
+	if d.err != nil {
+		return false
+	}
 
 	if osstatus := C.AudioQueueStart(d.audioQueue, nil); osstatus != C.noErr && d.err == nil {
 		d.err = fmt.Errorf("oto: AudioQueueStart for resuming failed: %d", osstatus)
-		return
+		return false
 	}
 	d.paused = false
+	return true
 }
 
 func (d *driver) pause() {
