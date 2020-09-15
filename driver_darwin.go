@@ -257,6 +257,7 @@ func (d *driver) enqueueBuffer(buffer C.AudioQueueBufferRef) {
 
 	if osstatus := C.AudioQueueEnqueueBuffer(d.audioQueue, buffer, 0, nil); osstatus != C.noErr && d.err == nil {
 		d.err = fmt.Errorf("oto: AudioQueueEnqueueBuffer failed: %d", osstatus)
+		d.backgroundCond.Signal()
 		return
 	}
 }
@@ -303,6 +304,7 @@ func (d *driver) pause() {
 	}
 	if osstatus := C.AudioQueuePause(d.audioQueue); osstatus != C.noErr && d.err == nil {
 		d.err = fmt.Errorf("oto: AudioQueuePause failed: %d", osstatus)
+		d.backgroundCond.Signal()
 		return
 	}
 	d.paused = true
@@ -317,6 +319,7 @@ func (d *driver) setError(err error) {
 		return
 	}
 	theDriver.err = err
+	d.backgroundCond.Signal()
 }
 
 func (d *driver) setForeground() {
