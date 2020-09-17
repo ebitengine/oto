@@ -153,6 +153,10 @@ func newDriver(sampleRate, channelNum, bitDepthInBytes, bufferSizeInBytes int) (
 		}
 	}
 
+	for C.oto_isBackground() {
+		time.Sleep(time.Second)
+	}
+
 	if osstatus := C.AudioQueueStart(audioQueue, nil); osstatus != C.noErr {
 		return nil, fmt.Errorf("oto: AudioQueueStart failed: %d", osstatus)
 	}
