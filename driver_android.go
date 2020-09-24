@@ -18,7 +18,6 @@ package oto
 
 #include <jni.h>
 #include <stdlib.h>
-#include <stdbool.h>
 
 static jclass android_media_AudioFormat;
 static jclass android_media_AudioManager;
@@ -97,6 +96,8 @@ static char* initAudioTrack(uintptr_t java_vm, uintptr_t jni_env,
     return "invalid bitDepthInBytes";
   }
 
+  // If the available Android SDK is at least 24 (7.0 Nougat), the FLAG_LOW_LATENCY is available.
+  // This requires a different constructor.
   if (availableSDK >= 24) {
     jclass android_media_AudioAttributes_Builder;
     jclass android_media_AudioFormat_Builder;
