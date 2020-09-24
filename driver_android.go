@@ -28,6 +28,13 @@ static char* initAudioTrack(uintptr_t java_vm, uintptr_t jni_env,
   JavaVM* vm = (JavaVM*)java_vm;
   JNIEnv* env = (JNIEnv*)jni_env;
 
+  jclass android_os_Build_VERSION = (*env)->FindClass(env, "android/os/Build$VERSION");
+  const jint availableSDK =
+      (*env)->GetStaticIntField(
+          env, android_os_Build_VERSION,
+          (*env)->GetStaticFieldID(env, android_os_Build_VERSION, "SDK_INT", "I"));
+  (*env)->DeleteLocalRef(env, android_os_Build_VERSION);
+
   jclass local = (*env)->FindClass(env, "android/media/AudioFormat");
   android_media_AudioFormat = (*env)->NewGlobalRef(env, local);
   (*env)->DeleteLocalRef(env, local);
@@ -89,15 +96,103 @@ static char* initAudioTrack(uintptr_t java_vm, uintptr_t jni_env,
     return "invalid bitDepthInBytes";
   }
 
-  const jobject tmpAudioTrack =
-      (*env)->NewObject(
-          env, android_media_AudioTrack,
-          (*env)->GetMethodID(env, android_media_AudioTrack, "<init>", "(IIIIII)V"),
-          android_media_AudioManager_STREAM_MUSIC,
-          sampleRate, channel, encoding, bufferSize,
-          android_media_AudioTrack_MODE_STREAM);
-  *audioTrack = (*env)->NewGlobalRef(env, tmpAudioTrack);
-  (*env)->DeleteLocalRef(env, tmpAudioTrack);
+  // If the available Android SDK is at least 24 (7.0 Nougat), the FLAG_LOW_LATENCY is available.
+  // This requires a different constructor.
+  if (availableSDK >= 24) {
+    jclass android_media_AudioAttributes_Builder;
+    jclass android_media_AudioFormat_Builder;
+    jclass android_media_AudioAttributes;
+
+    local = (*env)->FindClass(env, "android/media/AudioAttributes$Builder");
+    android_media_AudioAttributes_Builder = (*env)->NewGlobalRef(env, local);
+    (*env)->DeleteLocalRef(env, local);
+
+    local = (*env)->FindClass(env, "android/media/AudioFormat$Builder");
+    android_media_AudioFormat_Builder = (*env)->NewGlobalRef(env, local);
+    (*env)->DeleteLocalRef(env, local);
+
+    local = (*env)->FindClass(env, "android/media/AudioAttributes");
+    android_media_AudioAttributes = (*env)->NewGlobalRef(env, local);
+    (*env)->DeleteLocalRef(env, local);
+
+    jint android_media_AudioAttributes_USAGE_UNKNOWN =
+        (*env)->GetStaticIntField(
+            env, android_media_AudioAttributes,
+            (*env)->GetStaticFieldID(env, android_media_AudioAttributes, "USAGE_UNKNOWN", "I"));
+    jint android_media_AudioAttributes_CONTENT_TYPE_UNKNOWN =
+        (*env)->GetStaticIntField(
+            env, android_media_AudioAttributes,
+            (*env)->GetStaticFieldID(env, android_media_AudioAttributes, "CONTENT_TYPE_UNKNOWN", "I"));
+    jint android_media_AudioAttributes_FLAG_LOW_LATENCY =
+        (*env)->GetStaticIntField(
+            env, android_media_AudioAttributes,
+            (*env)->GetStaticFieldID(env, android_media_AudioAttributes, "FLAG_LOW_LATENCY", "I"));
+
+    const jobject aattrBld =
+        (*env)->NewObject(
+            env, android_media_AudioAttributes_Builder,
+            (*env)->GetMethodID(env, android_media_AudioAttributes_Builder, "<init>", "()V"));
+
+    (*env)->CallObjectMethod(
+        env, aattrBld,
+        (*env)->GetMethodID(env, android_media_AudioAttributes_Builder, "setUsage", "(I)Landroid/media/AudioAttributes$Builder;"),
+        android_media_AudioAttributes_USAGE_UNKNOWN);
+    (*env)->CallObjectMethod(
+        env, aattrBld,
+        (*env)->GetMethodID(env, android_media_AudioAttributes_Builder, "setContentType", "(I)Landroid/media/AudioAttributes$Builder;"),
+        android_media_AudioAttributes_CONTENT_TYPE_UNKNOWN);
+    (*env)->CallObjectMethod(
+        env, aattrBld,
+        (*env)->GetMethodID(env, android_media_AudioAttributes_Builder, "setFlags", "(I)Landroid/media/AudioAttributes$Builder;"),
+        android_media_AudioAttributes_FLAG_LOW_LATENCY);
+    const jobject aattr =
+        (*env)->CallObjectMethod(
+            env, aattrBld,
+            (*env)->GetMethodID(env, android_media_AudioAttributes_Builder, "build", "()Landroid/media/AudioAttributes;"));
+    (*env)->DeleteLocalRef(env, aattrBld);
+
+    const jobject afmtBld =
+        (*env)->NewObject(
+            env, android_media_AudioFormat_Builder,
+            (*env)->GetMethodID(env, android_media_AudioFormat_Builder, "<init>", "()V"));
+    (*env)->CallObjectMethod(
+        env, afmtBld,
+        (*env)->GetMethodID(env, android_media_AudioFormat_Builder, "setSampleRate", "(I)Landroid/media/AudioFormat$Builder;"),
+        sampleRate);
+    (*env)->CallObjectMethod(
+        env, afmtBld,
+        (*env)->GetMethodID(env, android_media_AudioFormat_Builder, "setEncoding", "(I)Landroid/media/AudioFormat$Builder;"),
+        encoding);
+    (*env)->CallObjectMethod(
+        env, afmtBld,
+        (*env)->GetMethodID(env, android_media_AudioFormat_Builder, "setChannelMask", "(I)Landroid/media/AudioFormat$Builder;"),
+        channel);
+    const jobject afmt =
+        (*env)->CallObjectMethod(
+            env, afmtBld,
+            (*env)->GetMethodID(env, android_media_AudioFormat_Builder, "build", "()Landroid/media/AudioFormat;"));
+    (*env)->DeleteLocalRef(env, afmtBld);
+
+    const jobject tmpAudioTrack =
+        (*env)->NewObject(
+            env, android_media_AudioTrack,
+            (*env)->GetMethodID(env, android_media_AudioTrack, "<init>", "(Landroid/media/AudioAttributes;Landroid/media/AudioFormat;III)V"),
+            aattr, afmt, bufferSize, android_media_AudioTrack_MODE_STREAM, 0);
+    *audioTrack = (*env)->NewGlobalRef(env, tmpAudioTrack);
+    (*env)->DeleteLocalRef(env, tmpAudioTrack);
+    (*env)->DeleteLocalRef(env, aattr);
+    (*env)->DeleteLocalRef(env, afmt);
+  } else {
+    const jobject tmpAudioTrack =
+        (*env)->NewObject(
+            env, android_media_AudioTrack,
+            (*env)->GetMethodID(env, android_media_AudioTrack, "<init>", "(IIIIII)V"),
+            android_media_AudioManager_STREAM_MUSIC,
+            sampleRate, channel, encoding, bufferSize,
+            android_media_AudioTrack_MODE_STREAM);
+    *audioTrack = (*env)->NewGlobalRef(env, tmpAudioTrack);
+    (*env)->DeleteLocalRef(env, tmpAudioTrack);
+  }
 
   (*env)->CallVoidMethod(
       env, *audioTrack,
