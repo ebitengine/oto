@@ -18,6 +18,7 @@ package oto
 
 #include <jni.h>
 #include <stdlib.h>
+#include <stdbool.h>
 
 static jclass android_media_AudioFormat;
 static jclass android_media_AudioManager;
@@ -28,7 +29,8 @@ static char* initAudioTrack(uintptr_t java_vm, uintptr_t jni_env,
   JavaVM* vm = (JavaVM*)java_vm;
   JNIEnv* env = (JNIEnv*)jni_env;
 
-  char hasAPI24 = 1;
+  bool hasAPI21 = true;
+  bool hasAPI24 = true;
   jclass android_media_AudioAttributes_Builder;
   jclass android_media_AudioFormat_Builder;
   jclass android_media_AudioAttributes;
@@ -36,7 +38,8 @@ static char* initAudioTrack(uintptr_t java_vm, uintptr_t jni_env,
   // check if the AudioAttributes.Builder subclass exists (since API 21, 5.0 Lollipop)
   jclass local = (*env)->FindClass(env, "android/media/AudioAttributes$Builder");
   if ((*env)->ExceptionCheck(env)) {
-    hasAPI24 = 0;
+    hasAPI21 = false;
+    hasAPI24 = false;
     (*env)->ExceptionClear(env);
   } else {
     android_media_AudioAttributes_Builder = (*env)->NewGlobalRef(env, local);
@@ -90,7 +93,7 @@ static char* initAudioTrack(uintptr_t java_vm, uintptr_t jni_env,
   jint android_media_AudioAttributes_USAGE_UNKNOWN = 0;
   jint android_media_AudioAttributes_CONTENT_TYPE_UNKNOWN = 0;
   jint android_media_AudioAttributes_FLAG_LOW_LATENCY = 0;
-  if (hasAPI24) {
+  if (hasAPI21) {
     android_media_AudioAttributes_USAGE_UNKNOWN =
         (*env)->GetStaticIntField(
             env, android_media_AudioAttributes,
@@ -99,13 +102,12 @@ static char* initAudioTrack(uintptr_t java_vm, uintptr_t jni_env,
         (*env)->GetStaticIntField(
             env, android_media_AudioAttributes,
             (*env)->GetStaticFieldID(env, android_media_AudioAttributes, "CONTENT_TYPE_UNKNOWN", "I"));
-    // FLAG_LOW_LATENCY only exists since API 24, 7.0 Nougat
+    // use a fallback here as well, since FLAG_LOW_LATENCY only exists since API 24, 7.0 Nougat
     const jfieldID fieldFlagLowLatency = (*env)->GetStaticFieldID(env, android_media_AudioAttributes, "FLAG_LOW_LATENCY", "I");
     if ((*env)->ExceptionCheck(env)) {
-      hasAPI24 = 0;
+      hasAPI24 = false;
       (*env)->ExceptionClear(env);
-    }
-    if (hasAPI24) {
+    } else {
       android_media_AudioAttributes_FLAG_LOW_LATENCY =
           (*env)->GetStaticIntField(
               env, android_media_AudioAttributes,
