@@ -60,7 +60,7 @@
 
 // oto_setNotificationHandler sets a handler for interruption events.
 // Without the handler, Siri would stop the audio (#80).
-void oto_setNotificationHandler(AudioQueueRef audioQueue) {
+void oto_setNotificationHandler() {
   AVAudioSession* session = [AVAudioSession sharedInstance];
   OtoNotificationObserver *observer = [[OtoNotificationObserver alloc] init];
   [[NSNotificationCenter defaultCenter]

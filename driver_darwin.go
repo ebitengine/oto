@@ -22,7 +22,7 @@ package oto
 //
 // void oto_render(void* inUserData, AudioQueueRef inAQ, AudioQueueBufferRef inBuffer);
 //
-// void oto_setNotificationHandler(AudioQueueRef audioQueue);
+// void oto_setNotificationHandler();
 // bool oto_isBackground(void);
 import "C"
 
@@ -317,7 +317,7 @@ func (d *driver) setError(err error) {
 }
 
 func setNotificationHandler(driver *driver) {
-	C.oto_setNotificationHandler(driver.audioQueue)
+	C.oto_setNotificationHandler()
 }
 
 //export oto_setGlobalPause

@@ -37,7 +37,7 @@
 @end
 
 // oto_setNotificationHandler sets a handler for sleep/wake notifications.
-void oto_setNotificationHandler(AudioQueueRef audioQueue) {
+void oto_setNotificationHandler() {
   OtoNotificationObserver *observer = [[OtoNotificationObserver alloc] init];
 
   [[[NSWorkspace sharedWorkspace] notificationCenter]
