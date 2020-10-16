@@ -17,31 +17,11 @@
 
 package oto
 
-// #cgo LDFLAGS: -framework Foundation -framework AVFoundation
+// #cgo LDFLAGS: -framework Foundation -framework AVFoundation -framework UIKit
 //
 // #import <AudioToolbox/AudioToolbox.h>
-//
-// void oto_setNotificationHandler(AudioQueueRef audioQueue);
 import "C"
-
-import (
-	"fmt"
-)
-
-func setNotificationHandler(driver *driver) {
-	C.oto_setNotificationHandler(driver.audioQueue)
-}
 
 func componentSubType() C.OSType {
 	return C.kAudioUnitSubType_RemoteIO
-}
-
-//export oto_setErrorByNotification
-func oto_setErrorByNotification(s C.OSStatus, from *C.char) {
-	if theDriver.err != nil {
-		return
-	}
-
-	gofrom := C.GoString(from)
-	theDriver.err = fmt.Errorf("oto: %s at notification failed: %d", gofrom, s)
 }

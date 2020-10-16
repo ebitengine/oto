@@ -36,6 +36,7 @@ func newPlayer(context *Context) *Player {
 		r:       r,
 		w:       w,
 	}
+	context.mux.AddSource(r)
 	runtime.SetFinalizer(p, (*Player).Close)
 	return p
 }
@@ -57,7 +58,21 @@ func newPlayer(context *Context) *Player {
 //
 // Note, that the Player won't start playing anything until the buffer is full.
 func (p *Player) Write(buf []byte) (int, error) {
-	return p.w.Write(buf)
+	select {
+	case err := <-p.context.errCh:
+		return 0, err
+	default:
+	}
+	n, err := p.w.Write(buf)
+	// When the error is io.ErrClosedPipe, the context is already closed.
+	if err == io.ErrClosedPipe {
+		select {
+		case err := <-p.context.errCh:
+			return n, err
+		default:
+		}
+	}
+	return n, err
 }
 
 // Close closes the Player and frees any resources associated with it. The Player is no longer
@@ -68,6 +83,12 @@ func (p *Player) Close() error {
 	// Already closed
 	if p.context == nil {
 		return nil
+	}
+
+	select {
+	case err := <-p.context.errCh:
+		return err
+	default:
 	}
 
 	// Close the pipe writer before RemoveSource, or Read-ing in the mux takes forever.

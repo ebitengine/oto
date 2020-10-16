@@ -188,3 +188,15 @@ func (m *Mux) RemoveSource(source io.Reader) {
 	delete(m.readers, source)
 	m.m.Unlock()
 }
+
+// Sources returns all the registered readers.
+func (m *Mux) Sources() []io.Reader {
+	m.m.Lock()
+	defer m.m.Unlock()
+
+	var rs []io.Reader
+	for r := range m.readers {
+		rs = append(rs, r)
+	}
+	return rs
+}

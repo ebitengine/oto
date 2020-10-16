@@ -21,6 +21,9 @@ package oto
 // #import <AudioToolbox/AudioToolbox.h>
 //
 // void oto_render(void* inUserData, AudioQueueRef inAQ, AudioQueueBufferRef inBuffer);
+//
+// void oto_setNotificationHandler();
+// bool oto_isBackground(void);
 import "C"
 
 import (
@@ -39,17 +42,21 @@ type audioInfo struct {
 }
 
 type driver struct {
-	audioQueue C.AudioQueueRef
-	buf        []byte
-	bufSize    int
-	sampleRate int
-	audioInfo  *audioInfo
-	buffers    []C.AudioQueueBufferRef
+	audioQueue    C.AudioQueueRef
+	buf           []byte
+	bufSize       int
+	sampleRate    int
+	audioInfo     *audioInfo
+	buffers       []C.AudioQueueBufferRef
+	paused        bool
+	lastPauseTime time.Time
 
 	err error
 
 	chWrite   chan []byte
 	chWritten chan int
+
+	m sync.Mutex
 }
 
 var (
@@ -66,7 +73,9 @@ func setDriver(d *driver) {
 	}
 	theDriver = d
 
-	setNotificationHandler(d)
+	if d != nil {
+		setNotificationHandler(d)
+	}
 }
 
 func getDriver() *driver {
@@ -144,6 +153,10 @@ func newDriver(sampleRate, channelNum, bitDepthInBytes, bufferSizeInBytes int) (
 		}
 	}
 
+	for C.oto_isBackground() {
+		time.Sleep(time.Second)
+	}
+
 	if osstatus := C.AudioQueueStart(audioQueue, nil); osstatus != C.noErr {
 		return nil, fmt.Errorf("oto: AudioQueueStart failed: %d", osstatus)
 	}
@@ -160,21 +173,24 @@ func oto_render(inUserData unsafe.Pointer, inAQ C.AudioQueueRef, inBuffer C.Audi
 
 	var buf []byte
 
-	// Set the timer. When the application is in background or being switched, the driver's buffer is not
-	// updated and it is needed to fill the buffer with zeros.
+	// Set the timer. When the input does not come, the audio must be paused.
 	s := time.Second * time.Duration(queueBufferSize) / time.Duration(d.sampleRate*d.audioInfo.channelNum*d.audioInfo.bitDepthInBytes)
 	t := time.NewTicker(s)
 	defer t.Stop()
 	ch := t.C
 
-	paused := false
-
 	for len(buf) < queueBufferSize {
 		select {
 		case dbuf := <-d.chWrite:
-			if paused {
-				C.AudioQueueStart(inAQ, nil)
-				paused = false
+			for !d.resume(false) {
+				d.m.Lock()
+				err := d.err
+				d.m.Unlock()
+				if err != nil {
+					return
+				}
+
+				time.Sleep(time.Second)
 			}
 			n := queueBufferSize - len(buf)
 			if n > len(dbuf) {
@@ -183,10 +199,7 @@ func oto_render(inUserData unsafe.Pointer, inAQ C.AudioQueueRef, inBuffer C.Audi
 			buf = append(buf, dbuf[:n]...)
 			d.chWritten <- n
 		case <-ch:
-			if !paused {
-				C.AudioQueuePause(inAQ)
-				paused = true
-			}
+			d.pause()
 			ch = nil
 		}
 	}
@@ -196,16 +209,15 @@ func oto_render(inUserData unsafe.Pointer, inAQ C.AudioQueueRef, inBuffer C.Audi
 	}
 	// Do not update mAudioDataByteSize, or the buffer is not used correctly any more.
 
-	if osstatus := C.AudioQueueEnqueueBuffer(inAQ, inBuffer, 0, nil); osstatus != C.noErr {
-		if d.err != nil {
-			d.err = fmt.Errorf("oto: AudioQueueEnqueueBuffer at oto_render failed: %d", d.err)
-		}
-	}
+	d.enqueueBuffer(inBuffer)
 }
 
 func (d *driver) TryWrite(data []byte) (int, error) {
-	if d.err != nil {
-		return 0, d.err
+	d.m.Lock()
+	err := d.err
+	d.m.Unlock()
+	if err != nil {
+		return 0, err
 	}
 
 	n := d.bufSize - len(d.buf)
@@ -224,13 +236,10 @@ func (d *driver) TryWrite(data []byte) (int, error) {
 }
 
 func (d *driver) Close() error {
-	runtime.SetFinalizer(d, nil)
+	d.m.Lock()
+	defer d.m.Unlock()
 
-	for _, b := range d.buffers {
-		if osstatus := C.AudioQueueFreeBuffer(d.audioQueue, b); osstatus != C.noErr {
-			return fmt.Errorf("oto: AudioQueueFreeBuffer failed: %d", osstatus)
-		}
-	}
+	runtime.SetFinalizer(d, nil)
 
 	if osstatus := C.AudioQueueStop(d.audioQueue, C.false); osstatus != C.noErr {
 		return fmt.Errorf("oto: AudioQueueStop failed: %d", osstatus)
@@ -241,4 +250,88 @@ func (d *driver) Close() error {
 	d.audioQueue = nil
 	setDriver(nil)
 	return nil
+}
+
+func (d *driver) enqueueBuffer(buffer C.AudioQueueBufferRef) {
+	d.m.Lock()
+	defer d.m.Unlock()
+
+	if osstatus := C.AudioQueueEnqueueBuffer(d.audioQueue, buffer, 0, nil); osstatus != C.noErr && d.err == nil {
+		d.err = fmt.Errorf("oto: AudioQueueEnqueueBuffer failed: %d", osstatus)
+		return
+	}
+}
+
+func (d *driver) resume(afterSleep bool) bool {
+	d.m.Lock()
+	defer d.m.Unlock()
+
+	// Audio doesn't work soon after recovering from sleeping. Wait for a while
+	// (hajimehoshi/ebiten#1259).
+	if afterSleep {
+		// After short-time sleeping, 500ms more sleeping is enough. However, after long-time sleeping, it
+		// looks like 1 second more sleeping are required (hajimehoshi/ebiten#1280).
+		// This is tested on MacBook Pro 2020 macOS 10.15.6.
+		if time.Now().Sub(d.lastPauseTime) < 30*time.Second {
+			time.Sleep(500 * time.Millisecond)
+		} else {
+			time.Sleep(time.Second)
+		}
+	}
+
+	if C.oto_isBackground() {
+		return false
+	}
+
+	if osstatus := C.AudioQueueStart(d.audioQueue, nil); osstatus != C.noErr && d.err == nil {
+		d.err = fmt.Errorf("oto: AudioQueueStart for resuming failed: %d", osstatus)
+		return false
+	}
+	d.paused = false
+	return true
+}
+
+func (d *driver) pause() {
+	d.m.Lock()
+	defer d.m.Unlock()
+
+	if d.paused {
+		return
+	}
+	if osstatus := C.AudioQueuePause(d.audioQueue); osstatus != C.noErr && d.err == nil {
+		d.err = fmt.Errorf("oto: AudioQueuePause failed: %d", osstatus)
+		return
+	}
+	d.paused = true
+	d.lastPauseTime = time.Now()
+}
+
+func (d *driver) setError(err error) {
+	d.m.Lock()
+	defer d.m.Unlock()
+
+	if theDriver.err != nil {
+		return
+	}
+	theDriver.err = err
+}
+
+func setNotificationHandler(driver *driver) {
+	C.oto_setNotificationHandler()
+}
+
+//export oto_setGlobalPause
+func oto_setGlobalPause() {
+	theDriver.pause()
+}
+
+//export oto_setGlobalResume
+func oto_setGlobalResume() {
+	theDriver.resume(true)
+}
+
+//export oto_setErrorByNotification
+func oto_setErrorByNotification(s C.OSStatus, from *C.char) {
+	gofrom := C.GoString(from)
+	theDriver.setError(fmt.Errorf("oto: %s at notification failed: %d", gofrom, s))
 }
