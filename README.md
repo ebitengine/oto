@@ -42,7 +42,7 @@ In most cases this command must be run by root user or through `sudo` command.
 
 #### Crosscompiling
 
-To crosscompile, make sure the libraries for the target architecture are installed, and set `CGO_ENABLED=1` as Go disables CGO on crosscompiles by default
+To crosscompile, make sure the libraries for the target architecture are installed, and set `CGO_ENABLED=1` as Go disables [Cgo](https://golang.org/cmd/cgo/#hdr-Using_cgo_with_the_go_command) on crosscompiles by default
 
 ### FreeBSD
 
