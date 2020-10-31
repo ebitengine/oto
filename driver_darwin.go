@@ -141,9 +141,11 @@ func newDriver(sampleRate, channelNum, bitDepthInBytes, bufferSizeInBytes int) (
 	setDriver(d)
 
 	for i := 0; i < len(d.buffers); i++ {
-		if osstatus := C.AudioQueueAllocateBuffer(audioQueue, C.UInt32(queueBufferSize), &d.buffers[i]); osstatus != C.noErr {
+		var buf C.AudioQueueBufferRef
+		if osstatus := C.AudioQueueAllocateBuffer(audioQueue, C.UInt32(queueBufferSize), &buf); osstatus != C.noErr {
 			return nil, fmt.Errorf("oto: AudioQueueAllocateBuffer failed: %d", osstatus)
 		}
+		d.buffers[i] = buf
 		d.buffers[i].mAudioDataByteSize = C.UInt32(queueBufferSize)
 		for j := 0; j < queueBufferSize; j++ {
 			*(*byte)(unsafe.Pointer(uintptr(unsafe.Pointer(d.buffers[i].mAudioData)) + uintptr(j))) = 0
