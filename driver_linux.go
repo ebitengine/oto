@@ -118,6 +118,21 @@ func newDriver(sampleRate, numChans, bitDepthInBytes, bufferSizeInBytes int) (tr
 		return nil, alsaError(errCode)
 	}
 
+	// Raspberry Pi 400 fix - for some reason the call to ALSA_hw_params can result in the bufferSize and periodSize
+	// being the same (this could be becuase the rpi driver does not drop the periodSize below 1024, whereas desktop
+	// Linux is happy to go lower). When the bufferSize and periodSize are the same it causes constant buffer underruns
+	// that stutter the audio continuously.
+	//
+	// So in the case where an RPi (or any other driver) returns the same buffer and period size we will change the
+	// buffer size to twice that of the period size and re-request hw params.
+	if bufferSize == periodSize {
+		bufferSize = periodSize * 2
+		if errCode := C.ALSA_hw_params(p.handle, C.uint(sampleRate), C.uint(numChans), format, &bufferSize, &periodSize); errCode < 0 {
+			p.Close()
+			return nil, alsaError(errCode)
+		}
+	}
+
 	// allocate the buffer of the size of the period, use the periodSize that we've got back
 	// from ALSA after it's wise decision
 	p.bufSamples = int(periodSize)
