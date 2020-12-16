@@ -56,10 +56,6 @@ func tryAudioWorklet(context js.Value, channelNum int) (js.Value, error) {
 		return js.Undefined(), nil
 	}
 
-	if !isAudioWorkletAvailable() {
-		return js.Undefined(), nil
-	}
-
 	worklet := context.Get("audioWorklet")
 	if !worklet.Truthy() {
 		return js.Undefined(), &warn{

@@ -12,27 +12,37 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// +build !go1.13 !wasm
+// +build go1.13
 
 package oto
 
 import (
+	"reflect"
+	"runtime"
 	"syscall/js"
+	"unsafe"
 )
 
 func float32SliceToTypedArray(s []float32) (js.Value, func()) {
-	// Note that TypedArrayOf cannot work correcly on Wasm.
-	// See https://github.com/golang/go/issues/31980
+	h := (*reflect.SliceHeader)(unsafe.Pointer(&s))
+	h.Len *= 4
+	h.Cap *= 4
+	bs := *(*[]byte)(unsafe.Pointer(h))
 
-	a := js.TypedArrayOf(s)
-	return a.Value, func() { a.Release() }
+	a := js.Global().Get("Uint8Array").New(len(bs))
+	js.CopyBytesToJS(a, bs)
+	runtime.KeepAlive(s)
+	buf := a.Get("buffer")
+	return js.Global().Get("Float32Array").New(buf, a.Get("byteOffset"), a.Get("byteLength").Int()/4), func() {}
 }
 
 func copyFloat32sToJS(v js.Value, s []float32) {
-	panic("oto: copyFloat32sToJS is not implemented on Go 1.12 or older")
-}
+	h := (*reflect.SliceHeader)(unsafe.Pointer(&s))
+	h.Len *= 4
+	h.Cap *= 4
+	bs := *(*[]byte)(unsafe.Pointer(h))
 
-func isAudioWorkletAvailable() bool {
-	// As copyFloat32sToJS is not implemented on Go 1.12 or older, Audio Worklet is not available.
-	return false
+	a := js.Global().Get("Uint8Array").New(v.Get("buffer"))
+	js.CopyBytesToJS(a, bs)
+	runtime.KeepAlive(s)
 }
