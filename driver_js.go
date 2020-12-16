@@ -52,7 +52,7 @@ func (w *warn) Error() string {
 const audioBufferSamples = 3200
 
 func tryAudioWorklet(context js.Value, channelNum int) (js.Value, error) {
-	if valueEqual(js.Global().Get("AudioWorkletNode"), js.Undefined()) {
+	if !js.Global().Get("AudioWorkletNode").Truthy() {
 		return js.Undefined(), nil
 	}
 
@@ -61,7 +61,7 @@ func tryAudioWorklet(context js.Value, channelNum int) (js.Value, error) {
 	}
 
 	worklet := context.Get("audioWorklet")
-	if valueEqual(worklet, js.Undefined()) {
+	if !worklet.Truthy() {
 		return js.Undefined(), &warn{
 			msg: "AudioWorklet is not available due to the insecure context. See https://developer.mozilla.org/en-US/docs/Web/API/AudioWorklet",
 		}
@@ -168,10 +168,10 @@ registerProcessor('ebiten-audio-worklet-processor', EbitenAudioWorkletProcessor)
 
 func newDriver(sampleRate, channelNum, bitDepthInBytes, bufferSize int) (tryWriteCloser, error) {
 	class := js.Global().Get("AudioContext")
-	if valueEqual(class, js.Undefined()) {
+	if !class.Truthy() {
 		class = js.Global().Get("webkitAudioContext")
 	}
-	if valueEqual(class, js.Undefined()) {
+	if !class.Truthy() {
 		return nil, errors.New("oto: audio couldn't be initialized")
 	}
 
@@ -189,7 +189,7 @@ func newDriver(sampleRate, channelNum, bitDepthInBytes, bufferSize int) (tryWrit
 	}
 
 	bs := bufferSize
-	if valueEqual(node, js.Undefined()) {
+	if !node.Truthy() {
 		bs = max(bufferSize, audioBufferSamples*channelNum*bitDepthInBytes)
 	} else {
 		bs = max(bufferSize, 4096)
@@ -205,7 +205,7 @@ func newDriver(sampleRate, channelNum, bitDepthInBytes, bufferSize int) (tryWrit
 		cond:            sync.NewCond(&sync.Mutex{}),
 	}
 
-	if !valueEqual(node, js.Undefined()) {
+	if node.Truthy() {
 		s := p.bufferSize / p.channelNum / p.bitDepthInBytes / 2
 		p.bufs = [][]js.Value{
 			{
@@ -279,7 +279,7 @@ func (p *driver) TryWrite(data []byte) (int, error) {
 		return 0, nil
 	}
 
-	if !valueEqual(p.workletNode, js.Undefined()) {
+	if p.workletNode.Truthy() {
 		p.cond.L.Lock()
 		defer p.cond.L.Unlock()
 
@@ -337,7 +337,7 @@ func (p *driver) TryWrite(data []byte) (int, error) {
 	l, r := toLR(p.tmp[:le])
 	tl, freel := float32SliceToTypedArray(l)
 	tr, freer := float32SliceToTypedArray(r)
-	if !valueEqual(buf.Get("copyToChannel"), js.Undefined()) {
+	if buf.Get("copyToChannel").Truthy() {
 		buf.Call("copyToChannel", tl, 0, 0)
 		buf.Call("copyToChannel", tr, 1, 0)
 	} else {
