@@ -36,9 +36,11 @@ type driver struct {
 	callbacks       map[string]js.Func
 
 	// For Audio Worklet
-	workletNode js.Value
-	bufs        [][]js.Value
-	cond        *sync.Cond
+	workletNode   js.Value
+	messageArray  js.Value
+	transferArray js.Value
+	bufs          [][]js.Value
+	cond          *sync.Cond
 }
 
 type warn struct {
@@ -198,10 +200,13 @@ func newDriver(sampleRate, channelNum, bitDepthInBytes, bufferSize int) (tryWrit
 		context:         context,
 		workletNode:     node,
 		bufferSize:      bs,
-		cond:            sync.NewCond(&sync.Mutex{}),
 	}
 
 	if node.Truthy() {
+		p.messageArray = js.Global().Get("Array").New(2)
+		p.transferArray = js.Global().Get("Array").New(2)
+		p.cond = sync.NewCond(&sync.Mutex{})
+
 		s := p.bufferSize / p.channelNum / p.bitDepthInBytes / 2
 		p.bufs = [][]js.Value{
 			{
@@ -297,10 +302,12 @@ func (p *driver) TryWrite(data []byte) (int, error) {
 		copyFloat32sToJS(tr, r)
 		p.tmp = p.tmp[p.bufferSize/2:]
 
-		bufs := js.Global().Get("Array").New()
-		bufs.Call("push", tl, tr)
-		transfers := js.Global().Get("Array").New()
-		transfers.Call("push", tl.Get("buffer"), tr.Get("buffer"))
+		bufs := p.messageArray
+		bufs.SetIndex(0, tl)
+		bufs.SetIndex(1, tr)
+		transfers := p.transferArray
+		transfers.SetIndex(0, tl.Get("buffer"))
+		transfers.SetIndex(1, tr.Get("buffer"))
 
 		p.workletNode.Get("port").Call("postMessage", bufs, transfers)
 
