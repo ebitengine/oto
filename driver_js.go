@@ -78,7 +78,8 @@ class EbitenAudioWorkletProcessor extends AudioWorkletProcessor {
     this.port.onmessage = (e) => {
       const bufs = e.data;
       for (let ch = 0; ch < bufs.length; ch++) {
-        this.buffers_[ch].push(bufs[ch]);
+        const buf = bufs[ch];
+        this.buffers_[ch].push(new Float32Array(buf.buffer, buf.byteOffset, buf.byteLength / 4));
       }
     };
   }
@@ -105,7 +106,7 @@ class EbitenAudioWorkletProcessor extends AudioWorkletProcessor {
       this.consumed_.push([]);
       idx++;
     }
-    this.consumed_[idx][ch] = buf;
+    this.consumed_[idx][ch] = new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
   }
 
   process(inputs, outputs, parameters) {
@@ -207,15 +208,15 @@ func newDriver(sampleRate, channelNum, bitDepthInBytes, bufferSize int) (tryWrit
 		p.transferArray = js.Global().Get("Array").New(2)
 		p.cond = sync.NewCond(&sync.Mutex{})
 
-		s := p.bufferSize / p.channelNum / p.bitDepthInBytes / 2
+		s := p.bufferSize / p.channelNum / p.bitDepthInBytes / 2 * 4
 		p.bufs = [][]js.Value{
 			{
-				js.Global().Get("Float32Array").New(s),
-				js.Global().Get("Float32Array").New(s),
+				js.Global().Get("Uint8Array").New(s),
+				js.Global().Get("Uint8Array").New(s),
 			},
 			{
-				js.Global().Get("Float32Array").New(s),
-				js.Global().Get("Float32Array").New(s),
+				js.Global().Get("Uint8Array").New(s),
+				js.Global().Get("Uint8Array").New(s),
 			},
 		}
 

@@ -42,7 +42,6 @@ func copyFloat32sToJS(v js.Value, s []float32) {
 	h.Cap *= 4
 	bs := *(*[]byte)(unsafe.Pointer(h))
 
-	a := js.Global().Get("Uint8Array").New(v.Get("buffer"))
-	js.CopyBytesToJS(a, bs)
+	js.CopyBytesToJS(v, bs)
 	runtime.KeepAlive(s)
 }
