@@ -36,11 +36,12 @@ type driver struct {
 	callbacks       map[string]js.Func
 
 	// For Audio Worklet
-	workletNode   js.Value
-	messageArray  js.Value
-	transferArray js.Value
-	bufs          [][]js.Value
-	cond          *sync.Cond
+	workletNode     js.Value
+	workletNodePost js.Value
+	messageArray    js.Value
+	transferArray   js.Value
+	bufs            [][]js.Value
+	cond            *sync.Cond
 }
 
 type warn struct {
@@ -204,6 +205,8 @@ func newDriver(sampleRate, channelNum, bitDepthInBytes, bufferSize int) (tryWrit
 	}
 
 	if node.Truthy() {
+		port := node.Get("port")
+		p.workletNodePost = port.Get("postMessage").Call("bind", port)
 		p.messageArray = js.Global().Get("Array").New(2)
 		p.transferArray = js.Global().Get("Array").New(2)
 		p.cond = sync.NewCond(&sync.Mutex{})
@@ -310,7 +313,7 @@ func (p *driver) TryWrite(data []byte) (int, error) {
 		transfers.SetIndex(0, tl.Get("buffer"))
 		transfers.SetIndex(1, tr.Get("buffer"))
 
-		p.workletNode.Get("port").Call("postMessage", bufs, transfers)
+		p.workletNodePost.Invoke(bufs, transfers)
 
 		p.bufs = p.bufs[1:]
 
