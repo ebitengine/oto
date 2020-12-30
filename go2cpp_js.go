@@ -29,7 +29,7 @@ type go2CppDriver struct {
 }
 
 func newDriverGo2Cpp(sampleRate, channelNum, bitDepthInBytes, bufferSize int) (tryWriteCloser, error) {
-	writer := js.Global().Get("go2cpp").Call("createAudioWriter", sampleRate, channelNum, bitDepthInBytes, bufferSize)
+	writer := js.Global().Get("go2cpp").Call("createAudio", sampleRate, channelNum, bitDepthInBytes, bufferSize)
 	d := &go2CppDriver{
 		writer:     writer,
 		buf:        js.Global().Get("Uint8Array").New(16),
@@ -74,8 +74,7 @@ func (d *go2CppDriver) TryWrite(data []byte) (int, error) {
 		d.cond.Wait()
 	}
 
-	// write can return even when all the data is not written.
-	result := d.writer.Call("write", d.buf, len(data))
+	result := d.writer.Call("sendDataToBuffer", d.buf, len(data))
 	if result.Type() != js.TypeNumber {
 		return 0, fmt.Errorf("oto: write failed: %s", result.String())
 	}
