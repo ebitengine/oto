@@ -71,7 +71,9 @@ func (m *Mux) Read(buf []byte) (int, error) {
 			}
 			return n, nil
 		case 2:
-			copy(buf, make([]byte, n))
+			for i := 0; i < n; i++ {
+				buf[i] = 0
+			}
 			return n, nil
 		default:
 			panic("not reached")
