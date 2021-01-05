@@ -41,7 +41,7 @@ func newDriverGo2Cpp(sampleRate, channelNum, bitDepthInBytes, bufferSize int) (t
 		d.cond.L.Lock()
 		defer d.cond.L.Unlock()
 
-		wasFull := d.written == d.bufferSize
+		wasFull := d.written >= d.bufferSize
 		n := args[0].Int()
 		d.written -= n
 		if d.written < 0 {
@@ -70,7 +70,7 @@ func (d *go2CppDriver) TryWrite(data []byte) (int, error) {
 	d.cond.L.Lock()
 	defer d.cond.L.Unlock()
 
-	for d.written == d.bufferSize {
+	for d.written >= d.bufferSize {
 		d.cond.Wait()
 	}
 
