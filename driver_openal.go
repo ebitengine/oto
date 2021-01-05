@@ -256,3 +256,7 @@ func (p *driver) Close() error {
 	runtime.SetFinalizer(p, nil)
 	return nil
 }
+
+func (d *driver) tryWriteCanReturnWithoutWaiting() bool {
+	return true
+}

@@ -87,3 +87,7 @@ func (d *go2CppDriver) Close() error {
 	d.writer.Call("close")
 	return nil
 }
+
+func (d *go2CppDriver) tryWriteCanReturnWithoutWaiting() bool {
+	return false
+}

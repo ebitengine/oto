@@ -379,3 +379,7 @@ func (p *driver) Close() error {
 	p.callbacks = nil
 	return nil
 }
+
+func (d *driver) tryWriteCanReturnWithoutWaiting() bool {
+	return true
+}
