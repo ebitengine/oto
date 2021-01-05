@@ -215,7 +215,7 @@ func newDriver(sampleRate, channelNum, bitDepthInBytes, bufferSize int) (tryWrit
 		p.transferArray = js.Global().Get("Array").New(2)
 		p.cond = sync.NewCond(&sync.Mutex{})
 
-		s := p.bufferSize / p.channelNum / p.bitDepthInBytes / 2 * 4
+		s := p.bufferSize / p.channelNum / p.bitDepthInBytes * 4
 		p.bufs = [][]js.Value{
 			{
 				js.Global().Get("Uint8Array").New(s),
@@ -295,7 +295,7 @@ func (p *driver) TryWrite(data []byte) (int, error) {
 		n := min(len(data), max(0, p.bufferSize-len(p.tmp)))
 		p.tmp = append(p.tmp, data[:n]...)
 
-		if len(p.tmp) < p.bufferSize/2 {
+		if len(p.tmp) < p.bufferSize {
 			return n, nil
 		}
 
@@ -303,12 +303,12 @@ func (p *driver) TryWrite(data []byte) (int, error) {
 			p.cond.Wait()
 		}
 
-		l, r := toLR(p.tmp[:p.bufferSize/2])
+		l, r := toLR(p.tmp[:p.bufferSize])
 		tl := p.bufs[0][0]
 		tr := p.bufs[0][1]
 		copyFloat32sToJS(tl, l)
 		copyFloat32sToJS(tr, r)
-		p.tmp = p.tmp[p.bufferSize/2:]
+		p.tmp = p.tmp[p.bufferSize:]
 
 		bufs := p.messageArray
 		bufs.SetIndex(0, tl)
