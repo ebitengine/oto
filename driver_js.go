@@ -167,10 +167,6 @@ registerProcessor('ebiten-audio-worklet-processor', EbitenAudioWorkletProcessor)
 }
 
 func newDriver(sampleRate, channelNum, bitDepthInBytes, bufferSize int) (tryWriteCloser, error) {
-	if js.Global().Get("go2cpp").Truthy() {
-		return newDriverGo2Cpp(sampleRate, channelNum, bitDepthInBytes, bufferSize)
-	}
-
 	class := js.Global().Get("AudioContext")
 	if !class.Truthy() {
 		class = js.Global().Get("webkitAudioContext")
