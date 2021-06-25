@@ -27,6 +27,7 @@ package oto
 import "C"
 
 import (
+	"context"
 	"fmt"
 	"runtime"
 	"sync"
@@ -42,6 +43,8 @@ type audioInfo struct {
 }
 
 type driver struct {
+	ctx           context.Context
+	cancel        context.CancelFunc
 	audioQueue    C.AudioQueueRef
 	buf           []byte
 	bufSize       int
@@ -127,7 +130,10 @@ func newDriver(sampleRate, channelNum, bitDepthInBytes, bufferSizeInBytes int) (
 		nbuf = 2
 	}
 
+	ctx, cancel := context.WithCancel(context.TODO())
 	d := &driver{
+		ctx:        ctx,
+		cancel:     cancel,
 		audioQueue: audioQueue,
 		sampleRate: sampleRate,
 		audioInfo:  audioInfo,
@@ -181,7 +187,7 @@ func oto_render(inUserData unsafe.Pointer, inAQ C.AudioQueueRef, inBuffer C.Audi
 	defer t.Stop()
 	ch := t.C
 
-	for len(buf) < queueBufferSize {
+	for len(buf) < queueBufferSize && d.ctx.Err() == nil {
 		select {
 		case dbuf := <-d.chWrite:
 			for !d.resume(false) {
@@ -203,6 +209,9 @@ func oto_render(inUserData unsafe.Pointer, inAQ C.AudioQueueRef, inBuffer C.Audi
 		case <-ch:
 			d.pause()
 			ch = nil
+		case <-d.ctx.Done():
+			// AudioQueue was closed, return immediately
+			return
 		}
 	}
 
@@ -242,6 +251,9 @@ func (d *driver) Close() error {
 	defer d.m.Unlock()
 
 	runtime.SetFinalizer(d, nil)
+
+	// notify to close any (oto_render in this case) running progress
+	d.cancel()
 
 	if osstatus := C.AudioQueueStop(d.audioQueue, C.false); osstatus != C.noErr {
 		return fmt.Errorf("oto: AudioQueueStop failed: %d", osstatus)
