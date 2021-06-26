@@ -215,7 +215,22 @@ func oto_render(inUserData unsafe.Pointer, inAQ C.AudioQueueRef, inBuffer C.Audi
 		}
 	}
 
-	for i := 0; i < queueBufferSize; i++ {
+	// oto_render is a callback for AudioQueueNewOutput.
+	// According to the observation, it may still called once after drvier.Close called.
+	//
+	// In most case, the assumption len(buf) == queueBufferSize may always be true.
+	//
+	// However, here is a special case:
+	// After the `Close` called, and it is receiving chWrite and it may noticed
+	// `d.ctx.Err() != nil`, it will jump out from loop directly.
+	//
+	// At this moment, since d.audioQueue is nil and the inBuffer may not processed,
+	// We don't need to do any process to the inBuffer.
+	//
+	// Another consideration is when len(buf) != queueBufferSize, we may return directly.
+	// In this case we still need to check whether d.audioQueue is valid inside enqueueBuffer
+	// It may worthless.
+	for i := 0; i < len(buf); i++ {
 		*(*byte)(unsafe.Pointer(uintptr(inBuffer.mAudioData) + uintptr(i))) = buf[i]
 	}
 	// Do not update mAudioDataByteSize, or the buffer is not used correctly any more.
@@ -269,6 +284,11 @@ func (d *driver) Close() error {
 func (d *driver) enqueueBuffer(buffer C.AudioQueueBufferRef) {
 	d.m.Lock()
 	defer d.m.Unlock()
+
+	// avoid to enqueue buffer to a closed audio queue
+	if d.ctx.Err() != nil {
+		return
+	}
 
 	if osstatus := C.AudioQueueEnqueueBuffer(d.audioQueue, buffer, 0, nil); osstatus != C.noErr && d.err == nil {
 		d.err = fmt.Errorf("oto: AudioQueueEnqueueBuffer failed: %d", osstatus)
