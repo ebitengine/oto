@@ -130,7 +130,7 @@ func newDriver(sampleRate, channelNum, bitDepthInBytes, bufferSizeInBytes int) (
 		nbuf = 2
 	}
 
-	ctx, cancel := context.WithCancel(context.TODO())
+	ctx, cancel := context.WithCancel(context.Background())
 	d := &driver{
 		ctx:        ctx,
 		cancel:     cancel,
