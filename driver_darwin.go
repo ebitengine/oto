@@ -215,6 +215,21 @@ func oto_render(inUserData unsafe.Pointer, inAQ C.AudioQueueRef, inBuffer C.Audi
 		}
 	}
 
+	// oto_render is a callback for AudioQueueNewOutput.
+	// According to the observation, it may still called once after drvier.Close called.
+	//
+	// In most case, the assumption len(buf) == queueBufferSize may always be true.
+	//
+	// However, here is a special case:
+	// After the `Close` called, and it is receiving chWrite and it may noticed
+	// `d.ctx.Err() != nil`, it will jump out from loop directly.
+	//
+	// At this moment, since d.audioQueue is nil and the inBuffer may not processed,
+	// We don't need to do any process to the inBuffer.
+	//
+	// Another consideration is when len(buf) != queueBufferSize, we may return directly.
+	// In this case we still need to check whether d.audioQueue is valid inside enqueueBuffer
+	// It may worthless.
 	for i := 0; i < len(buf); i++ {
 		*(*byte)(unsafe.Pointer(uintptr(inBuffer.mAudioData) + uintptr(i))) = buf[i]
 	}
