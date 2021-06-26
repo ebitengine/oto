@@ -215,7 +215,7 @@ func oto_render(inUserData unsafe.Pointer, inAQ C.AudioQueueRef, inBuffer C.Audi
 		}
 	}
 
-	for i := 0; i < queueBufferSize; i++ {
+	for i := 0; i < len(buf); i++ {
 		*(*byte)(unsafe.Pointer(uintptr(inBuffer.mAudioData) + uintptr(i))) = buf[i]
 	}
 	// Do not update mAudioDataByteSize, or the buffer is not used correctly any more.
@@ -269,6 +269,11 @@ func (d *driver) Close() error {
 func (d *driver) enqueueBuffer(buffer C.AudioQueueBufferRef) {
 	d.m.Lock()
 	defer d.m.Unlock()
+
+	// avoid to enqueue buffer to a closed audio queue
+	if d.ctx.Err() != nil {
+		return
+	}
 
 	if osstatus := C.AudioQueueEnqueueBuffer(d.audioQueue, buffer, 0, nil); osstatus != C.noErr && d.err == nil {
 		d.err = fmt.Errorf("oto: AudioQueueEnqueueBuffer failed: %d", osstatus)
