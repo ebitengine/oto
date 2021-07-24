@@ -132,10 +132,17 @@ func (p *driver) TryWrite(data []byte) (int, error) {
 
 func (p *driver) Close() error {
 	runtime.SetFinalizer(p, nil)
+
 	// TODO: Call waveOutUnprepareHeader here
+
+	if err := waveOutReset(p.out); err != nil {
+		return err
+	}
+
 	if err := waveOutClose(p.out); err != nil {
 		return err
 	}
+
 	return nil
 }
 
