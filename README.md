@@ -13,7 +13,7 @@ A low-level library to play sound.
  * OpenBSD
  * Android
  * iOS
- * Web browsers ([GopherJS](https://github.com/gopherjs/gopherjs) and WebAssembly)
+ * WebAssembly
 
 ## Prerequisite
 
