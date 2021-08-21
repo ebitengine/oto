@@ -99,11 +99,11 @@ type Player interface {
 	// Reset clears the underyling buffer and pauses its playing.
 	Reset()
 
-	// Volume returns the current volume in between [0, 1].
+	// Volume returns the current volume in the range of [0, 1].
 	// The default volume is 1.
 	Volume() float64
 
-	// SetVolume sets the current volume in between [0, 1].
+	// SetVolume sets the current volume in the range of [0, 1].
 	SetVolume(volume float64)
 
 	// UnplayedBufferSize returns the byte size in the underlying buffer that is not played yet.
