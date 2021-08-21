@@ -1,4 +1,4 @@
-// Copyright 2017 Hajime Hoshi
+// Copyright 2021 The Oto Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -11,9 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
-//go:build !js
-// +build !js
 
 package oto
 
@@ -30,11 +27,14 @@ var (
 )
 
 var (
-	procWaveOutOpen          = winmm.NewProc("waveOutOpen")
-	procWaveOutClose         = winmm.NewProc("waveOutClose")
-	procWaveOutPrepareHeader = winmm.NewProc("waveOutPrepareHeader")
-	procWaveOutReset         = winmm.NewProc("waveOutReset")
-	procWaveOutWrite         = winmm.NewProc("waveOutWrite")
+	procWaveOutOpen            = winmm.NewProc("waveOutOpen")
+	procWaveOutClose           = winmm.NewProc("waveOutClose")
+	procWaveOutPause           = winmm.NewProc("waveOutPause")
+	procWaveOutPrepareHeader   = winmm.NewProc("waveOutPrepareHeader")
+	procWaveOutReset           = winmm.NewProc("waveOutReset")
+	procWaveOutRestart         = winmm.NewProc("waveOutRestart")
+	procWaveOutUnprepareHeader = winmm.NewProc("waveOutUnprepareHeader")
+	procWaveOutWrite           = winmm.NewProc("waveOutWrite")
 )
 
 type wavehdr struct {
@@ -59,8 +59,8 @@ type waveformatex struct {
 }
 
 const (
-	waveFormatPCM = 1
-	whdrInqueue   = 16
+	waveFormatIEEEFloat = 3
+	whdrInqueue         = 16
 )
 
 type mmresult uint
@@ -73,10 +73,10 @@ const (
 	mmsyserrInvalidhandle mmresult = 5
 	mmsyserrNodriver      mmresult = 6
 	mmsyserrNomem         mmresult = 7
-	waveerrBadformat      mmresult = 32
-	waveerrStillplaying   mmresult = 33
-	waveerrUnprepared     mmresult = 34
-	waveerrSync           mmresult = 35
+	waverrBadformat       mmresult = 32
+	waverrStillplaying    mmresult = 33
+	waverrUnprepared      mmresult = 34
+	waverrSync            mmresult = 35
 )
 
 func (m mmresult) String() string {
@@ -95,14 +95,14 @@ func (m mmresult) String() string {
 		return "MMSYSERR_NODRIVER"
 	case mmsyserrNomem:
 		return "MMSYSERR_NOMEM"
-	case waveerrBadformat:
-		return "WAVEERR_BADFORMAT"
-	case waveerrStillplaying:
-		return "WAVEERR_STILLPLAYING"
-	case waveerrUnprepared:
-		return "WAVEERR_UNPREPARED"
-	case waveerrSync:
-		return "WAVEERR_SYNC"
+	case waverrBadformat:
+		return "WAVERR_BADFORMAT"
+	case waverrStillplaying:
+		return "WAVERR_STILLPLAYING"
+	case waverrUnprepared:
+		return "WAVERR_UNPREPARED"
+	case waverrSync:
+		return "WAVERR_SYNC"
 	}
 	return fmt.Sprintf("MMRESULT (%d)", m)
 }
@@ -123,14 +123,18 @@ func (e *winmmError) Error() string {
 	return fmt.Sprintf("winmm error at %s", e.fname)
 }
 
-func waveOutOpen(f *waveformatex) (uintptr, error) {
+func waveOutOpen(f *waveformatex, callback uintptr) (uintptr, error) {
 	const (
-		waveMapper   = 0xffffffff
-		callbackNull = 0
+		waveMapper       = 0xffffffff
+		callbackFunction = 0x30000
 	)
 	var w uintptr
+	var fdwOpen uintptr
+	if callback != 0 {
+		fdwOpen |= callbackFunction
+	}
 	r, _, e := procWaveOutOpen.Call(uintptr(unsafe.Pointer(&w)), waveMapper, uintptr(unsafe.Pointer(f)),
-		0, 0, callbackNull)
+		callback, 0, fdwOpen)
 	runtime.KeepAlive(f)
 	if e.(windows.Errno) != 0 {
 		return 0, &winmmError{
@@ -155,10 +159,26 @@ func waveOutClose(hwo uintptr) error {
 			errno: e.(windows.Errno),
 		}
 	}
-	// WAVERR_STILLPLAYING is ignored.
-	if mmresult(r) != mmsyserrNoerror && mmresult(r) != waveerrStillplaying {
+	if mmresult(r) != mmsyserrNoerror {
 		return &winmmError{
 			fname:    "waveOutClose",
+			mmresult: mmresult(r),
+		}
+	}
+	return nil
+}
+
+func waveOutPause(hwo uintptr) error {
+	r, _, e := procWaveOutPause.Call(hwo)
+	if e.(windows.Errno) != 0 {
+		return &winmmError{
+			fname: "waveOutPause",
+			errno: e.(windows.Errno),
+		}
+	}
+	if mmresult(r) != mmsyserrNoerror {
+		return &winmmError{
+			fname:    "waveOutPause",
 			mmresult: mmresult(r),
 		}
 	}
@@ -191,14 +211,47 @@ func waveOutReset(hwo uintptr) error {
 			errno: e.(windows.Errno),
 		}
 	}
-
 	if mmresult(r) != mmsyserrNoerror {
 		return &winmmError{
 			fname:    "waveOutReset",
 			mmresult: mmresult(r),
 		}
 	}
+	return nil
+}
 
+func waveOutRestart(hwo uintptr) error {
+	r, _, e := procWaveOutRestart.Call(hwo)
+	if e.(windows.Errno) != 0 {
+		return &winmmError{
+			fname: "waveOutRestart",
+			errno: e.(windows.Errno),
+		}
+	}
+	if mmresult(r) != mmsyserrNoerror {
+		return &winmmError{
+			fname:    "waveOutRestart",
+			mmresult: mmresult(r),
+		}
+	}
+	return nil
+}
+
+func waveOutUnprepareHeader(hwo uintptr, pwh *wavehdr) error {
+	r, _, e := procWaveOutUnprepareHeader.Call(hwo, uintptr(unsafe.Pointer(pwh)), unsafe.Sizeof(wavehdr{}))
+	runtime.KeepAlive(pwh)
+	if e.(windows.Errno) != 0 {
+		return &winmmError{
+			fname: "waveOutUnprepareHeader",
+			errno: e.(windows.Errno),
+		}
+	}
+	if mmresult(r) != mmsyserrNoerror {
+		return &winmmError{
+			fname:    "waveOutUnprepareHeader",
+			mmresult: mmresult(r),
+		}
+	}
 	return nil
 }
 

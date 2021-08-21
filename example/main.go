@@ -21,6 +21,7 @@ import (
 	"flag"
 	"io"
 	"math"
+	"runtime"
 	"sync"
 	"time"
 
@@ -113,16 +114,10 @@ func (s *SineWave) Read(buf []byte) (int, error) {
 	return n, nil
 }
 
-func play(context *oto.Context, freq float64, duration time.Duration) error {
-	p := context.NewPlayer()
-	s := NewSineWave(freq, duration)
-	if _, err := io.Copy(p, s); err != nil {
-		return err
-	}
-	if err := p.Close(); err != nil {
-		return err
-	}
-	return nil
+func play(context *oto.Context, freq float64, duration time.Duration) oto.Player {
+	p := context.NewPlayer(NewSineWave(freq, duration))
+	p.Play()
+	return p
 }
 
 func run() error {
@@ -132,41 +127,53 @@ func run() error {
 		freqG = 784.0
 	)
 
-	c, err := oto.NewContext(*sampleRate, *channelNum, *bitDepthInBytes, 4096)
+	c, ready, err := oto.NewContext(*sampleRate, *channelNum, *bitDepthInBytes)
 	if err != nil {
 		return err
 	}
+	<-ready
 
 	var wg sync.WaitGroup
+	var players []oto.Player
+	var m sync.Mutex
 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		if err := play(c, freqC, 3*time.Second); err != nil {
-			panic(err)
-		}
+		p := play(c, freqC, 3*time.Second)
+		m.Lock()
+		players = append(players, p)
+		m.Unlock()
+		time.Sleep(3 * time.Second)
 	}()
 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		time.Sleep(1 * time.Second)
-		if err := play(c, freqE, 3*time.Second); err != nil {
-			panic(err)
-		}
+		p := play(c, freqE, 3*time.Second)
+		m.Lock()
+		players = append(players, p)
+		m.Unlock()
+		time.Sleep(3 * time.Second)
 	}()
 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		time.Sleep(2 * time.Second)
-		if err := play(c, freqG, 3*time.Second); err != nil {
-			panic(err)
-		}
+		p := play(c, freqG, 3*time.Second)
+		m.Lock()
+		players = append(players, p)
+		m.Unlock()
+		time.Sleep(3 * time.Second)
 	}()
 
 	wg.Wait()
-	c.Close()
+
+	// Pin the players not to GC the players.
+	runtime.KeepAlive(players)
+
 	return nil
 }
 

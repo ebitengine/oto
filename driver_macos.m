@@ -1,4 +1,4 @@
-// Copyright 2020 The Oto Authors
+// Copyright 2020 The Ebiten Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,18 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// +build darwin,!ios,!js
+// +build darwin,!ios
 
 #import <AppKit/AppKit.h>
 
 #include "_cgo_export.h"
 
-@interface OtoNotificationObserver : NSObject {
+@interface EbitenReaderDriverNotificationObserver : NSObject {
 }
 
 @end
 
-@implementation OtoNotificationObserver {
+@implementation EbitenReaderDriverNotificationObserver {
 }
 
 - (void)receiveSleepNote:(NSNotification *)note {
@@ -36,9 +36,11 @@
 
 @end
 
-// oto_setNotificationHandler sets a handler for sleep/wake notifications.
+// oto_setNotificationHandler sets a handler for sleep/wake
+// notifications.
 void oto_setNotificationHandler() {
-  OtoNotificationObserver *observer = [[OtoNotificationObserver alloc] init];
+  EbitenReaderDriverNotificationObserver *observer =
+      [[EbitenReaderDriverNotificationObserver alloc] init];
 
   [[[NSWorkspace sharedWorkspace] notificationCenter]
       addObserver:observer
@@ -50,9 +52,4 @@ void oto_setNotificationHandler() {
          selector:@selector(receiveWakeNote:)
              name:NSWorkspaceDidWakeNotification
            object:NULL];
-}
-
-bool oto_isBackground(void) {
-  // TODO: Should this be implemented?
-  return false;
 }

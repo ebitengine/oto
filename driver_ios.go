@@ -1,4 +1,4 @@
-// Copyright 2019 The Oto Authors
+// Copyright 2021 The Oto Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,16 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build darwin && ios && !js
-// +build darwin,ios,!js
+//go:build darwin && ios
+// +build darwin,ios
 
 package oto
 
-// #cgo LDFLAGS: -framework Foundation -framework AVFoundation -framework UIKit
-//
-// #import <AudioToolbox/AudioToolbox.h>
-import "C"
+// 12288 seems necessary at least on iPod touch (7th).
+// With 48000[Hz] stereo, the maximum delay is (12288 / 4 / 2 [samples]) / 48000 [Hz] = 0.032 [sec].
+// '4' is float32 size in bytes. '2' is a number of channels for stereo.
 
-func componentSubType() C.OSType {
-	return C.kAudioUnitSubType_RemoteIO
-}
+const bufferSizeInBytes = 12288

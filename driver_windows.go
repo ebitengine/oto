@@ -1,4 +1,4 @@
-// Copyright 2015 Hajime Hoshi
+// Copyright 2021 The Oto Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,29 +12,34 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !js
-// +build !js
-
 package oto
 
 import (
-	"errors"
-	"runtime"
+	"fmt"
 	"unsafe"
+
+	"golang.org/x/sys/windows"
 )
 
+// Avoid goroutines on Windows (hajimehoshi/ebiten#1768).
+// Apparently, switching contexts might take longer than other platforms.
+
+const headerBufferSize = 4096
+
 type header struct {
-	buffer  []byte
+	waveOut uintptr
+	buffer  []float32
 	waveHdr *wavehdr
 }
 
-func newHeader(waveOut uintptr, bufferSize int) (*header, error) {
+func newHeader(waveOut uintptr, bufferSizeInBytes int) (*header, error) {
 	h := &header{
-		buffer: make([]byte, bufferSize),
+		waveOut: waveOut,
+		buffer:  make([]float32, bufferSizeInBytes/4),
 	}
 	h.waveHdr = &wavehdr{
 		lpData:         uintptr(unsafe.Pointer(&h.buffer[0])),
-		dwBufferLength: uint32(bufferSize),
+		dwBufferLength: uint32(bufferSizeInBytes),
 	}
 	if err := waveOutPrepareHeader(waveOut, h.waveHdr); err != nil {
 		return nil, err
@@ -42,111 +47,148 @@ func newHeader(waveOut uintptr, bufferSize int) (*header, error) {
 	return h, nil
 }
 
-func (h *header) Write(waveOut uintptr, data []byte) error {
-	if len(data) != len(h.buffer) {
-		return errors.New("oto: len(data) must equal to len(h.buffer)")
-	}
+func (h *header) Write(data []float32) error {
 	copy(h.buffer, data)
-	if err := waveOutWrite(waveOut, h.waveHdr); err != nil {
+	if err := waveOutWrite(h.waveOut, h.waveHdr); err != nil {
 		return err
 	}
 	return nil
 }
 
-type driver struct {
-	out        uintptr
-	headers    []*header
-	tmp        []byte
-	bufferSize int
+func (h *header) IsQueued() bool {
+	return h.waveHdr.dwFlags&whdrInqueue != 0
 }
 
-func newDriver(sampleRate, channelNum, bitDepthInBytes, bufferSizeInBytes int) (tryWriteCloser, error) {
-	numBlockAlign := channelNum * bitDepthInBytes
-	f := &waveformatex{
-		wFormatTag:      waveFormatPCM,
-		nChannels:       uint16(channelNum),
-		nSamplesPerSec:  uint32(sampleRate),
-		nAvgBytesPerSec: uint32(sampleRate * numBlockAlign),
-		wBitsPerSample:  uint16(bitDepthInBytes * 8),
-		nBlockAlign:     uint16(numBlockAlign),
+func (h *header) Close() error {
+	return waveOutUnprepareHeader(h.waveOut, h.waveHdr)
+}
+
+type context struct {
+	sampleRate      int
+	channelNum      int
+	bitDepthInBytes int
+
+	waveOut uintptr
+	headers []*header
+
+	buf32 []float32
+
+	players *players
+}
+
+var theContext *context
+
+func newContext(sampleRate, channelNum, bitDepthInBytes int) (*context, chan struct{}, error) {
+	ready := make(chan struct{})
+	close(ready)
+
+	c := &context{
+		sampleRate:      sampleRate,
+		channelNum:      channelNum,
+		bitDepthInBytes: bitDepthInBytes,
+		players:         newPlayers(),
 	}
-	w, err := waveOutOpen(f)
+	theContext = c
+
+	const bitsPerSample = 32
+	nBlockAlign := c.channelNum * bitsPerSample / 8
+	f := &waveformatex{
+		wFormatTag:      waveFormatIEEEFloat,
+		nChannels:       uint16(c.channelNum),
+		nSamplesPerSec:  uint32(c.sampleRate),
+		nAvgBytesPerSec: uint32(c.sampleRate * nBlockAlign),
+		wBitsPerSample:  bitsPerSample,
+		nBlockAlign:     uint16(nBlockAlign),
+	}
+
+	// TOOD: What about using an event instead of a callback? PortAudio and other libraries do that.
+	w, err := waveOutOpen(f, waveOutOpenCallback)
 	const elementNotFound = 1168
 	if e, ok := err.(*winmmError); ok && e.errno == elementNotFound {
-		// No device was found. Return the dummy device.
+		// TODO: No device was found. Return the dummy device (#77).
 		// TODO: Retry to open the device when possible.
-		return newDummyDriver(sampleRate, channelNum, bitDepthInBytes), nil
+		return nil, nil, err
 	}
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	const numBufs = 2
-	p := &driver{
-		out:        w,
-		headers:    make([]*header, numBufs),
-		bufferSize: bufferSizeInBytes,
-	}
-	runtime.SetFinalizer(p, (*driver).Close)
-	for i := range p.headers {
-		var err error
-		p.headers[i], err = newHeader(w, p.bufferSize)
+	c.waveOut = w
+	c.headers = make([]*header, 0, 6)
+	for len(c.headers) < cap(c.headers) {
+		h, err := newHeader(c.waveOut, headerBufferSize)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
+		c.headers = append(c.headers, h)
 	}
-	return p, nil
+
+	c.buf32 = make([]float32, headerBufferSize/4)
+	for range c.headers {
+		c.appendBuffers()
+	}
+
+	return c, ready, nil
 }
 
-func (p *driver) TryWrite(data []byte) (int, error) {
-	n := min(len(data), max(0, p.bufferSize-len(p.tmp)))
-	p.tmp = append(p.tmp, data[:n]...)
-	if len(p.tmp) < p.bufferSize {
-		return n, nil
-	}
-
-	var headerToWrite *header
-	for _, h := range p.headers {
-		// TODO: Need to check WHDR_DONE?
-		if h.waveHdr.dwFlags&whdrInqueue == 0 {
-			headerToWrite = h
-			break
-		}
-	}
-	if headerToWrite == nil {
-		return n, nil
-	}
-
-	if err := headerToWrite.Write(p.out, p.tmp); err != nil {
-		// This error can happen when e.g. a new HDMI connection is detected (#51).
-		const errorNotFound = 1168
-		werr := err.(*winmmError)
-		if werr.fname == "waveOutWrite" && werr.errno == errorNotFound {
-			return 0, nil
-		}
-		return 0, err
-	}
-
-	p.tmp = p.tmp[:0]
-	return n, nil
-}
-
-func (p *driver) Close() error {
-	runtime.SetFinalizer(p, nil)
-
-	// TODO: Call waveOutUnprepareHeader here
-
-	if err := waveOutReset(p.out); err != nil {
+func (c *context) Suspend() error {
+	if err := waveOutPause(c.waveOut); err != nil {
 		return err
 	}
-
-	if err := waveOutClose(p.out); err != nil {
-		return err
-	}
-
 	return nil
 }
 
-func (d *driver) tryWriteCanReturnWithoutWaiting() bool {
-	return true
+func (c *context) Resume() error {
+	// TODO: Ensure at least one header is queued?
+
+	if err := waveOutRestart(c.waveOut); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (c *context) isHeaderAvailable() bool {
+	for _, h := range c.headers {
+		if !h.IsQueued() {
+			return true
+		}
+	}
+	return false
+}
+
+var waveOutOpenCallback = windows.NewCallbackCDecl(func(hwo, uMsg, dwInstance, dwParam1, dwParam2 uintptr) uintptr {
+	const womDone = 0x3bd
+	if uMsg != womDone {
+		return 0
+	}
+	theContext.appendBuffers()
+	return 0
+})
+
+func (c *context) appendBuffers() {
+	for i := range c.buf32 {
+		c.buf32[i] = 0
+	}
+	c.players.read(c.buf32)
+
+	for _, h := range c.headers {
+		if h.IsQueued() {
+			continue
+		}
+
+		if err := h.Write(c.buf32); err != nil {
+			// This error can happen when e.g. a new HDMI connection is detected (#51).
+			const errorNotFound = 1168
+			if werr := err.(*winmmError); werr.fname == "waveOutWrite" {
+				switch {
+				case werr.mmresult == mmsyserrNomem:
+					continue
+				case werr.errno == errorNotFound:
+					// TODO: Retry later.
+				}
+			}
+			// TODO: Treat the error corretly
+			panic(fmt.Errorf("oto: Queueing the header failed: %v", err))
+		}
+	}
 }
