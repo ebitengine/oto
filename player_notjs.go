@@ -117,6 +117,7 @@ type playerImpl struct {
 	volume  float64
 	err     error
 	state   playerState
+	tmpbuf  []byte
 	buf     []byte
 	eof     bool
 
@@ -175,6 +176,13 @@ func (p *playerImpl) Play() {
 	}
 }
 
+func (p *playerImpl) ensureTmpBuf() []byte {
+	if p.tmpbuf == nil {
+		p.tmpbuf = make([]byte, p.context.maxBufferSize())
+	}
+	return p.tmpbuf
+}
+
 func (p *playerImpl) playImpl() {
 	if p.err != nil {
 		return
@@ -184,7 +192,7 @@ func (p *playerImpl) playImpl() {
 	}
 
 	if !p.eof {
-		buf := make([]byte, p.context.maxBufferSize())
+		buf := p.ensureTmpBuf()
 		for len(p.buf) < p.context.maxBufferSize() {
 			n, err := p.src.Read(buf)
 			if err != nil && err != io.EOF {
@@ -366,7 +374,7 @@ func (p *playerImpl) readSourceToBuffer() {
 		return
 	}
 
-	buf := make([]byte, maxBufferSize)
+	buf := p.ensureTmpBuf()
 	n, err := p.src.Read(buf)
 
 	if err != nil && err != io.EOF {
