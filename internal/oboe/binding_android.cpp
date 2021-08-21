@@ -169,7 +169,7 @@ void Stream::Loop(int num_frames) {
       std::unique_lock<std::mutex> lock{mutex_};
       cond_.wait(lock, [this, &tmp] { return buf_.size() < tmp.size(); });
     }
-    ebiten_oboe_read(&tmp[0], tmp.size());
+    oto_oboe_read(&tmp[0], tmp.size());
     {
       std::lock_guard<std::mutex> lock{mutex_};
       buf_.insert(buf_.end(), tmp.begin(), tmp.end());
@@ -182,14 +182,14 @@ void Stream::Loop(int num_frames) {
 
 extern "C" {
 
-const char *ebiten_oboe_Play(int sample_rate, int channel_num,
-                             int bit_depth_in_bytes) {
+const char *oto_oboe_Play(int sample_rate, int channel_num,
+                          int bit_depth_in_bytes) {
   return Stream::GetInstance().Play(sample_rate, channel_num,
                                     bit_depth_in_bytes);
 }
 
-const char *ebiten_oboe_Suspend() { return Stream::GetInstance().Pause(); }
+const char *oto_oboe_Suspend() { return Stream::GetInstance().Pause(); }
 
-const char *ebiten_oboe_Resume() { return Stream::GetInstance().Resume(); }
+const char *oto_oboe_Resume() { return Stream::GetInstance().Resume(); }
 
 } // extern "C"
