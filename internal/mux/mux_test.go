@@ -20,7 +20,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/hajimehoshi/oto/internal/mux"
+	"github.com/hajimehoshi/oto/v2/internal/mux"
 )
 
 func TestMux8Bits(t *testing.T) {

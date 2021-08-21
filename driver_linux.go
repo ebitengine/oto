@@ -12,9 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// +build !js
-// +build !android
-// +build !ios
+//go:build !js && !android && !ios
+// +build !js,!android,!ios
 
 package oto
 

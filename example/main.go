@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build example
 // +build example
 
 package main
@@ -23,7 +24,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hajimehoshi/oto"
+	"github.com/hajimehoshi/oto/v2"
 )
 
 var (

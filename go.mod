@@ -1,4 +1,4 @@
-module github.com/hajimehoshi/oto
+module github.com/hajimehoshi/oto/v2
 
 go 1.13
 
