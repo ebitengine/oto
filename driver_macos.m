@@ -18,12 +18,12 @@
 
 #include "_cgo_export.h"
 
-@interface EbitenReaderDriverNotificationObserver : NSObject {
+@interface OtoNotificationObserver : NSObject {
 }
 
 @end
 
-@implementation EbitenReaderDriverNotificationObserver {
+@implementation OtoNotificationObserver {
 }
 
 - (void)receiveSleepNote:(NSNotification *)note {
@@ -39,8 +39,7 @@
 // oto_setNotificationHandler sets a handler for sleep/wake
 // notifications.
 void oto_setNotificationHandler() {
-  EbitenReaderDriverNotificationObserver *observer =
-      [[EbitenReaderDriverNotificationObserver alloc] init];
+  OtoNotificationObserver *observer = [[OtoNotificationObserver alloc] init];
 
   [[[NSWorkspace sharedWorkspace] notificationCenter]
       addObserver:observer
