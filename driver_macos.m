@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build darwin && !ios && !js
 // +build darwin,!ios,!js
 
 #import <AppKit/AppKit.h>
