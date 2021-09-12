@@ -54,7 +54,8 @@ func NewSineWave(freq float64, duration time.Duration) *SineWave {
 func (s *SineWave) Read(buf []byte) (int, error) {
 	if len(s.remaining) > 0 {
 		n := copy(buf, s.remaining)
-		s.remaining = s.remaining[n:]
+		copy(s.remaining, s.remaining[n:])
+		s.remaining = s.remaining[:len(s.remaining)-n]
 		return n, nil
 	}
 

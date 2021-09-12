@@ -330,7 +330,8 @@ func (p *playerImpl) readBufferAndAdd(buf []float32) int {
 	}
 	volume := float32(p.volume)
 	src := p.buf[:n*bitDepthInBytes]
-	p.buf = p.buf[n*bitDepthInBytes:]
+	copy(p.buf, p.buf[n*bitDepthInBytes:])
+	p.buf = p.buf[:len(p.buf)-n*bitDepthInBytes]
 	p.m.Unlock()
 
 	for i := 0; i < n; i++ {
