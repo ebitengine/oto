@@ -142,8 +142,7 @@ func (c *context) appendBuffer(buf32 []float32) {
 	defer c.cond.L.Unlock()
 
 	buf := c.unqueuedBuffers[0]
-	copy(c.unqueuedBuffers, c.unqueuedBuffers[1:])
-	c.unqueuedBuffers = c.unqueuedBuffers[:len(c.unqueuedBuffers)-1]
+	c.unqueuedBuffers = c.unqueuedBuffers[1:]
 
 	for i := range buf32 {
 		buf32[i] = 0

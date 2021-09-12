@@ -220,8 +220,7 @@ func (p *player) appendBufferImpl(audioBuffer js.Value) {
 
 	bs := make([]byte, p.context.oneBufferSize())
 	n := copy(bs, p.buf)
-	copy(p.buf, p.buf[n:])
-	p.buf = p.buf[:len(p.buf)-n]
+	p.buf = p.buf[n:]
 	if len(p.buf) < p.context.maxBufferSize() {
 		p.cond.Signal()
 	}
