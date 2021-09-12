@@ -317,9 +317,9 @@ func (p *playerImpl) closeImpl() error {
 
 func (p *playerImpl) readBufferAndAdd(buf []float32) int {
 	p.m.Lock()
+	defer p.m.Unlock()
 
 	if p.state != playerPlay {
-		p.m.Unlock()
 		return 0
 	}
 
@@ -330,8 +330,6 @@ func (p *playerImpl) readBufferAndAdd(buf []float32) int {
 	}
 	volume := float32(p.volume)
 	src := p.buf[:n*bitDepthInBytes]
-	p.buf = p.buf[n*bitDepthInBytes:]
-	p.m.Unlock()
 
 	for i := 0; i < n; i++ {
 		var v float32
@@ -345,6 +343,10 @@ func (p *playerImpl) readBufferAndAdd(buf []float32) int {
 		}
 		buf[i] += v * volume
 	}
+
+	copy(p.buf, p.buf[n*bitDepthInBytes:])
+	p.buf = p.buf[:len(p.buf)-n*bitDepthInBytes]
+
 	return n
 }
 
