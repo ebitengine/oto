@@ -16,6 +16,7 @@ package oto
 
 import (
 	"fmt"
+	"sync"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -74,6 +75,8 @@ type context struct {
 	buf32 []float32
 
 	players *players
+
+	cond *sync.Cond
 }
 
 var theContext *context
@@ -87,6 +90,7 @@ func newContext(sampleRate, channelNum, bitDepthInBytes int) (*context, chan str
 		channelNum:      channelNum,
 		bitDepthInBytes: bitDepthInBytes,
 		players:         newPlayers(),
+		cond:            sync.NewCond(&sync.Mutex{}),
 	}
 	theContext = c
 
@@ -124,14 +128,15 @@ func newContext(sampleRate, channelNum, bitDepthInBytes int) (*context, chan str
 	}
 
 	c.buf32 = make([]float32, headerBufferSize/4)
-	for range c.headers {
-		c.appendBuffers()
-	}
+	go c.loop()
 
 	return c, ready, nil
 }
 
 func (c *context) Suspend() error {
+	c.cond.L.Lock()
+	defer c.cond.L.Unlock()
+
 	if err := waveOutPause(c.waveOut); err != nil {
 		return err
 	}
@@ -139,6 +144,9 @@ func (c *context) Suspend() error {
 }
 
 func (c *context) Resume() error {
+	c.cond.L.Lock()
+	defer c.cond.L.Unlock()
+
 	// TODO: Ensure at least one header is queued?
 
 	if err := waveOutRestart(c.waveOut); err != nil {
@@ -157,15 +165,36 @@ func (c *context) isHeaderAvailable() bool {
 }
 
 var waveOutOpenCallback = windows.NewCallbackCDecl(func(hwo, uMsg, dwInstance, dwParam1, dwParam2 uintptr) uintptr {
+	// The callback is not reliable and might not be called e.g., when a headset is disconnected.
+	// Just signal the condition vairable and don't do other things.
 	const womDone = 0x3bd
 	if uMsg != womDone {
 		return 0
 	}
-	theContext.appendBuffers()
+	theContext.cond.Signal()
 	return 0
 })
 
+func (c *context) waitUntilHeaderAvailable() {
+	c.cond.L.Lock()
+	defer c.cond.L.Unlock()
+
+	for !c.isHeaderAvailable() {
+		c.cond.Wait()
+	}
+}
+
+func (c *context) loop() {
+	for {
+		c.waitUntilHeaderAvailable()
+		c.appendBuffers()
+	}
+}
+
 func (c *context) appendBuffers() {
+	c.cond.L.Lock()
+	defer c.cond.L.Unlock()
+
 	for i := range c.buf32 {
 		c.buf32[i] = 0
 	}
