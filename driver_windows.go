@@ -190,5 +190,6 @@ func (c *context) appendBuffers() {
 			// TODO: Treat the error corretly
 			panic(fmt.Errorf("oto: Queueing the header failed: %v", err))
 		}
+		return
 	}
 }
