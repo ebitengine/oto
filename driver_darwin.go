@@ -160,6 +160,9 @@ func (c *context) appendBuffer(buf32 []float32) {
 }
 
 func (c *context) Suspend() error {
+	c.cond.L.Lock()
+	defer c.cond.L.Unlock()
+
 	if osstatus := C.AudioQueuePause(c.audioQueue); osstatus != C.noErr {
 		return fmt.Errorf("oto: AudioQueuePause failed: %d", osstatus)
 	}
@@ -167,6 +170,8 @@ func (c *context) Suspend() error {
 }
 
 func (c *context) Resume() error {
+	c.cond.L.Lock()
+	defer c.cond.L.Unlock()
 try:
 	if osstatus := C.AudioQueueStart(c.audioQueue, nil); osstatus != C.noErr {
 		const AVAudioSessionErrorCodeSiriIsRecording = 0x73697269 // 'siri'
