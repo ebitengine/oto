@@ -42,6 +42,7 @@ type context struct {
 	cond *sync.Cond
 
 	players *players
+	err     error
 }
 
 var theContext *context
@@ -79,9 +80,8 @@ func newContext(sampleRate, channelNum, bitDepthInBytes int) (*context, chan str
 	go func() {
 		buf32 := make([]float32, int(periodSize)*c.channelNum)
 		for {
-			if err := c.readAndWrite(buf32); err != nil {
-				// TODO: Handle errors correctly.
-				panic(err)
+			if !c.readAndWrite(buf32) {
+				return
 			}
 		}
 	}()
@@ -126,12 +126,15 @@ func (c *context) alsaPcmHwParams(sampleRate, channelNum int, bufferSize, period
 	return nil
 }
 
-func (c *context) readAndWrite(buf32 []float32) error {
+func (c *context) readAndWrite(buf32 []float32) bool {
 	c.cond.L.Lock()
 	defer c.cond.L.Unlock()
 
-	for c.suspended {
+	for c.suspended && c.err == nil {
 		c.cond.Wait()
+	}
+	if c.err != nil {
+		return false
 	}
 
 	for i := range buf32 {
@@ -144,23 +147,29 @@ func (c *context) readAndWrite(buf32 []float32) error {
 		if n == -C.EPIPE {
 			// Underrun or overrun occurred.
 			if err := C.snd_pcm_prepare(c.handle); err < 0 {
-				return alsaError(err)
+				c.err = alsaError(err)
+				return false
 			}
 			continue
 		}
 		if n < 0 {
-			return alsaError(C.int(n))
+			c.err = alsaError(C.int(n))
+			return false
 		}
 		buf32 = buf32[int(n)*c.channelNum:]
 	}
-	return nil
+	return true
 }
 
 func (c *context) Suspend() error {
 	c.cond.L.Lock()
 	defer c.cond.L.Unlock()
-	c.suspended = true
 
+	if c.err != nil {
+		return c.err
+	}
+
+	c.suspended = true
 	if c.supportsPause {
 		if err := C.snd_pcm_pause(c.handle, 1); err < 0 {
 			return alsaError(err)
@@ -177,6 +186,11 @@ func (c *context) Suspend() error {
 func (c *context) Resume() error {
 	c.cond.L.Lock()
 	defer c.cond.L.Unlock()
+
+	if c.err != nil {
+		return c.err
+	}
+
 	defer func() {
 		c.suspended = false
 		c.cond.Signal()
@@ -204,4 +218,10 @@ try:
 		return alsaError(err)
 	}
 	return nil
+}
+
+func (c *context) Err() error {
+	c.cond.L.Lock()
+	defer c.cond.L.Unlock()
+	return c.err
 }

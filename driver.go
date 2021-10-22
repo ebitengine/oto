@@ -66,6 +66,13 @@ func (c *Context) Resume() error {
 	return c.context.Resume()
 }
 
+// Err returns the current error.
+//
+// Err is concurrent-safe.
+func (c *Context) Err() error {
+	return c.context.Err()
+}
+
 // NewContext creates a new context, that creates and holds ready-to-use Player objects,
 // and returns a context, a channel that is closed when the context is ready, and an error if it exists.
 //

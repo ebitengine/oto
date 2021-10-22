@@ -49,3 +49,7 @@ func (c *context) Suspend() error {
 func (c *context) Resume() error {
 	return oboe.Resume()
 }
+
+func (c *context) Err() error {
+	return nil
+}

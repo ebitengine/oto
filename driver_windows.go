@@ -75,6 +75,7 @@ type context struct {
 	buf32 []float32
 
 	players *players
+	err     error
 
 	cond *sync.Cond
 }
@@ -137,6 +138,10 @@ func (c *context) Suspend() error {
 	c.cond.L.Lock()
 	defer c.cond.L.Unlock()
 
+	if c.err != nil {
+		return c.err
+	}
+
 	if err := waveOutPause(c.waveOut); err != nil {
 		return err
 	}
@@ -147,12 +152,22 @@ func (c *context) Resume() error {
 	c.cond.L.Lock()
 	defer c.cond.L.Unlock()
 
+	if c.err != nil {
+		return c.err
+	}
+
 	// TODO: Ensure at least one header is queued?
 
 	if err := waveOutRestart(c.waveOut); err != nil {
 		return err
 	}
 	return nil
+}
+
+func (c *context) Err() error {
+	c.cond.L.Lock()
+	defer c.cond.L.Unlock()
+	return c.err
 }
 
 func (c *context) isHeaderAvailable() bool {
@@ -175,18 +190,21 @@ var waveOutOpenCallback = windows.NewCallbackCDecl(func(hwo, uMsg, dwInstance, d
 	return 0
 })
 
-func (c *context) waitUntilHeaderAvailable() {
+func (c *context) waitUntilHeaderAvailable() bool {
 	c.cond.L.Lock()
 	defer c.cond.L.Unlock()
 
-	for !c.isHeaderAvailable() {
+	for !c.isHeaderAvailable() && c.err == nil {
 		c.cond.Wait()
 	}
+	return c.err == nil
 }
 
 func (c *context) loop() {
 	for {
-		c.waitUntilHeaderAvailable()
+		if !c.waitUntilHeaderAvailable() {
+			return
+		}
 		c.appendBuffers()
 	}
 }
@@ -194,6 +212,10 @@ func (c *context) loop() {
 func (c *context) appendBuffers() {
 	c.cond.L.Lock()
 	defer c.cond.L.Unlock()
+
+	if c.err != nil {
+		return
+	}
 
 	for i := range c.buf32 {
 		c.buf32[i] = 0
@@ -216,8 +238,7 @@ func (c *context) appendBuffers() {
 					// TODO: Retry later.
 				}
 			}
-			// TODO: Treat the error corretly
-			panic(fmt.Errorf("oto: Queueing the header failed: %v", err))
+			c.err = fmt.Errorf("oto: Queueing the header failed: %v", err)
 		}
 		return
 	}

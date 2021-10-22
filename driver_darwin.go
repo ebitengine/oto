@@ -82,6 +82,7 @@ type context struct {
 	cond *sync.Cond
 
 	players *players
+	err     error
 }
 
 // TOOD: Convert the error code correctly.
@@ -120,19 +121,22 @@ func newContext(sampleRate, channelNum, bitDepthInBytes int) (*context, chan str
 	return c, ready, nil
 }
 
-func (c *context) wait() {
+func (c *context) wait() bool {
 	c.cond.L.Lock()
 	defer c.cond.L.Unlock()
 
-	for len(c.unqueuedBuffers) == 0 {
+	for len(c.unqueuedBuffers) == 0 && c.err == nil {
 		c.cond.Wait()
 	}
+	return c.err == nil
 }
 
 func (c *context) loop() {
 	buf32 := make([]float32, bufferSizeInBytes/4)
 	for {
-		c.wait()
+		if !c.wait() {
+			return
+		}
 		c.appendBuffer(buf32)
 	}
 }
@@ -140,6 +144,10 @@ func (c *context) loop() {
 func (c *context) appendBuffer(buf32 []float32) {
 	c.cond.L.Lock()
 	defer c.cond.L.Unlock()
+
+	if c.err != nil {
+		return
+	}
 
 	buf := c.unqueuedBuffers[0]
 	copy(c.unqueuedBuffers, c.unqueuedBuffers[1:])
@@ -154,14 +162,17 @@ func (c *context) appendBuffer(buf32 []float32) {
 	}
 
 	if osstatus := C.AudioQueueEnqueueBuffer(c.audioQueue, buf, 0, nil); osstatus != C.noErr {
-		// TODO: Treat the error correctly
-		panic(fmt.Errorf("oto: AudioQueueEnqueueBuffer failed: %d", osstatus))
+		c.err = fmt.Errorf("oto: AudioQueueEnqueueBuffer failed: %d", osstatus)
 	}
 }
 
 func (c *context) Suspend() error {
 	c.cond.L.Lock()
 	defer c.cond.L.Unlock()
+
+	if c.err != nil {
+		return c.err
+	}
 
 	if osstatus := C.AudioQueuePause(c.audioQueue); osstatus != C.noErr {
 		return fmt.Errorf("oto: AudioQueuePause failed: %d", osstatus)
@@ -172,6 +183,11 @@ func (c *context) Suspend() error {
 func (c *context) Resume() error {
 	c.cond.L.Lock()
 	defer c.cond.L.Unlock()
+
+	if c.err != nil {
+		return c.err
+	}
+
 try:
 	if osstatus := C.AudioQueueStart(c.audioQueue, nil); osstatus != C.noErr {
 		const AVAudioSessionErrorCodeSiriIsRecording = 0x73697269 // 'siri'
@@ -182,6 +198,12 @@ try:
 		return fmt.Errorf("oto: AudioQueueStart failed: %d", osstatus)
 	}
 	return nil
+}
+
+func (c *context) Err() error {
+	c.cond.L.Lock()
+	defer c.cond.L.Unlock()
+	return c.err
 }
 
 //export oto_render

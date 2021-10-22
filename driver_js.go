@@ -119,6 +119,10 @@ func (c *context) Resume() error {
 	return nil
 }
 
+func (c *context) Err() error {
+	return nil
+}
+
 func (p *player) Play() {
 	p.cond.L.Lock()
 	defer p.cond.L.Unlock()
