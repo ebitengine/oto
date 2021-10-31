@@ -17,6 +17,7 @@ package oto
 import (
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -75,7 +76,7 @@ type context struct {
 	buf32 []float32
 
 	players *players
-	err     error
+	err     atomic.Value
 
 	cond *sync.Cond
 }
@@ -138,8 +139,8 @@ func (c *context) Suspend() error {
 	c.cond.L.Lock()
 	defer c.cond.L.Unlock()
 
-	if c.err != nil {
-		return c.err
+	if err := c.err.Load(); err != nil {
+		return err.(error)
 	}
 
 	if err := waveOutPause(c.waveOut); err != nil {
@@ -152,8 +153,8 @@ func (c *context) Resume() error {
 	c.cond.L.Lock()
 	defer c.cond.L.Unlock()
 
-	if c.err != nil {
-		return c.err
+	if err := c.err.Load(); err != nil {
+		return err.(error)
 	}
 
 	// TODO: Ensure at least one header is queued?
@@ -165,9 +166,10 @@ func (c *context) Resume() error {
 }
 
 func (c *context) Err() error {
-	c.cond.L.Lock()
-	defer c.cond.L.Unlock()
-	return c.err
+	if err := c.err.Load(); err != nil {
+		return err.(error)
+	}
+	return nil
 }
 
 func (c *context) isHeaderAvailable() bool {
@@ -194,10 +196,10 @@ func (c *context) waitUntilHeaderAvailable() bool {
 	c.cond.L.Lock()
 	defer c.cond.L.Unlock()
 
-	for !c.isHeaderAvailable() && c.err == nil {
+	for !c.isHeaderAvailable() && c.err.Load() == nil {
 		c.cond.Wait()
 	}
-	return c.err == nil
+	return c.err.Load() == nil
 }
 
 func (c *context) loop() {
@@ -213,7 +215,7 @@ func (c *context) appendBuffers() {
 	c.cond.L.Lock()
 	defer c.cond.L.Unlock()
 
-	if c.err != nil {
+	if c.err.Load() != nil {
 		return
 	}
 
@@ -238,7 +240,7 @@ func (c *context) appendBuffers() {
 					// TODO: Retry later.
 				}
 			}
-			c.err = fmt.Errorf("oto: Queueing the header failed: %v", err)
+			c.err.Store(fmt.Errorf("oto: Queueing the header failed: %v", err))
 		}
 		return
 	}

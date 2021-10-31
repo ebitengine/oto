@@ -26,6 +26,7 @@ import "C"
 import (
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unsafe"
 )
@@ -82,7 +83,7 @@ type context struct {
 	cond *sync.Cond
 
 	players *players
-	err     error
+	err     atomic.Value
 }
 
 // TOOD: Convert the error code correctly.
@@ -125,10 +126,10 @@ func (c *context) wait() bool {
 	c.cond.L.Lock()
 	defer c.cond.L.Unlock()
 
-	for len(c.unqueuedBuffers) == 0 && c.err == nil {
+	for len(c.unqueuedBuffers) == 0 && c.err.Load() == nil {
 		c.cond.Wait()
 	}
-	return c.err == nil
+	return c.err.Load() == nil
 }
 
 func (c *context) loop() {
@@ -145,7 +146,7 @@ func (c *context) appendBuffer(buf32 []float32) {
 	c.cond.L.Lock()
 	defer c.cond.L.Unlock()
 
-	if c.err != nil {
+	if c.err.Load() != nil {
 		return
 	}
 
@@ -162,7 +163,7 @@ func (c *context) appendBuffer(buf32 []float32) {
 	}
 
 	if osstatus := C.AudioQueueEnqueueBuffer(c.audioQueue, buf, 0, nil); osstatus != C.noErr {
-		c.err = fmt.Errorf("oto: AudioQueueEnqueueBuffer failed: %d", osstatus)
+		c.err.Store(fmt.Errorf("oto: AudioQueueEnqueueBuffer failed: %d", osstatus))
 	}
 }
 
@@ -170,8 +171,8 @@ func (c *context) Suspend() error {
 	c.cond.L.Lock()
 	defer c.cond.L.Unlock()
 
-	if c.err != nil {
-		return c.err
+	if err := c.err.Load(); err != nil {
+		return err.(error)
 	}
 
 	if osstatus := C.AudioQueuePause(c.audioQueue); osstatus != C.noErr {
@@ -184,8 +185,8 @@ func (c *context) Resume() error {
 	c.cond.L.Lock()
 	defer c.cond.L.Unlock()
 
-	if c.err != nil {
-		return c.err
+	if err := c.err.Load(); err != nil {
+		return err.(error)
 	}
 
 try:
@@ -201,9 +202,10 @@ try:
 }
 
 func (c *context) Err() error {
-	c.cond.L.Lock()
-	defer c.cond.L.Unlock()
-	return c.err
+	if err := c.err.Load(); err != nil {
+		return err.(error)
+	}
+	return nil
 }
 
 //export oto_render
