@@ -25,6 +25,7 @@ import "C"
 import (
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unsafe"
 )
@@ -42,7 +43,7 @@ type context struct {
 	cond *sync.Cond
 
 	players *players
-	err     error
+	err     atomic.Value
 }
 
 var theContext *context
@@ -130,10 +131,10 @@ func (c *context) readAndWrite(buf32 []float32) bool {
 	c.cond.L.Lock()
 	defer c.cond.L.Unlock()
 
-	for c.suspended && c.err == nil {
+	for c.suspended && c.err.Load() == nil {
 		c.cond.Wait()
 	}
-	if c.err != nil {
+	if c.err.Load() != nil {
 		return false
 	}
 
@@ -147,13 +148,13 @@ func (c *context) readAndWrite(buf32 []float32) bool {
 		if n == -C.EPIPE {
 			// Underrun or overrun occurred.
 			if err := C.snd_pcm_prepare(c.handle); err < 0 {
-				c.err = alsaError(err)
+				c.err.Store(alsaError(err))
 				return false
 			}
 			continue
 		}
 		if n < 0 {
-			c.err = alsaError(C.int(n))
+			c.err.Store(alsaError(C.int(n)))
 			return false
 		}
 		buf32 = buf32[int(n)*c.channelNum:]
@@ -165,8 +166,8 @@ func (c *context) Suspend() error {
 	c.cond.L.Lock()
 	defer c.cond.L.Unlock()
 
-	if c.err != nil {
-		return c.err
+	if err := c.err.Load(); err != nil {
+		return err.(error)
 	}
 
 	c.suspended = true
@@ -187,8 +188,8 @@ func (c *context) Resume() error {
 	c.cond.L.Lock()
 	defer c.cond.L.Unlock()
 
-	if c.err != nil {
-		return c.err
+	if err := c.err.Load(); err != nil {
+		return err.(error)
 	}
 
 	defer func() {
@@ -221,7 +222,8 @@ try:
 }
 
 func (c *context) Err() error {
-	c.cond.L.Lock()
-	defer c.cond.L.Unlock()
-	return c.err
+	if err := c.err.Load(); err != nil {
+		return err.(error)
+	}
+	return nil
 }
