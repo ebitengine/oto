@@ -89,6 +89,9 @@ type player struct {
 	err     error
 	buf     []byte
 
+	f32L []float32
+	f32R []float32
+
 	nextPos           float64
 	bufferSourceNodes []js.Value
 	appendBufferFunc  js.Func
@@ -180,7 +183,10 @@ func (p *player) pauseImpl() {
 		n.Call("stop")
 		n.Call("disconnect")
 	}
-	p.buf = append(fromLR(data[0], data[1]), p.buf...)
+
+	bs := make([]byte, len(data[0])*4)
+	fromLR(bs, data[0], data[1])
+	p.buf = append(p.buf, bs...)
 	p.state = playerPaused
 	p.bufferSourceNodes = p.bufferSourceNodes[:0]
 	p.nextPos = 0
@@ -235,8 +241,18 @@ func (p *player) appendBufferImpl(audioBuffer js.Value) {
 		bs = make([]byte, 4096)
 	}
 
-	l, r := toLR(bs)
-	tl, tr := float32SliceToTypedArray(l), float32SliceToTypedArray(r)
+	if cap(p.f32L) < len(bs)/4 {
+		p.f32L = make([]float32, len(bs)/4)
+	} else {
+		p.f32L = p.f32L[:len(bs)/4]
+	}
+	if cap(p.f32R) < len(bs)/4 {
+		p.f32R = make([]float32, len(bs)/4)
+	} else {
+		p.f32R = p.f32R[:len(bs)/4]
+	}
+	toLR(p.f32L, p.f32R, bs)
+	tl, tr := float32SliceToTypedArray(p.f32L), float32SliceToTypedArray(p.f32R)
 
 	buf := p.context.audioContext.Call("createBuffer", p.context.channelNum, len(bs)/p.context.channelNum/p.context.bitDepthInBytes, p.context.sampleRate)
 	if buf.Get("copyToChannel").Truthy() {
@@ -385,25 +401,22 @@ func (p *player) loop() {
 	}
 }
 
-func toLR(data []byte) ([]float32, []float32) {
+func toLR(l, r []float32, data []byte) {
 	const max = 1 << 15
 
-	l := make([]float32, len(data)/4)
-	r := make([]float32, len(data)/4)
 	for i := 0; i < len(data)/4; i++ {
 		l[i] = float32(int16(data[4*i])|int16(data[4*i+1])<<8) / max
 		r[i] = float32(int16(data[4*i+2])|int16(data[4*i+3])<<8) / max
 	}
-	return l, r
 }
 
-func fromLR(l, r []float32) []byte {
+func fromLR(bs []byte, l, r []float32) {
 	const max = 1 << 15
 
 	if len(l) != len(r) {
 		panic("oto: len(l) must equal to len(r) at fromLR")
 	}
-	bs := make([]byte, len(l)*4)
+
 	for i := range l {
 		lv := int16(l[i] * max)
 		bs[4*i] = byte(lv)
@@ -412,7 +425,6 @@ func fromLR(l, r []float32) []byte {
 		bs[4*i+2] = byte(rv)
 		bs[4*i+3] = byte(rv >> 8)
 	}
-	return bs
 }
 
 func float32SliceToTypedArray(s []float32) js.Value {
