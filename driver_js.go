@@ -186,7 +186,7 @@ func (p *player) pauseImpl() {
 
 	bs := make([]byte, len(data[0])*4)
 	fromLR(bs, data[0], data[1])
-	p.buf = append(p.buf, bs...)
+	p.buf = append(bs, p.buf...)
 	p.state = playerPaused
 	p.bufferSourceNodes = p.bufferSourceNodes[:0]
 	p.nextPos = 0
