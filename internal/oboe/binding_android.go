@@ -62,8 +62,5 @@ func oto_oboe_read(buf *C.float, len C.size_t) {
 	h.Data = uintptr(unsafe.Pointer(buf))
 	h.Len = int(len)
 	h.Cap = int(len)
-	for i := range s {
-		s[i] = 0
-	}
 	theReadFunc(s)
 }

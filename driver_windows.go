@@ -219,9 +219,6 @@ func (c *context) appendBuffers() {
 		return
 	}
 
-	for i := range c.buf32 {
-		c.buf32[i] = 0
-	}
 	c.players.read(c.buf32)
 
 	for _, h := range c.headers {

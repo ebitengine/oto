@@ -138,9 +138,6 @@ func (c *context) readAndWrite(buf32 []float32) bool {
 		return false
 	}
 
-	for i := range buf32 {
-		buf32[i] = 0
-	}
 	c.players.read(buf32)
 
 	for len(buf32) > 0 {

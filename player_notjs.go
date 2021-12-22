@@ -101,6 +101,9 @@ func (ps *players) read(buf []float32) {
 	}
 	ps.cond.L.Unlock()
 
+	for i := range buf {
+		buf[i] = 0
+	}
 	for _, p := range players {
 		p.readBufferAndAdd(buf)
 	}

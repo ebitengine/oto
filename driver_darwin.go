@@ -154,9 +154,6 @@ func (c *context) appendBuffer(buf32 []float32) {
 	copy(c.unqueuedBuffers, c.unqueuedBuffers[1:])
 	c.unqueuedBuffers = c.unqueuedBuffers[:len(c.unqueuedBuffers)-1]
 
-	for i := range buf32 {
-		buf32[i] = 0
-	}
 	c.players.read(buf32)
 	for i, f := range buf32 {
 		*(*float32)(unsafe.Pointer(uintptr(buf.mAudioData) + uintptr(i)*float32SizeInBytes)) = f
