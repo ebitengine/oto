@@ -15,6 +15,7 @@
 package oto
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -109,8 +110,7 @@ func newContext(sampleRate, channelNum, bitDepthInBytes int) (*context, chan str
 
 	// TOOD: What about using an event instead of a callback? PortAudio and other libraries do that.
 	w, err := waveOutOpen(f, waveOutOpenCallback)
-	const elementNotFound = 1168
-	if e, ok := err.(*winmmError); ok && e.errno == elementNotFound {
+	if errors.Is(err, windows.ERROR_NOT_FOUND) {
 		// TODO: No device was found. Return the dummy device (#77).
 		// TODO: Retry to open the device when possible.
 		return nil, nil, err
@@ -227,15 +227,12 @@ func (c *context) appendBuffers() {
 		}
 
 		if err := h.Write(c.buf32); err != nil {
-			// This error can happen when e.g. a new HDMI connection is detected (#51).
-			const errorNotFound = 1168
-			if werr := err.(*winmmError); werr.fname == "waveOutWrite" {
-				switch {
-				case werr.mmresult == mmsyserrNomem:
-					continue
-				case werr.errno == errorNotFound:
-					// TODO: Retry later.
-				}
+			switch {
+			case errors.Is(err, mmsyserrNomem):
+				continue
+			case errors.Is(err, windows.ERROR_NOT_FOUND):
+				// This error can happen when e.g. a new HDMI connection is detected (#51).
+				// TODO: Retry later.
 			}
 			c.err.Store(fmt.Errorf("oto: Queueing the header failed: %v", err))
 		}
