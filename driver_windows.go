@@ -181,7 +181,7 @@ func (c *context) isHeaderAvailable() bool {
 	return false
 }
 
-var waveOutOpenCallback = windows.NewCallbackCDecl(func(hwo, uMsg, dwInstance, dwParam1, dwParam2 uintptr) uintptr {
+var waveOutOpenCallback = windows.NewCallback(func(hwo, uMsg, dwInstance, dwParam1, dwParam2 uintptr) uintptr {
 	// Queuing a header in this callback might not work especially when a headset is connected or disconnected.
 	// Just signal the condition vairable and don't do other things.
 	const womDone = 0x3bd
