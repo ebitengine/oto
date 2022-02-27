@@ -234,7 +234,9 @@ func (c *context) appendBuffers() {
 				// This error can happen when e.g. a new HDMI connection is detected (#51).
 				// TODO: Retry later.
 			}
-			c.err.Store(fmt.Errorf("oto: Queueing the header failed: %v", err))
+			if c.err.Load() == nil {
+				c.err.Store(fmt.Errorf("oto: Queueing the header failed: %v", err))
+			}
 		}
 		return
 	}
