@@ -145,17 +145,13 @@ func (c *context) readAndWrite(buf32 []float32) bool {
 		if n == -C.EPIPE {
 			// Underrun or overrun occurred.
 			if err := C.snd_pcm_prepare(c.handle); err < 0 {
-				if c.err.Load() == nil {
-					c.err.Store(alsaError(err))
-				}
+				c.err.CompareAndSwap(nil, alsaError(err))
 				return false
 			}
 			continue
 		}
 		if n < 0 {
-			if c.err.Load() == nil {
-				c.err.Store(alsaError(C.int(n)))
-			}
+			c.err.CompareAndSwap(nil, alsaError(C.int(n)))
 			return false
 		}
 		buf32 = buf32[int(n)*c.channelNum:]

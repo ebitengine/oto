@@ -160,9 +160,7 @@ func (c *context) appendBuffer(buf32 []float32) {
 	}
 
 	if osstatus := C.AudioQueueEnqueueBuffer(c.audioQueue, buf, 0, nil); osstatus != C.noErr {
-		if c.err.Load() == nil {
-			c.err.Store(fmt.Errorf("oto: AudioQueueEnqueueBuffer failed: %d", osstatus))
-		}
+		c.err.CompareAndSwap(nil, fmt.Errorf("oto: AudioQueueEnqueueBuffer failed: %d", osstatus))
 	}
 }
 
