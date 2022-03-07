@@ -21,7 +21,6 @@ import (
 	"io"
 	"runtime"
 	"sync"
-	"sync/atomic"
 )
 
 type players struct {
@@ -119,7 +118,7 @@ type playerImpl struct {
 	players *players
 	src     io.Reader
 	volume  float64
-	err     atomic.Value
+	err     atomicError
 	state   playerState
 	tmpbuf  []byte
 	buf     []byte
@@ -399,6 +398,6 @@ func (p *playerImpl) readSourceToBuffer() {
 }
 
 func (p *playerImpl) setErrorImpl(err error) {
-	p.err.CompareAndSwap(nil, err)
+	p.err.TryStore(err)
 	p.closeImpl()
 }

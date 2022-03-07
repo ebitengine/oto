@@ -25,7 +25,6 @@ import "C"
 import (
 	"fmt"
 	"sync"
-	"sync/atomic"
 	"time"
 	"unsafe"
 )
@@ -43,7 +42,7 @@ type context struct {
 	cond *sync.Cond
 
 	players *players
-	err     atomic.Value
+	err     atomicError
 }
 
 var theContext *context
@@ -145,13 +144,13 @@ func (c *context) readAndWrite(buf32 []float32) bool {
 		if n == -C.EPIPE {
 			// Underrun or overrun occurred.
 			if err := C.snd_pcm_prepare(c.handle); err < 0 {
-				c.err.CompareAndSwap(nil, alsaError(err))
+				c.err.TryStore(alsaError(err))
 				return false
 			}
 			continue
 		}
 		if n < 0 {
-			c.err.CompareAndSwap(nil, alsaError(C.int(n)))
+			c.err.TryStore(alsaError(C.int(n)))
 			return false
 		}
 		buf32 = buf32[int(n)*c.channelNum:]

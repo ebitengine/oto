@@ -18,7 +18,6 @@ import (
 	"errors"
 	"fmt"
 	"sync"
-	"sync/atomic"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -77,7 +76,7 @@ type context struct {
 	buf32 []float32
 
 	players *players
-	err     atomic.Value
+	err     atomicError
 
 	cond *sync.Cond
 }
@@ -234,7 +233,7 @@ func (c *context) appendBuffers() {
 				// This error can happen when e.g. a new HDMI connection is detected (#51).
 				// TODO: Retry later.
 			}
-			c.err.CompareAndSwap(nil, fmt.Errorf("oto: Queueing the header failed: %v", err))
+			c.err.TryStore(fmt.Errorf("oto: Queueing the header failed: %v", err))
 		}
 		return
 	}

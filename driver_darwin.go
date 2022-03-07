@@ -26,7 +26,6 @@ import "C"
 import (
 	"fmt"
 	"sync"
-	"sync/atomic"
 	"time"
 	"unsafe"
 )
@@ -83,7 +82,7 @@ type context struct {
 	cond *sync.Cond
 
 	players *players
-	err     atomic.Value
+	err     atomicError
 }
 
 // TOOD: Convert the error code correctly.
@@ -160,7 +159,7 @@ func (c *context) appendBuffer(buf32 []float32) {
 	}
 
 	if osstatus := C.AudioQueueEnqueueBuffer(c.audioQueue, buf, 0, nil); osstatus != C.noErr {
-		c.err.CompareAndSwap(nil, fmt.Errorf("oto: AudioQueueEnqueueBuffer failed: %d", osstatus))
+		c.err.TryStore(fmt.Errorf("oto: AudioQueueEnqueueBuffer failed: %d", osstatus))
 	}
 }
 
