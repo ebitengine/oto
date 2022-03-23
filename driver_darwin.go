@@ -75,6 +75,7 @@ type context struct {
 	sampleRate      int
 	channelNum      int
 	bitDepthInBytes int
+	readBufferSize  int
 
 	audioQueue      C.AudioQueueRef
 	unqueuedBuffers []C.AudioQueueBufferRef

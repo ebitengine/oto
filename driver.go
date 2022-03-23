@@ -26,7 +26,8 @@ import (
 //
 // There can only be one context at any time. Closing a context and opening a new one is allowed.
 type Context struct {
-	context *context
+	context    *context
+	bufferSize int
 }
 
 // NewPlayer creates a new, ready-to-use Player belonging to the Context.
@@ -65,6 +66,17 @@ func (c *Context) Suspend() error {
 // Resume is concurrent-safe.
 func (c *Context) Resume() error {
 	return c.context.Resume()
+}
+
+// SetReadBufferSize sets the size of buffer to read from the underlying source.
+//
+// This is useful for cases where you may need to sync visuals with audio.
+//
+// Setting this to 0 will have Oto automatically calculate a buffer size.
+//
+// SetReadBufferSize is not concurrent-safe.
+func (c *Context) SetReadBufferSize(readBufferSize int) {
+	c.context.readBufferSize = readBufferSize
 }
 
 // Err returns the current error.
@@ -145,6 +157,9 @@ func (c *context) oneBufferSize() int {
 // maxBufferSize returns the maximum size of the buffer for the audio source.
 // This buffer is used when unreading on pausing the player.
 func (c *context) maxBufferSize() int {
+	if c.readBufferSize > 0 {
+		return c.readBufferSize
+	}
 	// The number of underlying buffers should be 2.
 	return c.oneBufferSize() * 2
 }

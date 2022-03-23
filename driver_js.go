@@ -32,6 +32,7 @@ type context struct {
 	sampleRate      int
 	channelNum      int
 	bitDepthInBytes int
+	readBufferSize  int
 }
 
 func newContext(sampleRate int, channelNum int, bitDepthInBytes int) (*context, chan struct{}, error) {

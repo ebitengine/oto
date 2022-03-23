@@ -33,6 +33,7 @@ type context struct {
 	sampleRate      int
 	channelNum      int
 	bitDepthInBytes int
+	readBufferSize  int
 
 	suspended bool
 

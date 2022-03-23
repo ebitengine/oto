@@ -22,6 +22,7 @@ type context struct {
 	sampleRate      int
 	channelNum      int
 	bitDepthInBytes int
+	readBufferSize  int
 
 	players *players
 }
