@@ -47,6 +47,9 @@ type Context struct {
 // You cannot share r by multiple players.
 //
 // The returned player implements both Player and BufferSizeSetter.
+// You can modify the buffer size of a player by the SetBufferSize function.
+// This is useful if you want to play a real-time PCM for example.
+// Note that the audio quality might be affected if you modify the buffer size.
 //
 // NewPlayer is concurrent-safe.
 //
