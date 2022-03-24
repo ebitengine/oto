@@ -12,15 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !js
-// +build !js
-
 package oto
 
 import (
 	"io"
 	"runtime"
 	"sync"
+	"time"
 )
 
 type players struct {
@@ -70,6 +68,10 @@ func (ps *players) loop() {
 		for _, p := range players {
 			p.readSourceToBuffer()
 		}
+
+		// Sleeping is necessary especially on browsers.
+		// Sometimes a player continues to read 0 bytes from the source and this loop can be a busy loop in such case.
+		time.Sleep(time.Millisecond)
 	}
 }
 
@@ -377,8 +379,7 @@ func (p *playerImpl) readSourceToBuffer() {
 		return
 	}
 
-	maxBufferSize := p.context.maxBufferSize()
-	if len(p.buf) >= maxBufferSize {
+	if len(p.buf) >= p.context.maxBufferSize() {
 		return
 	}
 

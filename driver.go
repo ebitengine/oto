@@ -133,20 +133,13 @@ const (
 
 // TODO: The term 'buffer' is confusing. Name each buffer with good terms.
 
-// oneBufferSize returns the size of one buffer in the player implementation.
-func (c *context) oneBufferSize() int {
-	bytesPerSample := c.channelNum * c.bitDepthInBytes
-	s := c.sampleRate * bytesPerSample / 4
-
-	// Align s in multiples of bytes per sample, or a buffer could have extra bytes.
-	return s / bytesPerSample * bytesPerSample
-}
-
 // maxBufferSize returns the maximum size of the buffer for the audio source.
 // This buffer is used when unreading on pausing the player.
 func (c *context) maxBufferSize() int {
-	// The number of underlying buffers should be 2.
-	return c.oneBufferSize() * 2
+	bytesPerSample := c.channelNum * c.bitDepthInBytes
+	s := c.sampleRate * bytesPerSample / 2 // 0.5[s]
+	// Align s in multiples of bytes per sample, or a buffer could have extra bytes.
+	return s / bytesPerSample * bytesPerSample
 }
 
 type atomicError struct {
