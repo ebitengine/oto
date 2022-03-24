@@ -116,15 +116,16 @@ type player struct {
 }
 
 type playerImpl struct {
-	context *context
-	players *players
-	src     io.Reader
-	volume  float64
-	err     atomicError
-	state   playerState
-	tmpbuf  []byte
-	buf     []byte
-	eof     bool
+	context    *context
+	players    *players
+	src        io.Reader
+	volume     float64
+	err        atomicError
+	state      playerState
+	tmpbuf     []byte
+	buf        []byte
+	eof        bool
+	bufferSize int
 
 	m sync.Mutex
 }
@@ -136,10 +137,11 @@ func (c *context) NewPlayer(src io.Reader) Player {
 func newPlayer(context *context, players *players, src io.Reader) *player {
 	p := &player{
 		p: &playerImpl{
-			context: context,
-			players: players,
-			src:     src,
-			volume:  1,
+			context:    context,
+			players:    players,
+			src:        src,
+			volume:     1,
+			bufferSize: context.defaultBufferSize(),
 		},
 	}
 	runtime.SetFinalizer(p, (*player).Close)
@@ -181,9 +183,27 @@ func (p *playerImpl) Play() {
 	}
 }
 
+func (p *player) SetBufferSize(bufferSize int) {
+	p.p.setBufferSize(bufferSize)
+}
+
+func (p *playerImpl) setBufferSize(bufferSize int) {
+	p.m.Lock()
+	defer p.m.Unlock()
+
+	orig := p.bufferSize
+	p.bufferSize = bufferSize
+	if bufferSize == 0 {
+		p.bufferSize = p.context.defaultBufferSize()
+	}
+	if orig != p.bufferSize {
+		p.tmpbuf = nil
+	}
+}
+
 func (p *playerImpl) ensureTmpBuf() []byte {
 	if p.tmpbuf == nil {
-		p.tmpbuf = make([]byte, p.context.maxBufferSize())
+		p.tmpbuf = make([]byte, p.bufferSize)
 	}
 	return p.tmpbuf
 }
@@ -198,7 +218,7 @@ func (p *playerImpl) playImpl() {
 
 	if !p.eof {
 		buf := p.ensureTmpBuf()
-		for len(p.buf) < p.context.maxBufferSize() {
+		for len(p.buf) < p.bufferSize {
 			n, err := p.src.Read(buf)
 			if err != nil && err != io.EOF {
 				p.setErrorImpl(err)
@@ -365,7 +385,7 @@ func (p *playerImpl) canReadSourceToBuffer() bool {
 	if p.eof {
 		return false
 	}
-	return len(p.buf) < p.context.maxBufferSize()
+	return len(p.buf) < p.bufferSize
 }
 
 func (p *playerImpl) readSourceToBuffer() {
@@ -379,7 +399,7 @@ func (p *playerImpl) readSourceToBuffer() {
 		return
 	}
 
-	if len(p.buf) >= p.context.maxBufferSize() {
+	if len(p.buf) >= p.bufferSize {
 		return
 	}
 

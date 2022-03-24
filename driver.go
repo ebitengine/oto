@@ -46,6 +46,8 @@ type Context struct {
 //
 // You cannot share r by multiple players.
 //
+// The returned player implements both Player and BufferSizeSetter.
+//
 // NewPlayer is concurrent-safe.
 //
 // All the functions of a Player returned by NewPlayer are concurrent-safe.
@@ -123,6 +125,14 @@ type Player interface {
 	io.Closer
 }
 
+// BufferSizeSetter sets a buffer size.
+// A player created by (*Context).NewPlayer implments both Player and BufferSizeSetter.
+type BufferSizeSetter interface {
+	// SetBufferSize sets the buffer size.
+	// If 0 is specified, the default buffer size is used.
+	SetBufferSize(bufferSize int)
+}
+
 type playerState int
 
 const (
@@ -133,9 +143,9 @@ const (
 
 // TODO: The term 'buffer' is confusing. Name each buffer with good terms.
 
-// maxBufferSize returns the maximum size of the buffer for the audio source.
+// defaultBufferSize returns the default size of the buffer for the audio source.
 // This buffer is used when unreading on pausing the player.
-func (c *context) maxBufferSize() int {
+func (c *context) defaultBufferSize() int {
 	bytesPerSample := c.channelNum * c.bitDepthInBytes
 	s := c.sampleRate * bytesPerSample / 2 // 0.5[s]
 	// Align s in multiples of bytes per sample, or a buffer could have extra bytes.
