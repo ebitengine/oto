@@ -65,13 +65,19 @@ func (ps *players) loop() {
 		}
 		ps.cond.L.Unlock()
 
+		allZero := true
 		for _, p := range players {
-			p.readSourceToBuffer()
+			n := p.readSourceToBuffer()
+			if n != 0 {
+				allZero = false
+			}
 		}
 
 		// Sleeping is necessary especially on browsers.
 		// Sometimes a player continues to read 0 bytes from the source and this loop can be a busy loop in such case.
-		time.Sleep(time.Millisecond)
+		if allZero {
+			time.Sleep(time.Millisecond)
+		}
 	}
 }
 
@@ -388,19 +394,19 @@ func (p *playerImpl) canReadSourceToBuffer() bool {
 	return len(p.buf) < p.bufferSize
 }
 
-func (p *playerImpl) readSourceToBuffer() {
+func (p *playerImpl) readSourceToBuffer() int {
 	p.m.Lock()
 	defer p.m.Unlock()
 
 	if p.err.Load() != nil {
-		return
+		return 0
 	}
 	if p.state == playerClosed {
-		return
+		return 0
 	}
 
 	if len(p.buf) >= p.bufferSize {
-		return
+		return 0
 	}
 
 	buf := p.ensureTmpBuf()
@@ -408,7 +414,7 @@ func (p *playerImpl) readSourceToBuffer() {
 
 	if err != nil && err != io.EOF {
 		p.setErrorImpl(err)
-		return
+		return 0
 	}
 
 	p.buf = append(p.buf, buf[:n]...)
@@ -416,6 +422,7 @@ func (p *playerImpl) readSourceToBuffer() {
 		p.state = playerPaused
 		p.eof = true
 	}
+	return n
 }
 
 func (p *playerImpl) setErrorImpl(err error) {
