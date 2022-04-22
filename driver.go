@@ -23,8 +23,6 @@ import (
 //
 // To play sound with Oto, first create a context. Then use the context to create
 // an arbitrary number of players. Then use the players to play sound.
-//
-// There can only be one context at any time. Closing a context and opening a new one is allowed.
 type Context struct {
 	context *context
 }
