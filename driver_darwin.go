@@ -113,7 +113,7 @@ func newContext(sampleRate, channelNum, bitDepthInBytes int) (*context, chan str
 	C.oto_setNotificationHandler()
 
 	if osstatus := C.AudioQueueStart(c.audioQueue, nil); osstatus != C.noErr {
-		return nil, nil, fmt.Errorf("oto: AudioQueueStart failed: %d", osstatus)
+		return nil, nil, fmt.Errorf("oto: AudioQueueStart failed at newContext: %d", osstatus)
 	}
 
 	go c.loop()
@@ -192,7 +192,7 @@ try:
 			time.Sleep(10 * time.Millisecond)
 			goto try
 		}
-		return fmt.Errorf("oto: AudioQueueStart failed: %d", osstatus)
+		return fmt.Errorf("oto: AudioQueueStart failed at Resume: %d", osstatus)
 	}
 	return nil
 }
