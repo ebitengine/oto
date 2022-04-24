@@ -34,6 +34,11 @@ const (
 	float32SizeInBytes = 4
 )
 
+const (
+	avAudioSessionErrorCodeCannotStartPlaying = 0x21706c61 // '!pla'
+	avAudioSessionErrorCodeSiriIsRecording    = 0x73697269 // 'siri'
+)
+
 func newAudioQueue(sampleRate, channelNum, bitDepthInBytes int) (C.AudioQueueRef, []C.AudioQueueBufferRef, error) {
 	desc := C.AudioStreamBasicDescription{
 		mSampleRate:       C.double(sampleRate),
@@ -112,7 +117,14 @@ func newContext(sampleRate, channelNum, bitDepthInBytes int) (*context, chan str
 
 	C.oto_setNotificationHandler()
 
+	var retryCount int
+try:
 	if osstatus := C.AudioQueueStart(c.audioQueue, nil); osstatus != C.noErr {
+		if osstatus == avAudioSessionErrorCodeCannotStartPlaying && retryCount < 100 {
+			time.Sleep(10 * time.Millisecond)
+			retryCount++
+			goto try
+		}
 		return nil, nil, fmt.Errorf("oto: AudioQueueStart failed at newContext: %d", osstatus)
 	}
 
@@ -185,10 +197,15 @@ func (c *context) Resume() error {
 		return err.(error)
 	}
 
+	var retryCount int
 try:
 	if osstatus := C.AudioQueueStart(c.audioQueue, nil); osstatus != C.noErr {
-		const AVAudioSessionErrorCodeSiriIsRecording = 0x73697269 // 'siri'
-		if osstatus == AVAudioSessionErrorCodeSiriIsRecording {
+		if osstatus == avAudioSessionErrorCodeCannotStartPlaying && retryCount < 100 {
+			time.Sleep(10 * time.Millisecond)
+			retryCount++
+			goto try
+		}
+		if osstatus == avAudioSessionErrorCodeSiriIsRecording {
 			time.Sleep(10 * time.Millisecond)
 			goto try
 		}
