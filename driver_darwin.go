@@ -18,9 +18,7 @@ package oto
 //
 // #import <AudioToolbox/AudioToolbox.h>
 //
-// void oto_render(void* inUserData, AudioQueueRef inAQ, AudioQueueBufferRef inBuffer);
-//
-// void oto_setNotificationHandler();
+// void oto_render(void* inUserData, void* inAQ, void* inBuffer);
 import "C"
 
 import (
@@ -28,10 +26,14 @@ import (
 	"sync"
 	"time"
 	"unsafe"
+
+	"github.com/ebiten/purego"
 )
 
 const (
 	float32SizeInBytes = 4
+
+	noErr = 0
 )
 
 const (
@@ -39,35 +41,79 @@ const (
 	avAudioSessionErrorCodeSiriIsRecording    = 0x73697269 // 'siri'
 )
 
-func newAudioQueue(sampleRate, channelNum, bitDepthInBytes int) (C.AudioQueueRef, []C.AudioQueueBufferRef, error) {
-	desc := C.AudioStreamBasicDescription{
-		mSampleRate:       C.double(sampleRate),
-		mFormatID:         C.kAudioFormatLinearPCM,
-		mFormatFlags:      C.kAudioFormatFlagIsFloat,
-		mBytesPerPacket:   C.UInt32(channelNum * float32SizeInBytes),
+const (
+	kAudioFormatLinearPCM = 0x6C70636D //'lpcm'
+)
+
+const (
+	kAudioFormatFlagIsFloat = 1 << 0 // 0x1
+)
+
+type audioStreamBasicDescription struct {
+	mSampleRate       float64
+	mFormatID         uint32
+	mFormatFlags      uint32
+	mBytesPerPacket   uint32
+	mFramesPerPacket  uint32
+	mBytesPerFrame    uint32
+	mChannelsPerFrame uint32
+	mBitsPerChannel   uint32
+	mReserved         uint32
+}
+
+type AudioQueueRef uintptr
+
+type AudioQueueBufferRef *AudioQueueBuffer
+
+type AudioQueueBuffer struct {
+	mAudioDataBytesCapacity uint32
+	mAudioData              uintptr // void*
+	mAudioDataByteSize      uint32
+	mUserData               uintptr // void*
+
+	mPacketDescriptionCapacity uint32
+	mPacketDescriptions        uintptr // *AudioStreamPacketDescription
+	mPacketDescriptionCount    uint32
+}
+
+var (
+	toolbox                    = purego.Dlopen("/System/Library/Frameworks/AudioToolbox.framework/Versions/Current/AudioToolbox", purego.RTLD_GLOBAL)
+	gpAudioQueueNewOutput      = purego.Dlsym(toolbox, "AudioQueueNewOutput")
+	gpAudioQueueStart          = purego.Dlsym(toolbox, "AudioQueueStart")
+	gpAudioQueuePause          = purego.Dlsym(toolbox, "AudioQueuePause")
+	gpAudioQueueAllocateBuffer = purego.Dlsym(toolbox, "AudioQueueAllocateBuffer")
+	gpAudioQueueEnqueueBuffer  = purego.Dlsym(toolbox, "AudioQueueEnqueueBuffer")
+)
+
+func newAudioQueue(sampleRate, channelNum, bitDepthInBytes int) (AudioQueueRef, []AudioQueueBufferRef, error) {
+	desc := audioStreamBasicDescription{
+		mSampleRate:       float64(sampleRate),
+		mFormatID:         uint32(kAudioFormatLinearPCM),
+		mFormatFlags:      uint32(kAudioFormatFlagIsFloat),
+		mBytesPerPacket:   uint32(channelNum * float32SizeInBytes),
 		mFramesPerPacket:  1,
-		mBytesPerFrame:    C.UInt32(channelNum * float32SizeInBytes),
-		mChannelsPerFrame: C.UInt32(channelNum),
-		mBitsPerChannel:   C.UInt32(8 * float32SizeInBytes),
+		mBytesPerFrame:    uint32(channelNum * float32SizeInBytes),
+		mChannelsPerFrame: uint32(channelNum),
+		mBitsPerChannel:   uint32(8 * float32SizeInBytes),
 	}
 
-	var audioQueue C.AudioQueueRef
-	if osstatus := C.AudioQueueNewOutput(
-		&desc,
-		(C.AudioQueueOutputCallback)(C.oto_render),
-		nil,
-		(C.CFRunLoopRef)(0),
-		(C.CFStringRef)(0),
+	var audioQueue AudioQueueRef
+	if osstatus, _, _ := purego.SyscallN(gpAudioQueueNewOutput,
+		uintptr(unsafe.Pointer(&desc)),
+		uintptr(unsafe.Pointer(C.oto_render)),
 		0,
-		&audioQueue); osstatus != C.noErr {
-		return nil, nil, fmt.Errorf("oto: AudioQueueNewFormat with StreamFormat failed: %d", osstatus)
+		0, //CFRunLoopRef
+		0, //CFStringRef
+		0,
+		uintptr(unsafe.Pointer(&audioQueue))); osstatus != noErr {
+		return 0, nil, fmt.Errorf("oto: AudioQueueNewFormat with StreamFormat failed: %d", osstatus)
 	}
 
-	bufs := make([]C.AudioQueueBufferRef, 0, 4)
+	bufs := make([]AudioQueueBufferRef, 0, 4)
 	for len(bufs) < cap(bufs) {
-		var buf C.AudioQueueBufferRef
-		if osstatus := C.AudioQueueAllocateBuffer(audioQueue, bufferSizeInBytes, &buf); osstatus != C.noErr {
-			return nil, nil, fmt.Errorf("oto: AudioQueueAllocateBuffer failed: %d", osstatus)
+		var buf AudioQueueBufferRef
+		if osstatus, _, _ := purego.SyscallN(gpAudioQueueAllocateBuffer, uintptr(audioQueue), uintptr(bufferSizeInBytes), uintptr(unsafe.Pointer(&buf))); osstatus != noErr {
+			return 0, nil, fmt.Errorf("oto: AudioQueueAllocateBuffer failed: %d", osstatus)
 		}
 		buf.mAudioDataByteSize = bufferSizeInBytes
 		bufs = append(bufs, buf)
@@ -81,8 +127,8 @@ type context struct {
 	channelNum      int
 	bitDepthInBytes int
 
-	audioQueue      C.AudioQueueRef
-	unqueuedBuffers []C.AudioQueueBufferRef
+	audioQueue      AudioQueueRef
+	unqueuedBuffers []AudioQueueBufferRef
 
 	cond *sync.Cond
 
@@ -115,11 +161,11 @@ func newContext(sampleRate, channelNum, bitDepthInBytes int) (*context, chan str
 	c.audioQueue = q
 	c.unqueuedBuffers = bs
 
-	C.oto_setNotificationHandler()
+	oto_setNotificationHandler()
 
 	var retryCount int
 try:
-	if osstatus := C.AudioQueueStart(c.audioQueue, nil); osstatus != C.noErr {
+	if osstatus, _, _ := purego.SyscallN(gpAudioQueueStart, uintptr(c.audioQueue), 0); osstatus != noErr {
 		if osstatus == avAudioSessionErrorCodeCannotStartPlaying && retryCount < 100 {
 			time.Sleep(10 * time.Millisecond)
 			retryCount++
@@ -167,10 +213,10 @@ func (c *context) appendBuffer(buf32 []float32) {
 
 	c.players.read(buf32)
 	for i, f := range buf32 {
-		*(*float32)(unsafe.Pointer(uintptr(buf.mAudioData) + uintptr(i)*float32SizeInBytes)) = f
+		*(*float32)(unsafe.Pointer(buf.mAudioData + uintptr(i)*float32SizeInBytes)) = f
 	}
 
-	if osstatus := C.AudioQueueEnqueueBuffer(c.audioQueue, buf, 0, nil); osstatus != C.noErr {
+	if osstatus, _, _ := purego.SyscallN(gpAudioQueueEnqueueBuffer, uintptr(c.audioQueue), uintptr(unsafe.Pointer(buf)), 0, 0); osstatus != noErr {
 		c.err.TryStore(fmt.Errorf("oto: AudioQueueEnqueueBuffer failed: %d", osstatus))
 	}
 }
@@ -183,7 +229,7 @@ func (c *context) Suspend() error {
 		return err.(error)
 	}
 
-	if osstatus := C.AudioQueuePause(c.audioQueue); osstatus != C.noErr {
+	if osstatus, _, _ := purego.SyscallN(gpAudioQueuePause, uintptr(c.audioQueue)); osstatus != noErr {
 		return fmt.Errorf("oto: AudioQueuePause failed: %d", osstatus)
 	}
 	return nil
@@ -199,7 +245,7 @@ func (c *context) Resume() error {
 
 	var retryCount int
 try:
-	if osstatus := C.AudioQueueStart(c.audioQueue, nil); osstatus != C.noErr {
+	if osstatus, _, _ := purego.SyscallN(gpAudioQueueStart, uintptr(c.audioQueue), 0); osstatus != noErr {
 		if osstatus == avAudioSessionErrorCodeCannotStartPlaying && retryCount < 100 {
 			time.Sleep(10 * time.Millisecond)
 			retryCount++
@@ -222,14 +268,15 @@ func (c *context) Err() error {
 }
 
 //export oto_render
-func oto_render(inUserData unsafe.Pointer, inAQ C.AudioQueueRef, inBuffer C.AudioQueueBufferRef) {
+func oto_render(inUserData unsafe.Pointer, inAQ unsafe.Pointer, inBuffer unsafe.Pointer) {
 	theContext.cond.L.Lock()
 	defer theContext.cond.L.Unlock()
-	theContext.unqueuedBuffers = append(theContext.unqueuedBuffers, inBuffer)
+	theContext.unqueuedBuffers = append(theContext.unqueuedBuffers, AudioQueueBufferRef(inBuffer))
 	theContext.cond.Signal()
 }
 
 //export oto_setGlobalPause
+//go:linkname oto_setGlobalPause globalPause
 func oto_setGlobalPause() {
 	theContext.Suspend()
 }
