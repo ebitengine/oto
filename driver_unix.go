@@ -24,6 +24,7 @@ import "C"
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 	"unsafe"
@@ -47,8 +48,8 @@ type context struct {
 
 var theContext *context
 
-func alsaError(err C.int) error {
-	return fmt.Errorf("oto: ALSA error: %s", C.GoString(C.snd_strerror(err)))
+func alsaError(name string, err C.int) error {
+	return fmt.Errorf("oto: ALSA error at %s: %s", name, C.GoString(C.snd_strerror(err)))
 }
 
 func newContext(sampleRate, channelNum, bitDepthInBytes int) (*context, chan struct{}, error) {
@@ -65,10 +66,31 @@ func newContext(sampleRate, channelNum, bitDepthInBytes int) (*context, chan str
 	theContext = c
 
 	// Open a default ALSA audio device for blocking stream playback
-	cname := C.CString("default")
-	defer C.free(unsafe.Pointer(cname))
-	if err := C.snd_pcm_open(&c.handle, cname, C.SND_PCM_STREAM_PLAYBACK, 0); err < 0 {
-		return nil, nil, alsaError(err)
+	type openError struct {
+		device string
+		err    C.int
+	}
+	var openErrs []openError
+	var found bool
+	for _, name := range []string{"default", "default:0", "plughw", "plughw:0", "plughw:0,0"} {
+		cname := C.CString(name)
+		defer C.free(unsafe.Pointer(cname))
+		if err := C.snd_pcm_open(&c.handle, cname, C.SND_PCM_STREAM_PLAYBACK, 0); err < 0 {
+			openErrs = append(openErrs, openError{
+				device: name,
+				err:    err,
+			})
+			continue
+		}
+		found = true
+		break
+	}
+	if !found {
+		var msgs []string
+		for _, e := range openErrs {
+			msgs = append(msgs, fmt.Sprintf("%q: %s", e.device, C.GoString(C.snd_strerror(e.err))))
+		}
+		return nil, nil, fmt.Errorf("oto: ALSA error at snd_pcm_open: %s", strings.Join(msgs, ", "))
 	}
 
 	periodSize := C.snd_pcm_uframes_t(1024)
@@ -95,32 +117,32 @@ func (c *context) alsaPcmHwParams(sampleRate, channelNum int, bufferSize, period
 	defer C.free(unsafe.Pointer(params))
 
 	if err := C.snd_pcm_hw_params_any(c.handle, params); err < 0 {
-		return alsaError(err)
+		return alsaError("snd_pcm_hw_params_any", err)
 	}
 	if err := C.snd_pcm_hw_params_set_access(c.handle, params, C.SND_PCM_ACCESS_RW_INTERLEAVED); err < 0 {
-		return alsaError(err)
+		return alsaError("snd_pcm_hw_params_set_access", err)
 	}
 	if err := C.snd_pcm_hw_params_set_format(c.handle, params, C.SND_PCM_FORMAT_FLOAT_LE); err < 0 {
-		return alsaError(err)
+		return alsaError("snd_pcm_hw_params_set_format", err)
 	}
 	if err := C.snd_pcm_hw_params_set_channels(c.handle, params, C.unsigned(channelNum)); err < 0 {
-		return alsaError(err)
+		return alsaError("snd_pcm_hw_params_set_channels", err)
 	}
 	if err := C.snd_pcm_hw_params_set_rate_resample(c.handle, params, 1); err < 0 {
-		return alsaError(err)
+		return alsaError("snd_pcm_hw_params_set_rate_resample", err)
 	}
 	sr := C.unsigned(sampleRate)
 	if err := C.snd_pcm_hw_params_set_rate_near(c.handle, params, &sr, nil); err < 0 {
-		return alsaError(err)
+		return alsaError("snd_pcm_hw_params_set_rate_near", err)
 	}
 	if err := C.snd_pcm_hw_params_set_buffer_size_near(c.handle, params, bufferSize); err < 0 {
-		return alsaError(err)
+		return alsaError("snd_pcm_hw_params_set_buffer_size_near", err)
 	}
 	if err := C.snd_pcm_hw_params_set_period_size_near(c.handle, params, periodSize, nil); err < 0 {
-		return alsaError(err)
+		return alsaError("snd_pcm_hw_params_set_period_size_near", err)
 	}
 	if err := C.snd_pcm_hw_params(c.handle, params); err < 0 {
-		return alsaError(err)
+		return alsaError("snd_pcm_hw_params", err)
 	}
 	c.supportsPause = C.snd_pcm_hw_params_can_pause(params) == 1
 	return nil
@@ -144,13 +166,13 @@ func (c *context) readAndWrite(buf32 []float32) bool {
 		if n == -C.EPIPE {
 			// Underrun or overrun occurred.
 			if err := C.snd_pcm_prepare(c.handle); err < 0 {
-				c.err.TryStore(alsaError(err))
+				c.err.TryStore(alsaError("snd_pcm_prepare", err))
 				return false
 			}
 			continue
 		}
 		if n < 0 {
-			c.err.TryStore(alsaError(C.int(n)))
+			c.err.TryStore(alsaError("snd_pcm_writei", C.int(n)))
 			return false
 		}
 		buf32 = buf32[int(n)*c.channelNum:]
@@ -169,13 +191,13 @@ func (c *context) Suspend() error {
 	c.suspended = true
 	if c.supportsPause {
 		if err := C.snd_pcm_pause(c.handle, 1); err < 0 {
-			return alsaError(err)
+			return alsaError("snd_pcm_pause", err)
 		}
 		return nil
 	}
 
 	if err := C.snd_pcm_drop(c.handle); err < 0 {
-		return alsaError(err)
+		return alsaError("snd_pcm_drop", err)
 	}
 	return nil
 }
@@ -195,7 +217,7 @@ func (c *context) Resume() error {
 
 	if c.supportsPause {
 		if err := C.snd_pcm_pause(c.handle, 0); err < 0 {
-			return alsaError(err)
+			return alsaError("snd_pcm_pause", err)
 		}
 		return nil
 	}
@@ -208,11 +230,11 @@ try:
 		}
 		if err == -C.ENOSYS {
 			if err := C.snd_pcm_prepare(c.handle); err < 0 {
-				return alsaError(err)
+				return alsaError("snd_pcm_prepare", err)
 			}
 			return nil
 		}
-		return alsaError(err)
+		return alsaError("snd_pcm_resume", err)
 	}
 	return nil
 }
