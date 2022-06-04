@@ -24,6 +24,7 @@ import "C"
 
 import (
 	"fmt"
+	"os/exec"
 	"strings"
 	"sync"
 	"time"
@@ -52,6 +53,39 @@ func alsaError(name string, err C.int) error {
 	return fmt.Errorf("oto: ALSA error at %s: %s", name, C.GoString(C.snd_strerror(err)))
 }
 
+func deviceCandidates() []string {
+	cmd := exec.Command("arecord", "-L")
+	out, err := cmd.Output()
+	if err != nil {
+		return []string{"default"}
+	}
+
+	var devices []string
+	lines := strings.Split(string(out), "\n")
+	for _, line := range lines {
+		if len(line) == 0 {
+			continue
+		}
+		if line[0] == ' ' || line[0] == '\t' {
+			continue
+		}
+		device := strings.TrimSpace(line)
+		if device == "null" {
+			continue
+		}
+		if device == "default" {
+			continue
+		}
+		if device == "hw" || strings.HasPrefix(device, "hw:") {
+			continue
+		}
+		devices = append(devices, device)
+	}
+
+	devices = append([]string{"default"}, devices...)
+	return devices
+}
+
 func newContext(sampleRate, channelNum, bitDepthInBytes int) (*context, chan struct{}, error) {
 	ready := make(chan struct{})
 	close(ready)
@@ -72,7 +106,8 @@ func newContext(sampleRate, channelNum, bitDepthInBytes int) (*context, chan str
 	}
 	var openErrs []openError
 	var found bool
-	for _, name := range []string{"default", "default:0", "plughw", "plughw:0", "plughw:0,0"} {
+
+	for _, name := range deviceCandidates() {
 		cname := C.CString(name)
 		defer C.free(unsafe.Pointer(cname))
 		if err := C.snd_pcm_open(&c.handle, cname, C.SND_PCM_STREAM_PLAYBACK, 0); err < 0 {
