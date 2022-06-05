@@ -96,6 +96,9 @@ func deviceCandidates() []string {
 		if goName == "null" {
 			continue
 		}
+		if goName == "default" {
+			continue
+		}
 		devices = append(devices, goName)
 	}
 
