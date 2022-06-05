@@ -24,7 +24,6 @@ import "C"
 
 import (
 	"fmt"
-	"os/exec"
 	"strings"
 	"sync"
 	"time"
@@ -54,35 +53,54 @@ func alsaError(name string, err C.int) error {
 }
 
 func deviceCandidates() []string {
-	cmd := exec.Command("arecord", "-L")
-	out, err := cmd.Output()
-	if err != nil {
+	const getAllDevices = -1
+
+	cPCMInterfaceName := C.CString("pcm")
+	defer C.free(unsafe.Pointer(cPCMInterfaceName))
+
+	var hints *unsafe.Pointer
+	err := C.snd_device_name_hint(getAllDevices, cPCMInterfaceName, &hints)
+	if err != 0 {
 		return []string{"default"}
 	}
+	defer C.snd_device_name_free_hint(hints)
 
 	var devices []string
-	lines := strings.Split(string(out), "\n")
-	for _, line := range lines {
-		if len(line) == 0 {
+
+	cIoHintName := C.CString("IOID")
+	defer C.free(unsafe.Pointer(cIoHintName))
+	cNameHintName := C.CString("NAME")
+	defer C.free(unsafe.Pointer(cNameHintName))
+
+	for it := hints; *it != nil; it = (*unsafe.Pointer)(unsafe.Pointer(uintptr(unsafe.Pointer(it)) + unsafe.Sizeof(uintptr(0)))) {
+		io := C.snd_device_name_get_hint(*it, cIoHintName)
+		defer func() {
+			if io != nil {
+				C.free(unsafe.Pointer(io))
+			}
+		}()
+		if io != nil && C.GoString(io) == "Input" {
 			continue
 		}
-		if line[0] == ' ' || line[0] == '\t' {
+
+		name := C.snd_device_name_get_hint(*it, cNameHintName)
+		defer func() {
+			if name != nil {
+				C.free(unsafe.Pointer(name))
+			}
+		}()
+		if name == nil {
 			continue
 		}
-		device := strings.TrimSpace(line)
-		if device == "null" {
+		goName := C.GoString(name)
+		if goName == "null" {
 			continue
 		}
-		if device == "default" {
-			continue
-		}
-		if device == "hw" || strings.HasPrefix(device, "hw:") {
-			continue
-		}
-		devices = append(devices, device)
+		devices = append(devices, goName)
 	}
 
 	devices = append([]string{"default"}, devices...)
+
 	return devices
 }
 
