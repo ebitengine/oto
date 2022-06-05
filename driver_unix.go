@@ -61,7 +61,7 @@ func deviceCandidates() []string {
 	var hints *unsafe.Pointer
 	err := C.snd_device_name_hint(getAllDevices, cPCMInterfaceName, &hints)
 	if err != 0 {
-		return []string{"default"}
+		return []string{"default", "plug:default"}
 	}
 	defer C.snd_device_name_free_hint(hints)
 
@@ -102,7 +102,7 @@ func deviceCandidates() []string {
 		devices = append(devices, goName)
 	}
 
-	devices = append([]string{"default"}, devices...)
+	devices = append([]string{"default", "plug:default"}, devices...)
 
 	return devices
 }
