@@ -198,16 +198,11 @@ func (c *context) readAndWrite(buf32 []float32) bool {
 
 	for len(buf32) > 0 {
 		n := C.snd_pcm_writei(c.handle, unsafe.Pointer(&buf32[0]), C.snd_pcm_uframes_t(len(buf32)/c.channelNum))
-		if n == -C.EPIPE {
-			// Underrun or overrun occurred.
-			if err := C.snd_pcm_prepare(c.handle); err < 0 {
-				c.err.TryStore(alsaError("snd_pcm_prepare", err))
-				return false
-			}
-			continue
+		if n < 0 {
+			n = C.long(C.snd_pcm_recover(c.handle, C.int(n), 1))
 		}
 		if n < 0 {
-			c.err.TryStore(alsaError("snd_pcm_writei", C.int(n)))
+			c.err.TryStore(alsaError("snd_pcm_writei or snd_pcm_recover", C.int(n)))
 			return false
 		}
 		buf32 = buf32[int(n)*c.channelNum:]
