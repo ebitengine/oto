@@ -79,7 +79,7 @@ func deviceCandidates() []string {
 				C.free(unsafe.Pointer(io))
 			}
 		}()
-		if io != nil && C.GoString(io) == "Input" {
+		if C.GoString(io) == "Input" {
 			continue
 		}
 
