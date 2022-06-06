@@ -26,7 +26,6 @@ import (
 	"fmt"
 	"strings"
 	"sync"
-	"time"
 	"unsafe"
 )
 
@@ -37,8 +36,7 @@ type context struct {
 
 	suspended bool
 
-	handle        *C.snd_pcm_t
-	supportsPause bool
+	handle *C.snd_pcm_t
 
 	cond *sync.Cond
 
@@ -200,7 +198,6 @@ func (c *context) alsaPcmHwParams(sampleRate, channelNum int, bufferSize, period
 	if err := C.snd_pcm_hw_params(c.handle, params); err < 0 {
 		return alsaError("snd_pcm_hw_params", err)
 	}
-	c.supportsPause = C.snd_pcm_hw_params_can_pause(params) == 1
 	return nil
 }
 
@@ -240,16 +237,9 @@ func (c *context) Suspend() error {
 	}
 
 	c.suspended = true
-	if c.supportsPause {
-		if err := C.snd_pcm_pause(c.handle, 1); err < 0 {
-			return alsaError("snd_pcm_pause", err)
-		}
-		return nil
-	}
 
-	if err := C.snd_pcm_drop(c.handle); err < 0 {
-		return alsaError("snd_pcm_drop", err)
-	}
+	// Do not use snd_pcm_pause as not all devices support this.
+	// Do not use snd_pcm_drop as this might hang (https://github.com/libsdl-org/SDL/blob/a5c610b0a3857d3138f3f3da1f6dc3172c5ea4a8/src/audio/alsa/SDL_alsa_audio.c#L478).
 	return nil
 }
 
@@ -261,32 +251,8 @@ func (c *context) Resume() error {
 		return err.(error)
 	}
 
-	defer func() {
-		c.suspended = false
-		c.cond.Signal()
-	}()
-
-	if c.supportsPause {
-		if err := C.snd_pcm_pause(c.handle, 0); err < 0 {
-			return alsaError("snd_pcm_pause", err)
-		}
-		return nil
-	}
-
-try:
-	if err := C.snd_pcm_resume(c.handle); err < 0 {
-		if err == -C.EAGAIN {
-			time.Sleep(100 * time.Millisecond)
-			goto try
-		}
-		if err == -C.ENOSYS {
-			if err := C.snd_pcm_prepare(c.handle); err < 0 {
-				return alsaError("snd_pcm_prepare", err)
-			}
-			return nil
-		}
-		return alsaError("snd_pcm_resume", err)
-	}
+	c.suspended = false
+	c.cond.Signal()
 	return nil
 }
 
