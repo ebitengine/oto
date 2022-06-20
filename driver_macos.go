@@ -17,23 +17,10 @@
 
 package oto
 
-//#import <objc/runtime.h>
-//void oto_setGlobalPause();
-//void oto_setGlobalResume();
-// void receiveSleepNote(id self, SEL _cmd, id note) {
-//    oto_setGlobalPause();
-//}
-//
-//void receiveWakeNote(id self, SEL _cmd, id note) {
-//    oto_setGlobalResume();
-//}
-//
-import "C"
-
 import (
 	"unsafe"
 
-	"github.com/ebiten/purego"
+	"github.com/ebitengine/purego"
 	"github.com/hajimehoshi/oto/v2/internal/objc"
 )
 
@@ -44,8 +31,8 @@ var _ = purego.Dlopen("/System/Library/Frameworks/AppKit.framework/Versions/Curr
 func init() {
 	// Create the Observer object
 	class := objc.AllocateClassPair(objc.GetClass("NSObject\x00"), "OtoNotificationObserver\x00", 0)
-	class.AddMethod(objc.RegisterName("receiveSleepNote:\x00"), objc.IMP(uintptr(C.receiveSleepNote)), "v@:@\x00")
-	class.AddMethod(objc.RegisterName("receiveWakeNote:\x00"), objc.IMP(uintptr(C.receiveWakeNote)), "v@:@\x00")
+	class.AddMethod(objc.RegisterName("receiveSleepNote:\x00"), objc.IMP(oto_setGlobalPause), "v@:@\x00")
+	class.AddMethod(objc.RegisterName("receiveWakeNote:\x00"), objc.IMP(oto_setGlobalResume), "v@:@\x00")
 	class.Register()
 }
 
@@ -63,7 +50,7 @@ func oto_setNotificationHandler() {
 	//           object:NULL];
 	objc.Send(objc.Class(notificationCenter), objc.RegisterName("addObserver:selector:name:object:\x00"),
 		observer,
-		uintptr(objc.RegisterName("receiveSleepNote:\x00")),
+		objc.RegisterName("receiveSleepNote:\x00"),
 		// Dlsym returns a pointer to the object so dereference it
 		*(*uintptr)(unsafe.Pointer(purego.Dlsym(purego.RTLD_DEFAULT, "NSWorkspaceWillSleepNotification"))),
 		0,
@@ -75,7 +62,7 @@ func oto_setNotificationHandler() {
 	//           object:NULL];
 	objc.Send(objc.Class(notificationCenter), objc.RegisterName("addObserver:selector:name:object:\x00"),
 		observer,
-		uintptr(objc.RegisterName("receiveWakeNote:\x00")),
+		objc.RegisterName("receiveWakeNote:\x00"),
 		// Dlsym returns a pointer to the object so dereference it
 		*(*uintptr)(unsafe.Pointer(purego.Dlsym(purego.RTLD_DEFAULT, "NSWorkspaceDidWakeNotification"))),
 		0,
