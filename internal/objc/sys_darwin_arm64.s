@@ -3,7 +3,7 @@
 #include "funcdata.h"
 #include "abi_arm64.h"
 
-// _crosscall expects a call to the ABIInternal function
+// _crosscall2 expects a call to the ABIInternal function
 // However, the tag <ABIInternal> is only available in the runtime :(
 // This is a small wrapper function that moves the parameter from R0 to the stack
 // where the Go function can find it. It then branches without link.
@@ -52,8 +52,8 @@ TEXT ·callbackasm1(SB), NOSPLIT, $208-0
     BL	_crosscall2(SB)
 
     // Get callback result.
-    //MOVD	$cbargs-(18*8+callbackArgs__size)(SP), R13
-    //MOVD	callbackArgs_result(R13), R0
+    MOVD	$cbargs-(18*8+callbackArgs__size)(SP), R13
+    MOVD	callbackArgs_result(R13), R0
 
     //RESTORE_R19_TO_R28(8*9)
 

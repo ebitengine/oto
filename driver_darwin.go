@@ -14,15 +14,9 @@
 
 package oto
 
-// #cgo LDFLAGS: -framework AudioToolbox
-//
-// #import <AudioToolbox/AudioToolbox.h>
-//
-// void oto_render(void* inUserData, void* inAQ, void* inBuffer);
-import "C"
-
 import (
 	"fmt"
+	"github.com/hajimehoshi/oto/v2/internal/objc"
 	"sync"
 	"time"
 	"unsafe"
@@ -100,7 +94,7 @@ func newAudioQueue(sampleRate, channelNum, bitDepthInBytes int) (_AudioQueueRef,
 	var audioQueue _AudioQueueRef
 	if osstatus, _, _ := purego.SyscallN(gpAudioQueueNewOutput,
 		uintptr(unsafe.Pointer(&desc)),
-		uintptr(unsafe.Pointer(C.oto_render)),
+		objc.NewCallback(oto_render),
 		0,
 		0, //CFRunLoopRef
 		0, //CFStringRef
@@ -267,20 +261,19 @@ func (c *context) Err() error {
 	return nil
 }
 
-//export oto_render
-func oto_render(inUserData unsafe.Pointer, inAQ unsafe.Pointer, inBuffer unsafe.Pointer) {
+func oto_render(inUserData, inAQ, inBuffer uintptr) {
 	theContext.cond.L.Lock()
 	defer theContext.cond.L.Unlock()
-	theContext.unqueuedBuffers = append(theContext.unqueuedBuffers, _AudioQueueBufferRef(inBuffer))
+	theContext.unqueuedBuffers = append(theContext.unqueuedBuffers, _AudioQueueBufferRef(unsafe.Pointer(inBuffer)))
 	theContext.cond.Signal()
 }
 
-func oto_setGlobalPause() {
+func oto_setGlobalPause(self uintptr, _cmd objc.SEL) {
 	fmt.Println("PAUSE")
 	theContext.Suspend()
 }
 
-func oto_setGlobalResume() {
+func oto_setGlobalResume(self uintptr, _cmd objc.SEL) {
 	fmt.Println("RESUME")
 	theContext.Resume()
 }
