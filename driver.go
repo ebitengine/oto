@@ -23,11 +23,14 @@ import (
 //
 // To play sound with Oto, first create a context. Then use the context to create
 // an arbitrary number of players. Then use the players to play sound.
+//
+// Creating multiple contexts is NOT supported.
 type Context struct {
 	context *context
 }
 
 // NewPlayer creates a new, ready-to-use Player belonging to the Context.
+// It is safe to create multiple players.
 //
 // The r's format is as follows:
 //   [data]      = [sample 1] [sample 2] [sample 3] ...
@@ -79,6 +82,8 @@ func (c *Context) Err() error {
 
 // NewContext creates a new context, that creates and holds ready-to-use Player objects,
 // and returns a context, a channel that is closed when the context is ready, and an error if it exists.
+//
+// Creating multiple contexts is NOT supported.
 //
 // The sampleRate argument specifies the number of samples that should be played during one second.
 // Usual numbers are 44100 or 48000.
