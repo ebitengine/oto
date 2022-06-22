@@ -24,7 +24,6 @@ TEXT _crosscall2(SB),NOSPLIT|NOFRAME,$0
 	SAVE_F8_TO_F15(8*14)
 	STP	(R29, R30), (8*22)(RSP)
 
-
 	// Initialize Go ABI environment
 	BL	runtime·load_g(SB)
 	BL	runtime·cgocallback(SB)

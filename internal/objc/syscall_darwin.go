@@ -76,6 +76,7 @@ func callbackasm()
 func callbackasm1()
 
 func callbackWrap(a *callbackArgs) {
+	_ = *a
 	fmt.Printf("CALLBACK WRAPPER GOT %+v\n", a)
 	(&cbs.lock).Lock()
 	fn := cbs.funcs[a.index]
