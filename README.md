@@ -14,6 +14,7 @@ A low-level library to play sound.
   - [Usage](#usage)
     - [Playing sounds from memory](#playing-sounds-from-memory)
     - [Playing sounds by file streaming](#playing-sounds-by-file-streaming)
+    - [Advanced usage](#advanced-usage)
   - [Crosscompiling](#crosscompiling)
 
 ## Platforms
@@ -65,13 +66,6 @@ From a context you can create any number of different players, where each player
 it reads bytes representing sounds from and plays.
 
 > Note that a single `io.Reader` must **not** be used by multiple players.
-
-Players have their own internal audio data buffer, so while for example 200 bytes have been read from the `io.Reader` that
-doesn't mean they were all played from the audio device.
-
-Data is moved from io.Reader->internal buffer->audio device, and when the internal buffer moves data to the audio device
-is not guaranteed, so there might be a small delay. The amount of data in the buffer can be retrieved
-using `Player.UnplayedBufferSize()`.
 
 ### Playing sounds from memory
 
@@ -189,6 +183,23 @@ you might just play static.
 
 To keep it alive not only must you be careful about when you close it, but you might need to keep a reference
 to the original file object alive (by for example keeping it in a struct).
+
+### Advanced usage
+
+Players have their own internal audio data buffer, so while for example 200 bytes have been read from the `io.Reader` that
+doesn't mean they were all played from the audio device.
+
+Data is moved from io.Reader->internal buffer->audio device, and when the internal buffer moves data to the audio device
+is not guaranteed, so there might be a small delay. The amount of data in the buffer can be retrieved
+using `Player.UnplayedBufferSize()`.
+
+The size of the underlying buffer of a player can also be set by type-asserting the player object:
+
+```go
+myPlayer.(BufferSizeSetter).SetBufferSize(newBufferSize)
+```
+
+This works because players implement a `Player` interface and a `BufferSizeSetter` interface.
 
 ## Crosscompiling
 
