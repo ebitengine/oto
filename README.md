@@ -75,26 +75,26 @@ The following is an example of loading and playing an MP3 file:
 package main
 
 import (
-    "github.com/hajimehoshi/go-mp3"
-    "github.com/hajimehoshi/oto/v2"
     "time"
     "os"
+    
+    "github.com/hajimehoshi/go-mp3"
+    "github.com/hajimehoshi/oto/v2"
 )
 
 func main() {
-
     // Read the mp3 file into memory
     fileBytes, err := os.ReadFile("./my-file.mp3")
     if err != nil {
         panic("Failed to load mp3")
     }
 
-    //Convert the pure bytes into a reader object that can be used with the mp3 decoder
+    // Convert the pure bytes into a reader object that can be used with the mp3 decoder
     fileBytesReader := bytes.NewReader(fileBytes)
 
     // Decode file
     decodedMp3, err := mp3.NewDecoder(fileBytesReader)
-    if err != nil{
+    if err != nil {
         panic("Failed to decode mp3")
     }
 
@@ -153,14 +153,14 @@ In such cases you might want to stream the file. Luckily this is very simple, ju
 package main
 
 import (
-    "github.com/hajimehoshi/go-mp3"
-    "github.com/hajimehoshi/oto/v2"
     "time"
     "os"
+
+    "github.com/hajimehoshi/go-mp3"
+    "github.com/hajimehoshi/oto/v2"
 )
 
 func main() {
-
     // Open the file for reading. Do NOT close before you finish playing!
     file, err := os.Open("./my-file.mp3")
     if err != nil {
@@ -170,7 +170,7 @@ func main() {
     // Decode file. This process is done as the file plays so it won't
     // load the whole thing into memory.
     decodedMp3, err := mp3.NewDecoder(file)
-    if err != nil{
+    if err != nil {
         panic("Failed to decode mp3")
     }
 
