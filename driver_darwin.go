@@ -130,7 +130,7 @@ type context struct {
 	err     atomicError
 }
 
-// TOOD: Convert the error code correctly.
+// TODO: Convert the error code correctly.
 // See https://stackoverflow.com/questions/2196869/how-do-you-convert-an-iphone-osstatus-code-to-something-useful
 
 var theContext *context
@@ -218,11 +218,9 @@ func (c *context) appendBuffer(buf32 []float32) {
 func (c *context) Suspend() error {
 	c.cond.L.Lock()
 	defer c.cond.L.Unlock()
-
 	if err := c.err.Load(); err != nil {
 		return err.(error)
 	}
-
 	if osstatus, _, _ := purego.SyscallN(gpAudioQueuePause, uintptr(c.audioQueue)); osstatus != noErr {
 		return fmt.Errorf("oto: AudioQueuePause failed: %d", osstatus)
 	}
@@ -261,19 +259,17 @@ func (c *context) Err() error {
 	return nil
 }
 
-func oto_render(inUserData, inAQ, inBuffer uintptr) {
+func oto_render(inUserData, inAQ, inBuffer unsafe.Pointer) {
 	theContext.cond.L.Lock()
 	defer theContext.cond.L.Unlock()
-	theContext.unqueuedBuffers = append(theContext.unqueuedBuffers, _AudioQueueBufferRef(unsafe.Pointer(inBuffer)))
+	theContext.unqueuedBuffers = append(theContext.unqueuedBuffers, _AudioQueueBufferRef(inBuffer))
 	theContext.cond.Signal()
 }
 
-func oto_setGlobalPause(self uintptr, _cmd objc.SEL) {
-	fmt.Println("PAUSE")
+func oto_setGlobalPause(self uintptr, _cmd objc.SEL, notification uintptr) {
 	theContext.Suspend()
 }
 
-func oto_setGlobalResume(self uintptr, _cmd objc.SEL) {
-	fmt.Println("RESUME")
+func oto_setGlobalResume(self uintptr, _cmd objc.SEL, notification uintptr) {
 	theContext.Resume()
 }

@@ -3,11 +3,11 @@
 #include "funcdata.h"
 #include "abi_arm64.h"
 
-// _crosscall2 expects a call to the ABIInternal function
+// runtime·cgocallback expects a call to the ABIInternal function
 // However, the tag <ABIInternal> is only available in the runtime :(
 // This is a small wrapper function that moves the parameter from R0 to the stack
 // where the Go function can find it. It then branches without link.
-TEXT callbackWrapInternal(SB), NOSPLIT, $0-0
+TEXT callbackWrapInternal<>(SB), NOSPLIT, $0-0
     MOVD R0, 8(RSP)
     B ·callbackWrap(SB)
     RET
@@ -30,10 +30,6 @@ TEXT ·callbackasm1(SB), NOSPLIT, $208-0
     STP	(R4, R5), (4*8)(R14)
     STP	(R6, R7), (6*8)(R14)
 
-    // Push C callee-save registers R19-R28.
-    // LR, FP already saved.
-    //SAVE_R19_TO_R28(8*9)
-
     // Create a struct callbackArgs on our stack.
     MOVD	$cbargs-(18*8+callbackArgs__size)(SP), R13
     MOVD	R12, callbackArgs_index(R13)	// callback index
@@ -42,19 +38,39 @@ TEXT ·callbackasm1(SB), NOSPLIT, $208-0
     MOVD	$0, R0
     MOVD	R0, callbackArgs_result(R13)	// result
 
-    MOVD $callbackWrapInternal(SB), R0 //fn unsafe.Pointer
+    // Move parameters into registers
+    MOVD $callbackWrapInternal<>(SB), R0 //fn unsafe.Pointer
     MOVD R13, R1 // frame (&callbackArgs{...})
-    MOVD $0, R2 // n uintptr
     MOVD $0, R3 // ctxt uintptr
-    STP	(R0, R1), (1*8)(RSP)
-    MOVD	R2, (3*8)(RSP)
+
+    /*
+     * We still need to save all callee save register as before, and then
+     *  push 3 args for fn (R0, R1, R3), skipping R2.
+     * Also note that at procedure entry in gc world, 8(RSP) will be the
+     *  first arg.
+     */
+    SUB	$(8*24), RSP
+    STP	(R0, R1), (8*1)(RSP)
+    MOVD	R3, (8*3)(RSP)
+
+    // Push C callee-save registers R19-R28.
+    // LR, FP already saved.
+    SAVE_R19_TO_R28(8*4)
+    SAVE_F8_TO_F15(8*14)
+    STP	(R29, R30), (8*22)(RSP)
+
     // Initialize Go ABI environment
-    BL	_crosscall2(SB)
+   	BL	runtime·load_g(SB)
+   	BL	runtime·cgocallback(SB)
+
+   	RESTORE_R19_TO_R28(8*4)
+    RESTORE_F8_TO_F15(8*14)
+    LDP	(8*22)(RSP), (R29, R30)
+
+    ADD	$(8*24), RSP
 
     // Get callback result.
     MOVD	$cbargs-(18*8+callbackArgs__size)(SP), R13
     MOVD	callbackArgs_result(R13), R0
-
-    //RESTORE_R19_TO_R28(8*9)
 
     RET

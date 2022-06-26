@@ -1,7 +1,6 @@
 package objc
 
 import (
-	"fmt"
 	"reflect"
 	"runtime"
 	"sync"
@@ -51,11 +50,12 @@ func compileCallback(fn interface{}) uintptr {
 	for i := 0; i < ty.NumIn(); i++ {
 		in := ty.In(i)
 		switch in.Kind() {
-		case reflect.UnsafePointer, reflect.Struct, reflect.Float32, reflect.Float64,
+		case reflect.Struct, reflect.Float32, reflect.Float64,
 			reflect.Interface, reflect.Func, reflect.Slice, reflect.Chan, reflect.Complex128, reflect.Complex64:
 			panic("unsupported argument type: " + in.Kind().String())
 		}
 	}
+	//TODO: windows.NewCallback _requires_ exactly 1 pointer sized argument. Should we too?
 	if ty.NumOut() > 1 {
 		panic("callbacks can only have one pointer sized return")
 	}
@@ -76,17 +76,15 @@ func callbackasm()
 func callbackasm1()
 
 func callbackWrap(a *callbackArgs) {
-	_ = *a
-	fmt.Printf("CALLBACK WRAPPER GOT %+v\n", a)
 	(&cbs.lock).Lock()
 	fn := cbs.funcs[a.index]
 	(&cbs.lock).Unlock()
 	fnType := fn.Type()
 	args := make([]reflect.Value, fnType.NumIn())
-	frame := *(*[callbackMaxFrame]uintptr)(a.args)
+	frame := (*[callbackMaxFrame]uintptr)(a.args)
 	for i := range args {
-		//TODO: convert uintptr to types "unsafely" like (*SOMETIME, float32/float64 etc.)
-		args[i] = reflect.ValueOf(frame[i]).Convert(fnType.In(i))
+		//TODO: support float32 and float64
+		args[i] = reflect.NewAt(fnType.In(i), unsafe.Pointer(&frame[i])).Elem()
 	}
 	ret := fn.Call(args)
 	if len(ret) > 0 {

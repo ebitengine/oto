@@ -36,11 +36,10 @@ func init() {
 	class.Register()
 }
 
-// oto_setNotificationHandler sets a handler for sleep/wake
-// notifications.
+// oto_setNotificationHandler sets a handler for sleep/wake notifications.
 func oto_setNotificationHandler() {
-	//OtoNotificationObserver *observer = [[OtoNotificationObserver alloc] init];
-	observer := objc.Send(objc.Class(objc.Send(objc.GetClass("OtoNotificationObserver\x00"), objc.RegisterName("alloc\x00"))), objc.RegisterName("init\x00"))
+	//OtoNotificationObserver *observer = [OtoNotificationObserver new];
+	observer := objc.Send(objc.GetClass("OtoNotificationObserver\x00"), objc.RegisterName("new\x00"))
 	//id notificationCenter = [[NSWorkspace sharedWorkspace] notificationCenter];
 	notificationCenter := objc.Send(objc.Class(objc.Send(objc.GetClass("NSWorkspace\x00"), objc.RegisterName("sharedWorkspace\x00"))), objc.RegisterName("notificationCenter\x00"))
 	//[notificationCenter

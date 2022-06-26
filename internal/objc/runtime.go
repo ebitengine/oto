@@ -81,7 +81,8 @@ func (c Class) AddMethod(name SEL, imp _IMP, types string) bool {
 // it with the IMP function
 type _IMP uintptr
 
-// IMP takes a Go function that takes (id, SEL) as its first two arguments. It returns an _IMP that can be called by C code
+// IMP takes a Go function that takes (id, SEL) as its first two arguments. It returns an _IMP function
+// pointer that can be called by C code
 func IMP(fn interface{}) _IMP {
 	// this is only here so that it is easier to port C code to Go.
 	// this is not guaranteed to be here forever so make sure to port your callbacks to Go
@@ -95,9 +96,12 @@ func IMP(fn interface{}) _IMP {
 		panic("not a function")
 	}
 	// IMP is stricter than a normal callback
+	// id (*IMP)(id, SEL, ...)
 	switch {
 	case val.Type().NumIn() < 2:
+		fallthrough
 	case val.Type().In(0).Kind() != reflect.Uintptr:
+		fallthrough
 	case val.Type().In(1).Kind() != reflect.Uintptr:
 		panic("IMP must take a (id, SEL) as its first two arguments")
 	}
