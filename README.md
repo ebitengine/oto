@@ -30,6 +30,11 @@ A low-level library to play sound.
 
 ## Prerequisite
 
+On most platforms you will need a C/C++ compiler in your path that Go can use.
+
+- Windows: [MingW](https://www.mingw-w64.org/downloads/#mingw-builds) or similar
+- Mac/Linux: Should be installed by default, but if not try [GCC](https://gcc.gnu.org/) or [Clang](https://releases.llvm.org/download.html)
+
 ### macOS
 
 Oto requires `AudioToolbox.framework`, but this is automatically linked.
