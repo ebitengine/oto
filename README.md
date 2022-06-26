@@ -7,7 +7,7 @@ A low-level library to play sound.
 - [Oto (v2)](#oto-v2)
   - [Platforms](#platforms)
   - [Prerequisite](#prerequisite)
-    - [MacOS](#macos)
+    - [macOS](#macos)
     - [iOS](#ios)
     - [Linux](#linux)
     - [FreeBSD, OpenBSD](#freebsd-openbsd)
@@ -20,7 +20,7 @@ A low-level library to play sound.
 ## Platforms
 
 - Windows
-- MacOS
+- macOS
 - Linux
 - FreeBSD
 - OpenBSD
@@ -32,11 +32,11 @@ A low-level library to play sound.
 
 On some platforms you will need a C/C++ compiler in your path that Go can use.
 
-- MacOS: On newer MacOS versions type `clang` on your terminal and a dialog with installation instructions will appear if you don't have it
+- macOS: On newer macOS versions type `clang` on your terminal and a dialog with installation instructions will appear if you don't have it
   - If you get an error with clang use xcode instead `xcode-select --install`
 - Linux and other Unix systems: Should be installed by default, but if not try [GCC](https://gcc.gnu.org/) or [Clang](https://releases.llvm.org/download.html)
 
-### MacOS
+### macOS
 
 Oto requires `AudioToolbox.framework`, but this is automatically linked.
 
