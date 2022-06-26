@@ -16,12 +16,12 @@ package oto
 
 import (
 	"fmt"
-	"github.com/hajimehoshi/oto/v2/internal/objc"
 	"sync"
 	"time"
 	"unsafe"
 
 	"github.com/ebitengine/purego"
+	"github.com/hajimehoshi/oto/v2/internal/objc"
 )
 
 const (

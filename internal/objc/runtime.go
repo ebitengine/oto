@@ -2,11 +2,13 @@ package objc
 
 import (
 	"fmt"
-	"github.com/ebitengine/purego"
 	"reflect"
 	"unsafe"
+
+	"github.com/ebitengine/purego"
 )
 
+//TODO: support try/catch?
 //https://stackoverflow.com/questions/7062599/example-of-how-objective-cs-try-catch-implementation-is-executed-at-runtime
 
 var (
