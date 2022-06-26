@@ -30,10 +30,11 @@ A low-level library to play sound.
 
 ## Prerequisite
 
-On most platforms you will need a C/C++ compiler in your path that Go can use.
+On some platforms you will need a C/C++ compiler in your path that Go can use.
 
-- Windows: [MingW](https://www.mingw-w64.org/downloads/#mingw-builds) or similar
-- Mac/Linux: Should be installed by default, but if not try [GCC](https://gcc.gnu.org/) or [Clang](https://releases.llvm.org/download.html)
+- Linux: Should be installed by default, but if not try [GCC](https://gcc.gnu.org/) or [Clang](https://releases.llvm.org/download.html)
+- MacOS: On newer macOS versions type `clang` on your terminal and a dialog with installation instructions will appear if you don't have it
+  - If you get an error with clang use xcode instead `xcode-select --install`
 
 ### macOS
 
