@@ -232,9 +232,7 @@ func (p *playerImpl) playImpl() {
 			}
 			p.buf = append(p.buf, buf[:n]...)
 			if err == io.EOF {
-				if len(p.buf) == 0 {
-					p.eof = true
-				}
+				p.eof = true
 				break
 			}
 		}
@@ -378,6 +376,10 @@ func (p *playerImpl) readBufferAndAdd(buf []float32) int {
 	copy(p.buf, p.buf[n*bitDepthInBytes:])
 	p.buf = p.buf[:len(p.buf)-n*bitDepthInBytes]
 
+	if p.eof && len(p.buf) == 0 {
+		p.state = playerPaused
+	}
+
 	return n
 }
 
@@ -415,9 +417,11 @@ func (p *playerImpl) readSourceToBuffer() int {
 	}
 
 	p.buf = append(p.buf, buf[:n]...)
-	if err == io.EOF && len(p.buf) == 0 {
-		p.state = playerPaused
+	if err == io.EOF {
 		p.eof = true
+		if len(p.buf) == 0 {
+			p.state = playerPaused
+		}
 	}
 	return n
 }
