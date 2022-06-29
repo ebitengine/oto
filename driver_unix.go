@@ -24,8 +24,8 @@ import "C"
 
 import (
 	"fmt"
+	"strings"
 	"sync"
-	"time"
 	"unsafe"
 )
 
@@ -36,8 +36,7 @@ type context struct {
 
 	suspended bool
 
-	handle        *C.snd_pcm_t
-	supportsPause bool
+	handle *C.snd_pcm_t
 
 	cond *sync.Cond
 
@@ -47,8 +46,63 @@ type context struct {
 
 var theContext *context
 
-func alsaError(err C.int) error {
-	return fmt.Errorf("oto: ALSA error: %s", C.GoString(C.snd_strerror(err)))
+func alsaError(name string, err C.int) error {
+	return fmt.Errorf("oto: ALSA error at %s: %s", name, C.GoString(C.snd_strerror(err)))
+}
+
+func deviceCandidates() []string {
+	const getAllDevices = -1
+
+	cPCMInterfaceName := C.CString("pcm")
+	defer C.free(unsafe.Pointer(cPCMInterfaceName))
+
+	var hints *unsafe.Pointer
+	err := C.snd_device_name_hint(getAllDevices, cPCMInterfaceName, &hints)
+	if err != 0 {
+		return []string{"default", "plug:default"}
+	}
+	defer C.snd_device_name_free_hint(hints)
+
+	var devices []string
+
+	cIoHintName := C.CString("IOID")
+	defer C.free(unsafe.Pointer(cIoHintName))
+	cNameHintName := C.CString("NAME")
+	defer C.free(unsafe.Pointer(cNameHintName))
+
+	for it := hints; *it != nil; it = (*unsafe.Pointer)(unsafe.Pointer(uintptr(unsafe.Pointer(it)) + unsafe.Sizeof(uintptr(0)))) {
+		io := C.snd_device_name_get_hint(*it, cIoHintName)
+		defer func() {
+			if io != nil {
+				C.free(unsafe.Pointer(io))
+			}
+		}()
+		if C.GoString(io) == "Input" {
+			continue
+		}
+
+		name := C.snd_device_name_get_hint(*it, cNameHintName)
+		defer func() {
+			if name != nil {
+				C.free(unsafe.Pointer(name))
+			}
+		}()
+		if name == nil {
+			continue
+		}
+		goName := C.GoString(name)
+		if goName == "null" {
+			continue
+		}
+		if goName == "default" {
+			continue
+		}
+		devices = append(devices, goName)
+	}
+
+	devices = append([]string{"default", "plug:default"}, devices...)
+
+	return devices
 }
 
 func newContext(sampleRate, channelNum, bitDepthInBytes int) (*context, chan struct{}, error) {
@@ -65,10 +119,32 @@ func newContext(sampleRate, channelNum, bitDepthInBytes int) (*context, chan str
 	theContext = c
 
 	// Open a default ALSA audio device for blocking stream playback
-	cname := C.CString("default")
-	defer C.free(unsafe.Pointer(cname))
-	if err := C.snd_pcm_open(&c.handle, cname, C.SND_PCM_STREAM_PLAYBACK, 0); err < 0 {
-		return nil, nil, alsaError(err)
+	type openError struct {
+		device string
+		err    C.int
+	}
+	var openErrs []openError
+	var found bool
+
+	for _, name := range deviceCandidates() {
+		cname := C.CString(name)
+		defer C.free(unsafe.Pointer(cname))
+		if err := C.snd_pcm_open(&c.handle, cname, C.SND_PCM_STREAM_PLAYBACK, 0); err < 0 {
+			openErrs = append(openErrs, openError{
+				device: name,
+				err:    err,
+			})
+			continue
+		}
+		found = true
+		break
+	}
+	if !found {
+		var msgs []string
+		for _, e := range openErrs {
+			msgs = append(msgs, fmt.Sprintf("%q: %s", e.device, C.GoString(C.snd_strerror(e.err))))
+		}
+		return nil, nil, fmt.Errorf("oto: ALSA error at snd_pcm_open: %s", strings.Join(msgs, ", "))
 	}
 
 	periodSize := C.snd_pcm_uframes_t(1024)
@@ -95,34 +171,33 @@ func (c *context) alsaPcmHwParams(sampleRate, channelNum int, bufferSize, period
 	defer C.free(unsafe.Pointer(params))
 
 	if err := C.snd_pcm_hw_params_any(c.handle, params); err < 0 {
-		return alsaError(err)
+		return alsaError("snd_pcm_hw_params_any", err)
 	}
 	if err := C.snd_pcm_hw_params_set_access(c.handle, params, C.SND_PCM_ACCESS_RW_INTERLEAVED); err < 0 {
-		return alsaError(err)
+		return alsaError("snd_pcm_hw_params_set_access", err)
 	}
 	if err := C.snd_pcm_hw_params_set_format(c.handle, params, C.SND_PCM_FORMAT_FLOAT_LE); err < 0 {
-		return alsaError(err)
+		return alsaError("snd_pcm_hw_params_set_format", err)
 	}
 	if err := C.snd_pcm_hw_params_set_channels(c.handle, params, C.unsigned(channelNum)); err < 0 {
-		return alsaError(err)
+		return alsaError("snd_pcm_hw_params_set_channels", err)
 	}
 	if err := C.snd_pcm_hw_params_set_rate_resample(c.handle, params, 1); err < 0 {
-		return alsaError(err)
+		return alsaError("snd_pcm_hw_params_set_rate_resample", err)
 	}
 	sr := C.unsigned(sampleRate)
 	if err := C.snd_pcm_hw_params_set_rate_near(c.handle, params, &sr, nil); err < 0 {
-		return alsaError(err)
+		return alsaError("snd_pcm_hw_params_set_rate_near", err)
 	}
 	if err := C.snd_pcm_hw_params_set_buffer_size_near(c.handle, params, bufferSize); err < 0 {
-		return alsaError(err)
+		return alsaError("snd_pcm_hw_params_set_buffer_size_near", err)
 	}
 	if err := C.snd_pcm_hw_params_set_period_size_near(c.handle, params, periodSize, nil); err < 0 {
-		return alsaError(err)
+		return alsaError("snd_pcm_hw_params_set_period_size_near", err)
 	}
 	if err := C.snd_pcm_hw_params(c.handle, params); err < 0 {
-		return alsaError(err)
+		return alsaError("snd_pcm_hw_params", err)
 	}
-	c.supportsPause = C.snd_pcm_hw_params_can_pause(params) == 1
 	return nil
 }
 
@@ -141,16 +216,11 @@ func (c *context) readAndWrite(buf32 []float32) bool {
 
 	for len(buf32) > 0 {
 		n := C.snd_pcm_writei(c.handle, unsafe.Pointer(&buf32[0]), C.snd_pcm_uframes_t(len(buf32)/c.channelNum))
-		if n == -C.EPIPE {
-			// Underrun or overrun occurred.
-			if err := C.snd_pcm_prepare(c.handle); err < 0 {
-				c.err.TryStore(alsaError(err))
-				return false
-			}
-			continue
+		if n < 0 {
+			n = C.long(C.snd_pcm_recover(c.handle, C.int(n), 1))
 		}
 		if n < 0 {
-			c.err.TryStore(alsaError(C.int(n)))
+			c.err.TryStore(alsaError("snd_pcm_writei or snd_pcm_recover", C.int(n)))
 			return false
 		}
 		buf32 = buf32[int(n)*c.channelNum:]
@@ -167,16 +237,9 @@ func (c *context) Suspend() error {
 	}
 
 	c.suspended = true
-	if c.supportsPause {
-		if err := C.snd_pcm_pause(c.handle, 1); err < 0 {
-			return alsaError(err)
-		}
-		return nil
-	}
 
-	if err := C.snd_pcm_drop(c.handle); err < 0 {
-		return alsaError(err)
-	}
+	// Do not use snd_pcm_pause as not all devices support this.
+	// Do not use snd_pcm_drop as this might hang (https://github.com/libsdl-org/SDL/blob/a5c610b0a3857d3138f3f3da1f6dc3172c5ea4a8/src/audio/alsa/SDL_alsa_audio.c#L478).
 	return nil
 }
 
@@ -188,32 +251,8 @@ func (c *context) Resume() error {
 		return err.(error)
 	}
 
-	defer func() {
-		c.suspended = false
-		c.cond.Signal()
-	}()
-
-	if c.supportsPause {
-		if err := C.snd_pcm_pause(c.handle, 0); err < 0 {
-			return alsaError(err)
-		}
-		return nil
-	}
-
-try:
-	if err := C.snd_pcm_resume(c.handle); err < 0 {
-		if err == -C.EAGAIN {
-			time.Sleep(100 * time.Millisecond)
-			goto try
-		}
-		if err == -C.ENOSYS {
-			if err := C.snd_pcm_prepare(c.handle); err < 0 {
-				return alsaError(err)
-			}
-			return nil
-		}
-		return alsaError(err)
-	}
+	c.suspended = false
+	c.cond.Signal()
 	return nil
 }
 
