@@ -116,6 +116,7 @@ type Player interface {
 	IsPlaying() bool
 
 	// Reset clears the underyling buffer and pauses its playing.
+	// Deprecated: use Pause or Seek instead.
 	Reset()
 
 	// Volume returns the current volume in the range of [0, 1].
