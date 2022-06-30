@@ -15,6 +15,7 @@
 package oto
 
 import (
+	"errors"
 	"io"
 	"runtime"
 	"sync"
@@ -232,9 +233,7 @@ func (p *playerImpl) playImpl() {
 			}
 			p.buf = append(p.buf, buf[:n]...)
 			if err == io.EOF {
-				if len(p.buf) == 0 {
-					p.eof = true
-				}
+				p.eof = true
 				break
 			}
 		}
@@ -261,6 +260,30 @@ func (p *playerImpl) Pause() {
 		return
 	}
 	p.state = playerPaused
+}
+
+func (p *player) Seek(offset int64, whence int) (int64, error) {
+	return p.p.Seek(offset, whence)
+}
+
+func (p *playerImpl) Seek(offset int64, whence int) (int64, error) {
+	p.m.Lock()
+	defer p.m.Unlock()
+
+	// If a player is playing, keep playing even after this seeking.
+	if p.state == playerPlay {
+		defer p.playImpl()
+	}
+
+	// Reset the internal buffer.
+	p.resetImpl()
+
+	// Check if the source implements io.Seeker.
+	s, ok := p.src.(io.Seeker)
+	if !ok {
+		return 0, errors.New("oto: the source must implement io.Seeker")
+	}
+	return s.Seek(offset, whence)
 }
 
 func (p *player) Reset() {
@@ -378,6 +401,10 @@ func (p *playerImpl) readBufferAndAdd(buf []float32) int {
 	copy(p.buf, p.buf[n*bitDepthInBytes:])
 	p.buf = p.buf[:len(p.buf)-n*bitDepthInBytes]
 
+	if p.eof && len(p.buf) == 0 {
+		p.state = playerPaused
+	}
+
 	return n
 }
 
@@ -415,9 +442,11 @@ func (p *playerImpl) readSourceToBuffer() int {
 	}
 
 	p.buf = append(p.buf, buf[:n]...)
-	if err == io.EOF && len(p.buf) == 0 {
-		p.state = playerPaused
+	if err == io.EOF {
 		p.eof = true
+		if len(p.buf) == 0 {
+			p.state = playerPaused
+		}
 	}
 	return n
 }
