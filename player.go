@@ -15,6 +15,7 @@
 package oto
 
 import (
+	"errors"
 	"io"
 	"runtime"
 	"sync"
@@ -259,6 +260,34 @@ func (p *playerImpl) Pause() {
 		return
 	}
 	p.state = playerPaused
+}
+
+func (p *player) Seek(offset int64, whence int) (int64, error) {
+	return p.p.Seek(offset, whence)
+}
+
+func (p *playerImpl) Seek(offset int64, whence int) (int64, error) {
+	p.m.Lock()
+	defer p.m.Unlock()
+
+	if p.state == playerPlay {
+		defer p.playImpl()
+	}
+
+	// Reset the internal buffer.
+	p.resetImpl()
+
+	// Check if the source implements io.Seeker.
+	s, ok := p.src.(io.Seeker)
+	if !ok {
+		return 0, errors.New("oto: the source must implement io.Seeker")
+	}
+	newOffset, err := s.Seek(offset, whence)
+	if err != nil {
+		return newOffset, err
+	}
+
+	return newOffset, nil
 }
 
 func (p *player) Reset() {

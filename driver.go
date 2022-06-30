@@ -47,10 +47,12 @@ type Context struct {
 //
 // You cannot share r by multiple players.
 //
-// The returned player implements both Player and BufferSizeSetter.
+// The returned player implements Player, BufferSizeSetter, and io.Seeker.
 // You can modify the buffer size of a player by the SetBufferSize function.
 // A small buffer size is useful if you want to play a real-time PCM for example.
 // Note that the audio quality might be affected if you modify the buffer size.
+//
+// If r does not implement io.Seeker, the returned player's Seek panics.
 //
 // NewPlayer is concurrent-safe.
 //
@@ -130,6 +132,9 @@ type Player interface {
 	Err() error
 
 	io.Closer
+
+	// A player returned at NewPlayer also implements BufferSizeSetter and io.Seeker, but
+	// these are not defined in this interface for backward compatibility in v2.
 }
 
 // BufferSizeSetter sets a buffer size.
