@@ -136,8 +136,8 @@ func main() {
         time.Sleep(time.Millisecond)
     }
 
-    // Now that the sound finished playing, we can restart from the beginning using these two lines
-    // player.Reset()
+    // Now that the sound finished playing, we can restart from the beginning (or go to any location in the sound) using seek
+    // player.(io.Seeker).Seek(0, io.SeekStart)
     // player.Play()
 
     // If you don't want the player/sound anymore simply close
