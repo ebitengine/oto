@@ -283,12 +283,7 @@ func (p *playerImpl) Seek(offset int64, whence int) (int64, error) {
 	if !ok {
 		return 0, errors.New("oto: the source must implement io.Seeker")
 	}
-	newOffset, err := s.Seek(offset, whence)
-	if err != nil {
-		return newOffset, err
-	}
-
-	return newOffset, nil
+	return s.Seek(offset, whence)
 }
 
 func (p *player) Reset() {
