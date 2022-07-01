@@ -92,7 +92,7 @@ func main() {
     // Read the mp3 file into memory
     fileBytes, err := os.ReadFile("./my-file.mp3")
     if err != nil {
-        panic("Failed to load mp3")
+        panic("reading my-file.mp3 failed: " + err.Error())
     }
 
     // Convert the pure bytes into a reader object that can be used with the mp3 decoder
@@ -101,7 +101,7 @@ func main() {
     // Decode file
     decodedMp3, err := mp3.NewDecoder(fileBytesReader)
     if err != nil {
-        panic("Failed to decode mp3")
+        panic("mp3.NewDecoder failed: " + err.Error())
     }
 
     // Prepare an Oto context (this will use your default audio device) that will
@@ -120,7 +120,7 @@ func main() {
     // Remember that you should **not** create more than one context
     otoCtx, readyChan, err := oto.NewContext(samplingRate, numOfChannels, audioBitDepth)
     if err != nil {
-        panic("Failed to create oto context")
+        panic("oto.NewContext failed: " + err.Error())
     }
     // It might take a bit for the hardware audio devices to be ready, so we wait on the channel.
     <-readyChan
@@ -139,7 +139,7 @@ func main() {
     // Now that the sound finished playing, we can restart from the beginning (or go to any location in the sound) using seek
     // newPos, err := player.(io.Seeker).Seek(0, io.SeekStart)
     // if err != nil{
-    //     panic("Seeker is broken. Err: " + err.Error())
+    //     panic("player.Seek failed: " + err.Error())
     // }
     // println("Player is now at position:", newPos)
     // player.Play()
@@ -147,7 +147,7 @@ func main() {
     // If you don't want the player/sound anymore simply close
     err = player.Close()
     if err != nil {
-        // Log maybe?
+        panic("player.Close failed: " + err.Error())
     }
 }
 ```
@@ -174,14 +174,14 @@ func main() {
     // Open the file for reading. Do NOT close before you finish playing!
     file, err := os.Open("./my-file.mp3")
     if err != nil {
-        panic("Failed to open mp3 file")
+        panic("opening my-file.mp3 failed: " + err.Error())
     }
 
     // Decode file. This process is done as the file plays so it won't
     // load the whole thing into memory.
     decodedMp3, err := mp3.NewDecoder(file)
     if err != nil {
-        panic("Failed to decode mp3")
+        panic("mp3.NewDecoder failed: " + err.Error())
     }
 
     // Rest is the same...
