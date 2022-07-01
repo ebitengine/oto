@@ -52,7 +52,7 @@ type Context struct {
 // A small buffer size is useful if you want to play a real-time PCM for example.
 // Note that the audio quality might be affected if you modify the buffer size.
 //
-// If r does not implement io.Seeker, the returned player's Seek panics.
+// If r does not implement io.Seeker, the returned player's Seek returns an error.
 //
 // NewPlayer is concurrent-safe.
 //
