@@ -67,7 +67,7 @@ func (h *header) Close() error {
 
 type context struct {
 	sampleRate      int
-	channelNum      int
+	channelCount    int
 	bitDepthInBytes int
 
 	waveOut uintptr
@@ -83,13 +83,13 @@ type context struct {
 
 var theContext *context
 
-func newContext(sampleRate, channelNum, bitDepthInBytes int) (*context, chan struct{}, error) {
+func newContext(sampleRate, channelCount, bitDepthInBytes int) (*context, chan struct{}, error) {
 	ready := make(chan struct{})
 	close(ready)
 
 	c := &context{
 		sampleRate:      sampleRate,
-		channelNum:      channelNum,
+		channelCount:    channelCount,
 		bitDepthInBytes: bitDepthInBytes,
 		players:         newPlayers(),
 		cond:            sync.NewCond(&sync.Mutex{}),
@@ -97,10 +97,10 @@ func newContext(sampleRate, channelNum, bitDepthInBytes int) (*context, chan str
 	theContext = c
 
 	const bitsPerSample = 32
-	nBlockAlign := c.channelNum * bitsPerSample / 8
+	nBlockAlign := c.channelCount * bitsPerSample / 8
 	f := &waveformatex{
 		wFormatTag:      waveFormatIEEEFloat,
-		nChannels:       uint16(c.channelNum),
+		nChannels:       uint16(c.channelCount),
 		nSamplesPerSec:  uint32(c.sampleRate),
 		nAvgBytesPerSec: uint32(c.sampleRate * nBlockAlign),
 		wBitsPerSample:  bitsPerSample,

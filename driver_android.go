@@ -20,23 +20,23 @@ import (
 
 type context struct {
 	sampleRate      int
-	channelNum      int
+	channelCount    int
 	bitDepthInBytes int
 
 	players *players
 }
 
-func newContext(sampleRate int, channelNum int, bitDepthInBytes int) (*context, chan struct{}, error) {
+func newContext(sampleRate int, channelCount int, bitDepthInBytes int) (*context, chan struct{}, error) {
 	ready := make(chan struct{})
 	close(ready)
 
 	c := &context{
 		sampleRate:      sampleRate,
-		channelNum:      channelNum,
+		channelCount:    channelCount,
 		bitDepthInBytes: bitDepthInBytes,
 		players:         newPlayers(),
 	}
-	if err := oboe.Play(sampleRate, channelNum, bitDepthInBytes, c.players.read); err != nil {
+	if err := oboe.Play(sampleRate, channelCount, bitDepthInBytes, c.players.read); err != nil {
 		return nil, nil, err
 	}
 	return c, ready, nil

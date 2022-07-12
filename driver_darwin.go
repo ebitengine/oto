@@ -39,15 +39,15 @@ const (
 	avAudioSessionErrorCodeSiriIsRecording    = 0x73697269 // 'siri'
 )
 
-func newAudioQueue(sampleRate, channelNum, bitDepthInBytes int) (C.AudioQueueRef, []C.AudioQueueBufferRef, error) {
+func newAudioQueue(sampleRate, channelCount, bitDepthInBytes int) (C.AudioQueueRef, []C.AudioQueueBufferRef, error) {
 	desc := C.AudioStreamBasicDescription{
 		mSampleRate:       C.double(sampleRate),
 		mFormatID:         C.kAudioFormatLinearPCM,
 		mFormatFlags:      C.kAudioFormatFlagIsFloat,
-		mBytesPerPacket:   C.UInt32(channelNum * float32SizeInBytes),
+		mBytesPerPacket:   C.UInt32(channelCount * float32SizeInBytes),
 		mFramesPerPacket:  1,
-		mBytesPerFrame:    C.UInt32(channelNum * float32SizeInBytes),
-		mChannelsPerFrame: C.UInt32(channelNum),
+		mBytesPerFrame:    C.UInt32(channelCount * float32SizeInBytes),
+		mChannelsPerFrame: C.UInt32(channelCount),
 		mBitsPerChannel:   C.UInt32(8 * float32SizeInBytes),
 	}
 
@@ -78,7 +78,7 @@ func newAudioQueue(sampleRate, channelNum, bitDepthInBytes int) (C.AudioQueueRef
 
 type context struct {
 	sampleRate      int
-	channelNum      int
+	channelCount    int
 	bitDepthInBytes int
 
 	audioQueue      C.AudioQueueRef
@@ -95,20 +95,20 @@ type context struct {
 
 var theContext *context
 
-func newContext(sampleRate, channelNum, bitDepthInBytes int) (*context, chan struct{}, error) {
+func newContext(sampleRate, channelCount, bitDepthInBytes int) (*context, chan struct{}, error) {
 	ready := make(chan struct{})
 	close(ready)
 
 	c := &context{
 		sampleRate:      sampleRate,
-		channelNum:      channelNum,
+		channelCount:    channelCount,
 		bitDepthInBytes: bitDepthInBytes,
 		cond:            sync.NewCond(&sync.Mutex{}),
 		players:         newPlayers(),
 	}
 	theContext = c
 
-	q, bs, err := newAudioQueue(sampleRate, channelNum, bitDepthInBytes)
+	q, bs, err := newAudioQueue(sampleRate, channelCount, bitDepthInBytes)
 	if err != nil {
 		return nil, nil, err
 	}

@@ -24,7 +24,7 @@ import (
 
 type context struct {
 	sampleRate      int
-	channelNum      int
+	channelCount    int
 	bitDepthInBytes int
 
 	audioContext            js.Value
@@ -36,7 +36,7 @@ type context struct {
 	players *players
 }
 
-func newContext(sampleRate int, channelNum int, bitDepthInBytes int) (*context, chan struct{}, error) {
+func newContext(sampleRate int, channelCount int, bitDepthInBytes int) (*context, chan struct{}, error) {
 	ready := make(chan struct{})
 
 	class := js.Global().Get("AudioContext")
@@ -51,39 +51,39 @@ func newContext(sampleRate int, channelNum int, bitDepthInBytes int) (*context, 
 
 	d := &context{
 		sampleRate:      sampleRate,
-		channelNum:      channelNum,
+		channelCount:    channelCount,
 		bitDepthInBytes: bitDepthInBytes,
 		audioContext:    class.New(options),
 		players:         newPlayers(),
 	}
 
 	// 4096 was not great at least on Safari 15.
-	bufferSizeInBytes := 8192 * channelNum
+	bufferSizeInBytes := 8192 * channelCount
 
 	buf32 := make([]float32, bufferSizeInBytes/4)
-	chBuf32 := make([][]float32, channelNum)
+	chBuf32 := make([][]float32, channelCount)
 	for i := range chBuf32 {
-		chBuf32[i] = make([]float32, len(buf32)/channelNum)
+		chBuf32[i] = make([]float32, len(buf32)/channelCount)
 	}
 
 	// TODO: Use AudioWorklet if available.
-	sp := d.audioContext.Call("createScriptProcessor", bufferSizeInBytes/4/channelNum, 0, channelNum)
+	sp := d.audioContext.Call("createScriptProcessor", bufferSizeInBytes/4/channelCount, 0, channelCount)
 	f := js.FuncOf(func(this js.Value, arguments []js.Value) interface{} {
 		d.players.read(buf32)
-		for i := 0; i < channelNum; i++ {
+		for i := 0; i < channelCount; i++ {
 			for j := range chBuf32[i] {
-				chBuf32[i][j] = buf32[j*channelNum+i]
+				chBuf32[i][j] = buf32[j*channelCount+i]
 			}
 		}
 
 		buf := arguments[0].Get("outputBuffer")
 		if buf.Get("copyToChannel").Truthy() {
-			for i := 0; i < channelNum; i++ {
+			for i := 0; i < channelCount; i++ {
 				buf.Call("copyToChannel", float32SliceToTypedArray(chBuf32[i]), i, 0)
 			}
 		} else {
 			// copyToChannel is not defined on Safari 11.
-			for i := 0; i < channelNum; i++ {
+			for i := 0; i < channelCount; i++ {
 				buf.Call("getChannelData", i).Call("set", float32SliceToTypedArray(chBuf32[i]))
 			}
 		}

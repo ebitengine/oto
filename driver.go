@@ -91,13 +91,13 @@ func (c *Context) Err() error {
 // Usual numbers are 44100 or 48000. One context has only one sample rate. You cannot play multiple audio
 // sources with different sample rates at the same time.
 //
-// The channelNum argument specifies the number of channels. One channel is mono playback. Two
+// The channelCount argument specifies the number of channels. One channel is mono playback. Two
 // channels are stereo playback. No other values are supported.
 //
 // The bitDepthInBytes argument specifies the number of bytes per sample per channel. The usual value
 // is 2. Only values 1 and 2 are supported.
-func NewContext(sampleRate int, channelNum int, bitDepthInBytes int) (*Context, chan struct{}, error) {
-	ctx, ready, err := newContext(sampleRate, channelNum, bitDepthInBytes)
+func NewContext(sampleRate int, channelCount int, bitDepthInBytes int) (*Context, chan struct{}, error) {
+	ctx, ready, err := newContext(sampleRate, channelCount, bitDepthInBytes)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -159,7 +159,7 @@ const (
 // defaultBufferSize returns the default size of the buffer for the audio source.
 // This buffer is used when unreading on pausing the player.
 func (c *context) defaultBufferSize() int {
-	bytesPerSample := c.channelNum * c.bitDepthInBytes
+	bytesPerSample := c.channelCount * c.bitDepthInBytes
 	s := c.sampleRate * bytesPerSample / 2 // 0.5[s]
 	// Align s in multiples of bytes per sample, or a buffer could have extra bytes.
 	return s / bytesPerSample * bytesPerSample
