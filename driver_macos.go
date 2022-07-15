@@ -21,25 +21,22 @@ import (
 	"unsafe"
 
 	"github.com/ebitengine/purego"
-	"github.com/hajimehoshi/oto/v2/internal/objc"
+	"github.com/ebitengine/purego/objc"
 )
 
 const bufferSizeInBytes = 2048
 
-var _ = purego.Dlopen("/System/Library/Frameworks/AppKit.framework/Versions/Current/AppKit", purego.RTLD_GLOBAL)
+var appkit = purego.Dlopen("/System/Library/Frameworks/AppKit.framework/Versions/Current/AppKit", purego.RTLD_GLOBAL)
 
-func init() {
+// oto_setNotificationHandler sets a handler for sleep/wake notifications.
+func oto_setNotificationHandler() {
 	// Create the Observer object
 	class := objc.AllocateClassPair(objc.GetClass("NSObject\x00"), "OtoNotificationObserver\x00", 0)
 	class.AddMethod(objc.RegisterName("receiveSleepNote:\x00"), objc.IMP(oto_setGlobalPause), "v@:@\x00")
 	class.AddMethod(objc.RegisterName("receiveWakeNote:\x00"), objc.IMP(oto_setGlobalResume), "v@:@\x00")
 	class.Register()
-}
-
-// oto_setNotificationHandler sets a handler for sleep/wake notifications.
-func oto_setNotificationHandler() {
 	//OtoNotificationObserver *observer = [OtoNotificationObserver new];
-	observer := objc.Send(objc.GetClass("OtoNotificationObserver\x00"), objc.RegisterName("new\x00"))
+	observer := objc.Send(class, objc.RegisterName("new\x00"))
 	//id notificationCenter = [[NSWorkspace sharedWorkspace] notificationCenter];
 	notificationCenter := objc.Send(objc.Class(objc.Send(objc.GetClass("NSWorkspace\x00"), objc.RegisterName("sharedWorkspace\x00"))), objc.RegisterName("notificationCenter\x00"))
 	//[notificationCenter
@@ -51,7 +48,7 @@ func oto_setNotificationHandler() {
 		observer,
 		objc.RegisterName("receiveSleepNote:\x00"),
 		// Dlsym returns a pointer to the object so dereference it
-		*(*uintptr)(unsafe.Pointer(purego.Dlsym(purego.RTLD_DEFAULT, "NSWorkspaceWillSleepNotification"))),
+		*(*uintptr)(unsafe.Pointer(purego.Dlsym(appkit, "NSWorkspaceWillSleepNotification"))),
 		0,
 	)
 	//  [notificationCenter
@@ -63,7 +60,7 @@ func oto_setNotificationHandler() {
 		observer,
 		objc.RegisterName("receiveWakeNote:\x00"),
 		// Dlsym returns a pointer to the object so dereference it
-		*(*uintptr)(unsafe.Pointer(purego.Dlsym(purego.RTLD_DEFAULT, "NSWorkspaceDidWakeNotification"))),
+		*(*uintptr)(unsafe.Pointer(purego.Dlsym(appkit, "NSWorkspaceDidWakeNotification"))),
 		0,
 	)
 }

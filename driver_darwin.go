@@ -21,7 +21,7 @@ import (
 	"unsafe"
 
 	"github.com/ebitengine/purego"
-	"github.com/hajimehoshi/oto/v2/internal/objc"
+	"github.com/ebitengine/purego/objc"
 )
 
 const (
@@ -94,7 +94,7 @@ func newAudioQueue(sampleRate, channelCount, bitDepthInBytes int) (_AudioQueueRe
 	var audioQueue _AudioQueueRef
 	if osstatus, _, _ := purego.SyscallN(gpAudioQueueNewOutput,
 		uintptr(unsafe.Pointer(&desc)),
-		objc.NewCallback(oto_render),
+		purego.NewCallback(oto_render),
 		0,
 		0, //CFRunLoopRef
 		0, //CFStringRef
@@ -118,7 +118,7 @@ func newAudioQueue(sampleRate, channelCount, bitDepthInBytes int) (_AudioQueueRe
 
 type context struct {
 	sampleRate      int
-	channelCount      int
+	channelCount    int
 	bitDepthInBytes int
 
 	audioQueue      _AudioQueueRef
@@ -141,7 +141,7 @@ func newContext(sampleRate, channelCount, bitDepthInBytes int) (*context, chan s
 
 	c := &context{
 		sampleRate:      sampleRate,
-		channelCount:      channelCount,
+		channelCount:    channelCount,
 		bitDepthInBytes: bitDepthInBytes,
 		cond:            sync.NewCond(&sync.Mutex{}),
 		players:         newPlayers(),
@@ -218,7 +218,7 @@ func (c *context) appendBuffer(buf32 []float32) {
 func (c *context) Suspend() error {
 	c.cond.L.Lock()
 	defer c.cond.L.Unlock()
-	
+
 	if err := c.err.Load(); err != nil {
 		return err.(error)
 	}
