@@ -31,7 +31,7 @@ import (
 
 type context struct {
 	sampleRate      int
-	channelNum      int
+	channelCount    int
 	bitDepthInBytes int
 
 	suspended bool
@@ -105,13 +105,13 @@ func deviceCandidates() []string {
 	return devices
 }
 
-func newContext(sampleRate, channelNum, bitDepthInBytes int) (*context, chan struct{}, error) {
+func newContext(sampleRate, channelCount, bitDepthInBytes int) (*context, chan struct{}, error) {
 	ready := make(chan struct{})
 	close(ready)
 
 	c := &context{
 		sampleRate:      sampleRate,
-		channelNum:      channelNum,
+		channelCount:    channelCount,
 		bitDepthInBytes: bitDepthInBytes,
 		cond:            sync.NewCond(&sync.Mutex{}),
 		players:         newPlayers(),
@@ -149,12 +149,12 @@ func newContext(sampleRate, channelNum, bitDepthInBytes int) (*context, chan str
 
 	periodSize := C.snd_pcm_uframes_t(1024)
 	bufferSize := periodSize * 2
-	if err := c.alsaPcmHwParams(sampleRate, channelNum, &bufferSize, &periodSize); err != nil {
+	if err := c.alsaPcmHwParams(sampleRate, channelCount, &bufferSize, &periodSize); err != nil {
 		return nil, nil, err
 	}
 
 	go func() {
-		buf32 := make([]float32, int(periodSize)*c.channelNum)
+		buf32 := make([]float32, int(periodSize)*c.channelCount)
 		for {
 			if !c.readAndWrite(buf32) {
 				return
@@ -165,7 +165,7 @@ func newContext(sampleRate, channelNum, bitDepthInBytes int) (*context, chan str
 	return c, ready, nil
 }
 
-func (c *context) alsaPcmHwParams(sampleRate, channelNum int, bufferSize, periodSize *C.snd_pcm_uframes_t) error {
+func (c *context) alsaPcmHwParams(sampleRate, channelCount int, bufferSize, periodSize *C.snd_pcm_uframes_t) error {
 	var params *C.snd_pcm_hw_params_t
 	C.snd_pcm_hw_params_malloc(&params)
 	defer C.free(unsafe.Pointer(params))
@@ -179,7 +179,7 @@ func (c *context) alsaPcmHwParams(sampleRate, channelNum int, bufferSize, period
 	if err := C.snd_pcm_hw_params_set_format(c.handle, params, C.SND_PCM_FORMAT_FLOAT_LE); err < 0 {
 		return alsaError("snd_pcm_hw_params_set_format", err)
 	}
-	if err := C.snd_pcm_hw_params_set_channels(c.handle, params, C.unsigned(channelNum)); err < 0 {
+	if err := C.snd_pcm_hw_params_set_channels(c.handle, params, C.unsigned(channelCount)); err < 0 {
 		return alsaError("snd_pcm_hw_params_set_channels", err)
 	}
 	if err := C.snd_pcm_hw_params_set_rate_resample(c.handle, params, 1); err < 0 {
@@ -215,7 +215,7 @@ func (c *context) readAndWrite(buf32 []float32) bool {
 	c.players.read(buf32)
 
 	for len(buf32) > 0 {
-		n := C.snd_pcm_writei(c.handle, unsafe.Pointer(&buf32[0]), C.snd_pcm_uframes_t(len(buf32)/c.channelNum))
+		n := C.snd_pcm_writei(c.handle, unsafe.Pointer(&buf32[0]), C.snd_pcm_uframes_t(len(buf32)/c.channelCount))
 		if n < 0 {
 			n = C.long(C.snd_pcm_recover(c.handle, C.int(n), 1))
 		}
@@ -223,7 +223,7 @@ func (c *context) readAndWrite(buf32 []float32) bool {
 			c.err.TryStore(alsaError("snd_pcm_writei or snd_pcm_recover", C.int(n)))
 			return false
 		}
-		buf32 = buf32[int(n)*c.channelNum:]
+		buf32 = buf32[int(n)*c.channelCount:]
 	}
 	return true
 }

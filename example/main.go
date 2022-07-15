@@ -30,7 +30,7 @@ import (
 
 var (
 	sampleRate      = flag.Int("samplerate", 44100, "sample rate")
-	channelNum      = flag.Int("channelnum", 2, "number of channel")
+	channelCount    = flag.Int("channelnum", 2, "number of channel")
 	bitDepthInBytes = flag.Int("bitdepthinbytes", 2, "bit depth in bytes")
 )
 
@@ -43,7 +43,7 @@ type SineWave struct {
 }
 
 func NewSineWave(freq float64, duration time.Duration) *SineWave {
-	l := int64(*channelNum) * int64(*bitDepthInBytes) * int64(*sampleRate) * int64(duration) / int64(time.Second)
+	l := int64(*channelCount) * int64(*bitDepthInBytes) * int64(*sampleRate) * int64(duration) / int64(time.Second)
 	l = l / 4 * 4
 	return &SineWave{
 		freq:   freq,
@@ -77,14 +77,14 @@ func (s *SineWave) Read(buf []byte) (int, error) {
 
 	length := float64(*sampleRate) / float64(s.freq)
 
-	num := (*bitDepthInBytes) * (*channelNum)
+	num := (*bitDepthInBytes) * (*channelCount)
 	p := s.pos / int64(num)
 	switch *bitDepthInBytes {
 	case 1:
 		for i := 0; i < len(buf)/num; i++ {
 			const max = 127
 			b := int(math.Sin(2*math.Pi*float64(p)/length) * 0.3 * max)
-			for ch := 0; ch < *channelNum; ch++ {
+			for ch := 0; ch < *channelCount; ch++ {
 				buf[num*i+ch] = byte(b + 128)
 			}
 			p++
@@ -93,7 +93,7 @@ func (s *SineWave) Read(buf []byte) (int, error) {
 		for i := 0; i < len(buf)/num; i++ {
 			const max = 32767
 			b := int16(math.Sin(2*math.Pi*float64(p)/length) * 0.3 * max)
-			for ch := 0; ch < *channelNum; ch++ {
+			for ch := 0; ch < *channelCount; ch++ {
 				buf[num*i+2*ch] = byte(b)
 				buf[num*i+1+2*ch] = byte(b >> 8)
 			}
@@ -128,7 +128,7 @@ func run() error {
 		freqG = 784.0
 	)
 
-	c, ready, err := oto.NewContext(*sampleRate, *channelNum, *bitDepthInBytes)
+	c, ready, err := oto.NewContext(*sampleRate, *channelCount, *bitDepthInBytes)
 	if err != nil {
 		return err
 	}

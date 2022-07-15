@@ -79,15 +79,15 @@ var (
 	gpAudioQueueEnqueueBuffer  = purego.Dlsym(toolbox, "AudioQueueEnqueueBuffer")
 )
 
-func newAudioQueue(sampleRate, channelNum, bitDepthInBytes int) (_AudioQueueRef, []_AudioQueueBufferRef, error) {
+func newAudioQueue(sampleRate, channelCount, bitDepthInBytes int) (_AudioQueueRef, []_AudioQueueBufferRef, error) {
 	desc := _AudioStreamBasicDescription{
 		mSampleRate:       float64(sampleRate),
 		mFormatID:         uint32(kAudioFormatLinearPCM),
 		mFormatFlags:      uint32(kAudioFormatFlagIsFloat),
-		mBytesPerPacket:   uint32(channelNum * float32SizeInBytes),
+		mBytesPerPacket:   uint32(channelCount * float32SizeInBytes),
 		mFramesPerPacket:  1,
-		mBytesPerFrame:    uint32(channelNum * float32SizeInBytes),
-		mChannelsPerFrame: uint32(channelNum),
+		mBytesPerFrame:    uint32(channelCount * float32SizeInBytes),
+		mChannelsPerFrame: uint32(channelCount),
 		mBitsPerChannel:   uint32(8 * float32SizeInBytes),
 	}
 
@@ -118,7 +118,7 @@ func newAudioQueue(sampleRate, channelNum, bitDepthInBytes int) (_AudioQueueRef,
 
 type context struct {
 	sampleRate      int
-	channelNum      int
+	channelCount      int
 	bitDepthInBytes int
 
 	audioQueue      _AudioQueueRef
@@ -135,20 +135,20 @@ type context struct {
 
 var theContext *context
 
-func newContext(sampleRate, channelNum, bitDepthInBytes int) (*context, chan struct{}, error) {
+func newContext(sampleRate, channelCount, bitDepthInBytes int) (*context, chan struct{}, error) {
 	ready := make(chan struct{})
 	close(ready)
 
 	c := &context{
 		sampleRate:      sampleRate,
-		channelNum:      channelNum,
+		channelCount:      channelCount,
 		bitDepthInBytes: bitDepthInBytes,
 		cond:            sync.NewCond(&sync.Mutex{}),
 		players:         newPlayers(),
 	}
 	theContext = c
 
-	q, bs, err := newAudioQueue(sampleRate, channelNum, bitDepthInBytes)
+	q, bs, err := newAudioQueue(sampleRate, channelCount, bitDepthInBytes)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -218,6 +218,7 @@ func (c *context) appendBuffer(buf32 []float32) {
 func (c *context) Suspend() error {
 	c.cond.L.Lock()
 	defer c.cond.L.Unlock()
+	
 	if err := c.err.Load(); err != nil {
 		return err.(error)
 	}
