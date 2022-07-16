@@ -79,7 +79,7 @@ type winmmContext struct {
 
 var theWinMMContext *winmmContext
 
-func newWinMMContext(sampleRate, channelCount, bitDepthInBytes int, players *players) (*winmmContext, chan struct{}, error) {
+func newWinMMContext(sampleRate, channelCount int, players *players) (*winmmContext, chan struct{}, error) {
 	ready := make(chan struct{})
 	close(ready)
 

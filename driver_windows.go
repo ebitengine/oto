@@ -26,7 +26,7 @@ type context struct {
 
 func newContext(sampleRate, channelCount, bitDepthInBytes int) (*context, chan struct{}, error) {
 	p := newPlayers()
-	c, ready, err := newWinMMContext(sampleRate, channelCount, bitDepthInBytes, p)
+	c, ready, err := newWinMMContext(sampleRate, channelCount, p)
 	if err != nil {
 		return nil, nil, err
 	}
