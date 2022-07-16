@@ -14,6 +14,10 @@
 
 package oto
 
+import (
+	"fmt"
+)
+
 type context struct {
 	sampleRate      int
 	channelCount    int
@@ -21,25 +25,36 @@ type context struct {
 
 	players *players
 
-	winmmContext *winmmContext
+	wasapiContext *wasapiContext
+	winmmContext  *winmmContext
 }
 
 func newContext(sampleRate, channelCount, bitDepthInBytes int) (*context, chan struct{}, error) {
 	p := newPlayers()
-	c, ready, err := newWinMMContext(sampleRate, channelCount, p)
-	if err != nil {
-		return nil, nil, err
-	}
-	return &context{
+	ctx := &context{
 		sampleRate:      sampleRate,
 		channelCount:    channelCount,
 		bitDepthInBytes: bitDepthInBytes,
 		players:         p,
-		winmmContext:    c,
-	}, ready, err
+	}
+
+	xc, ready, err0 := newWASAPIContext(sampleRate, channelCount, p)
+	if err0 == nil {
+		ctx.wasapiContext = xc
+		return ctx, ready, nil
+	}
+	wc, ready, err1 := newWinMMContext(sampleRate, channelCount, p)
+	if err1 == nil {
+		ctx.winmmContext = wc
+		return ctx, ready, nil
+	}
+	return nil, nil, fmt.Errorf("oto: initialization failed: WASAPI: %v, WinMM: %v", err0, err1)
 }
 
 func (c *context) Suspend() error {
+	if c.wasapiContext != nil {
+		return c.wasapiContext.Suspend()
+	}
 	if c.winmmContext != nil {
 		return c.winmmContext.Suspend()
 	}
@@ -47,6 +62,9 @@ func (c *context) Suspend() error {
 }
 
 func (c *context) Resume() error {
+	if c.wasapiContext != nil {
+		return c.wasapiContext.Resume()
+	}
 	if c.winmmContext != nil {
 		return c.winmmContext.Resume()
 	}
@@ -54,6 +72,9 @@ func (c *context) Resume() error {
 }
 
 func (c *context) Err() error {
+	if c.wasapiContext != nil {
+		return c.wasapiContext.Err()
+	}
 	if c.winmmContext != nil {
 		return c.winmmContext.Err()
 	}

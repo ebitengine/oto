@@ -96,8 +96,8 @@ func newWinMMContext(sampleRate, channelCount int, players *players) (*winmmCont
 		nChannels:       uint16(channelCount),
 		nSamplesPerSec:  uint32(sampleRate),
 		nAvgBytesPerSec: uint32(sampleRate * nBlockAlign),
-		wBitsPerSample:  bitsPerSample,
 		nBlockAlign:     uint16(nBlockAlign),
+		wBitsPerSample:  bitsPerSample,
 	}
 
 	// TOOD: What about using an event instead of a callback? PortAudio and other libraries do that.
