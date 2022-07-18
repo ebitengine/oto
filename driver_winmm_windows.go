@@ -31,7 +31,7 @@ const headerBufferSize = 4096
 type header struct {
 	waveOut uintptr
 	buffer  []float32
-	waveHdr *wavehdr
+	waveHdr *_WAVEHDR
 }
 
 func newHeader(waveOut uintptr, bufferSizeInBytes int) (*header, error) {
@@ -39,7 +39,7 @@ func newHeader(waveOut uintptr, bufferSizeInBytes int) (*header, error) {
 		waveOut: waveOut,
 		buffer:  make([]float32, bufferSizeInBytes/4),
 	}
-	h.waveHdr = &wavehdr{
+	h.waveHdr = &_WAVEHDR{
 		lpData:         uintptr(unsafe.Pointer(&h.buffer[0])),
 		dwBufferLength: uint32(bufferSizeInBytes),
 	}
@@ -58,7 +58,7 @@ func (h *header) Write(data []float32) error {
 }
 
 func (h *header) IsQueued() bool {
-	return h.waveHdr.dwFlags&whdrInqueue != 0
+	return h.waveHdr.dwFlags&_WHDR_INQUEUE != 0
 }
 
 func (h *header) Close() error {
@@ -91,8 +91,8 @@ func newWinMMContext(sampleRate, channelCount int, players *players) (*winmmCont
 
 	const bitsPerSample = 32
 	nBlockAlign := channelCount * bitsPerSample / 8
-	f := &waveformatex{
-		wFormatTag:      waveFormatIEEEFloat,
+	f := &_WAVEFORMATEX{
+		wFormatTag:      _WAVE_FORMAT_IEEE_FLOAT,
 		nChannels:       uint16(channelCount),
 		nSamplesPerSec:  uint32(sampleRate),
 		nAvgBytesPerSec: uint32(sampleRate * nBlockAlign),
@@ -220,7 +220,7 @@ func (c *winmmContext) appendBuffers() {
 
 		if err := h.Write(c.buf32); err != nil {
 			switch {
-			case errors.Is(err, mmsyserrNomem):
+			case errors.Is(err, _MMSYSERR_NOMEM):
 				continue
 			case errors.Is(err, windows.ERROR_NOT_FOUND):
 				// This error can happen when e.g. a new HDMI connection is detected (#51).
