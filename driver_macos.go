@@ -36,15 +36,15 @@ func oto_setNotificationHandler() {
 	class.AddMethod(objc.RegisterName("receiveWakeNote:\x00"), objc.IMP(oto_setGlobalResume), "v@:@\x00")
 	class.Register()
 	//OtoNotificationObserver *observer = [OtoNotificationObserver new];
-	observer := objc.Send(class, objc.RegisterName("new\x00"))
+	observer := objc.Id(class).Send(objc.RegisterName("new\x00"))
 	//id notificationCenter = [[NSWorkspace sharedWorkspace] notificationCenter];
-	notificationCenter := objc.Send(objc.Class(objc.Send(objc.GetClass("NSWorkspace\x00"), objc.RegisterName("sharedWorkspace\x00"))), objc.RegisterName("notificationCenter\x00"))
+	notificationCenter := objc.Id.Send(objc.Id.Send(objc.Id(objc.GetClass("NSWorkspace\x00")), objc.RegisterName("sharedWorkspace\x00")), objc.RegisterName("notificationCenter\x00"))
 	//[notificationCenter
 	//      addObserver:observer
 	//         selector:@selector(receiveSleepNote:)
 	//             name:NSWorkspaceWillSleepNotification
 	//           object:NULL];
-	objc.Send(objc.Class(notificationCenter), objc.RegisterName("addObserver:selector:name:object:\x00"),
+	notificationCenter.Send(objc.RegisterName("addObserver:selector:name:object:\x00"),
 		observer,
 		objc.RegisterName("receiveSleepNote:\x00"),
 		// Dlsym returns a pointer to the object so dereference it
@@ -56,7 +56,7 @@ func oto_setNotificationHandler() {
 	//         selector:@selector(receiveWakeNote:)
 	//             name:NSWorkspaceDidWakeNotification
 	//           object:NULL];
-	objc.Send(objc.Class(notificationCenter), objc.RegisterName("addObserver:selector:name:object:\x00"),
+	notificationCenter.Send(objc.RegisterName("addObserver:selector:name:object:\x00"),
 		observer,
 		objc.RegisterName("receiveWakeNote:\x00"),
 		// Dlsym returns a pointer to the object so dereference it
