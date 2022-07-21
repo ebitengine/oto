@@ -14,6 +14,7 @@
 
 package oto
 
+import _ "runtime/cgo" // TODO: remove once purego(#1) is solved.
 import (
 	"fmt"
 	"sync"
