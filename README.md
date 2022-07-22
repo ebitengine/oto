@@ -27,6 +27,7 @@ A low-level library to play sound.
 - Android
 - iOS
 - WebAssembly
+- Xbox
 
 ## Prerequisite
 
