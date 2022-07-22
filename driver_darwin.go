@@ -217,10 +217,10 @@ func oto_render(inUserData unsafe.Pointer, inAQ _AudioQueueRef, inBuffer _AudioQ
 	theContext.cond.Signal()
 }
 
-func oto_setGlobalPause(self objc.Id, _cmd objc.SEL, notification uintptr) {
+func oto_setGlobalPause(self objc.Id, _cmd objc.SEL, notification objc.Id) {
 	theContext.Suspend()
 }
 
-func oto_setGlobalResume(self objc.Id, _cmd objc.SEL, notification uintptr) {
+func oto_setGlobalResume(self objc.Id, _cmd objc.SEL, notification objc.Id) {
 	theContext.Resume()
 }
