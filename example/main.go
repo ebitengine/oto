@@ -29,8 +29,8 @@ import (
 )
 
 var (
-	sampleRate      = flag.Int("samplerate", 44100, "sample rate")
-	channelCount    = flag.Int("channelnum", 2, "number of channel")
+	sampleRate      = flag.Int("samplerate", 48000, "sample rate")
+	channelCount    = flag.Int("channelcount", 2, "number of channel")
 	bitDepthInBytes = flag.Int("bitdepthinbytes", 2, "bit depth in bytes")
 )
 
