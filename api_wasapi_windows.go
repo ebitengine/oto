@@ -259,10 +259,13 @@ func (i *_IAudioClient2) IsFormatSupported(shareMode _AUDCLNT_SHAREMODE, pFormat
 	r, _, _ := syscall.Syscall6(i.vtbl.IsFormatSupported, 4, uintptr(unsafe.Pointer(i)),
 		uintptr(shareMode), uintptr(unsafe.Pointer(pFormat)), uintptr(unsafe.Pointer(&closestMatch)),
 		0, 0)
-	if uint32(r) != uint32(windows.S_OK) && uint32(r) != uint32(windows.S_FALSE) {
+	if uint32(r) != uint32(windows.S_OK) {
+		if uint32(r) == uint32(windows.S_FALSE) {
+			return closestMatch, nil
+		}
 		return nil, fmt.Errorf("oto: IAudioClient2::IsFormatSupported failed: HRESULT(%d)", uint32(r))
 	}
-	return closestMatch, nil
+	return nil, nil
 }
 
 func (i *_IAudioClient2) SetClientProperties(pProperties *_AudioClientProperties) error {

@@ -161,8 +161,12 @@ func (c *wasapiContext) initOnCOMThread() error {
 		dwChannelMask:   channelMask,
 		SubFormat:       _KSDATAFORMAT_SUBTYPE_IEEE_FLOAT,
 	}
-	if _, err := c.client.IsFormatSupported(_AUDCLNT_SHAREMODE_SHARED, f); err != nil {
+	closest, err := c.client.IsFormatSupported(_AUDCLNT_SHAREMODE_SHARED, f)
+	if err != nil {
 		return err
+	}
+	if closest != nil {
+		return fmt.Errorf("oto: the specified format is not supported (there is the closest format instead)")
 	}
 	c.mixFormat = f
 
