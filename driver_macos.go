@@ -36,9 +36,9 @@ func oto_setNotificationHandler() {
 	class.AddMethod(objc.RegisterName("receiveWakeNote:\x00"), objc.IMP(oto_setGlobalResume), "v@:@\x00")
 	class.Register()
 	//OtoNotificationObserver *observer = [OtoNotificationObserver new];
-	observer := objc.Id(class).Send(objc.RegisterName("new\x00"))
+	observer := objc.ID(class).Send(objc.RegisterName("new\x00"))
 	//id notificationCenter = [[NSWorkspace sharedWorkspace] notificationCenter];
-	notificationCenter := objc.Id(objc.GetClass("NSWorkspace\x00")).Send(objc.RegisterName("sharedWorkspace\x00")).Send(objc.RegisterName("notificationCenter\x00"))
+	notificationCenter := objc.ID(objc.GetClass("NSWorkspace\x00")).Send(objc.RegisterName("sharedWorkspace\x00")).Send(objc.RegisterName("notificationCenter\x00"))
 	//[notificationCenter
 	//      addObserver:observer
 	//         selector:@selector(receiveSleepNote:)
