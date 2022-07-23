@@ -25,11 +25,6 @@ import (
 
 var (
 	ole32 = windows.NewLazySystemDLL("ole32")
-
-	// The following DLL names are taken from
-	// https://docs.microsoft.com/ja-jp/windows/win32/coreaudio/header-files-and-system-components
-
-	// audioses = windows.NewLazySystemDLL("Audioses")
 )
 
 var (
