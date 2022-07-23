@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"reflect"
 	"runtime"
+	"sync"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -77,6 +78,10 @@ type wasapiContext struct {
 	mixFormat        *_WAVEFORMATEXTENSIBLE
 	bufferFrames     uint32
 	renderClient     *_IAudioRenderClient
+
+	buf []float32
+
+	m sync.Mutex
 }
 
 func newWASAPIContext(sampleRate, channelCount int, players *players) (*wasapiContext, chan struct{}, error) {
@@ -226,7 +231,6 @@ func (c *wasapiContext) initOnCOMThread() error {
 }
 
 func (c *wasapiContext) loopOnRenderThread() error {
-	var buf []float32
 	for {
 		evt, err := windows.WaitForSingleObject(c.sampleReadyEvent, 2000)
 		if err != nil {
@@ -236,62 +240,86 @@ func (c *wasapiContext) loopOnRenderThread() error {
 			return fmt.Errorf("oto: WaitForSingleObject failed: returned value: %d", evt)
 		}
 
-		paddingFrames, err := c.client.GetCurrentPadding()
-		if err != nil {
+		if err := c.writeOnRenderThread(); err != nil {
 			return err
 		}
-
-		frames := c.bufferFrames - paddingFrames
-		if frames <= 0 {
-			continue
-		}
-
-		// Get the destination buffer.
-		dstBuf, err := c.renderClient.GetBuffer(frames)
-		if err != nil {
-			return err
-		}
-
-		// Calculate the buffer size.
-		buflen := int(frames) * c.channelCount
-		if cap(buf) < buflen {
-			buf = make([]float32, buflen)
-		} else {
-			buf = buf[:buflen]
-		}
-
-		// Read the buffer from the players.
-		c.players.read(buf)
-
-		// Copy the read buf to the destination buffer.
-		var dst []float32
-		h := (*reflect.SliceHeader)(unsafe.Pointer(&dst))
-		h.Data = uintptr(unsafe.Pointer(dstBuf))
-		h.Len = buflen
-		h.Cap = buflen
-		copy(dst, buf)
-
-		// Release the buffer.
-		if err := c.renderClient.ReleaseBuffer(frames, 0); err != nil {
-			return err
-		}
-
-		buf = buf[:0]
 	}
+}
+
+func (c *wasapiContext) writeOnRenderThread() error {
+	c.m.Lock()
+	defer c.m.Unlock()
+
+	paddingFrames, err := c.client.GetCurrentPadding()
+	if err != nil {
+		return err
+	}
+
+	frames := c.bufferFrames - paddingFrames
+	if frames <= 0 {
+		return nil
+	}
+
+	// Get the destination buffer.
+	dstBuf, err := c.renderClient.GetBuffer(frames)
+	if err != nil {
+		return err
+	}
+
+	// Calculate the buffer size.
+	buflen := int(frames) * c.channelCount
+	if cap(c.buf) < buflen {
+		c.buf = make([]float32, buflen)
+	} else {
+		c.buf = c.buf[:buflen]
+	}
+
+	// Read the buffer from the players.
+	c.players.read(c.buf)
+
+	// Copy the read buf to the destination buffer.
+	var dst []float32
+	h := (*reflect.SliceHeader)(unsafe.Pointer(&dst))
+	h.Data = uintptr(unsafe.Pointer(dstBuf))
+	h.Len = buflen
+	h.Cap = buflen
+	copy(dst, c.buf)
+
+	// Release the buffer.
+	if err := c.renderClient.ReleaseBuffer(frames, 0); err != nil {
+		return err
+	}
+
+	c.buf = c.buf[:0]
+	return nil
 }
 
 func (c *wasapiContext) Suspend() error {
-	if err := c.client.Stop(); err != nil {
-		return err
-	}
-	return nil
+	var cerr error
+	c.comThread.Run(func() {
+		c.m.Lock()
+		defer c.m.Unlock()
+
+		if err := c.client.Stop(); err != nil {
+			cerr = err
+			return
+		}
+	})
+	return cerr
 }
 
 func (c *wasapiContext) Resume() error {
-	if err := c.client.Start(); err != nil {
-		return err
-	}
-	return nil
+	var cerr error
+	c.comThread.Run(func() {
+		c.m.Lock()
+		defer c.m.Unlock()
+
+		if err := c.client.Start(); err != nil {
+			cerr = err
+			return
+		}
+	})
+	return cerr
 }
 
 func (c *wasapiContext) Err() error {
