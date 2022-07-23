@@ -281,10 +281,16 @@ func (c *wasapiContext) loopOnRenderThread() error {
 }
 
 func (c *wasapiContext) Suspend() error {
+	if err := c.client.Stop(); err != nil {
+		return err
+	}
 	return nil
 }
 
 func (c *wasapiContext) Resume() error {
+	if err := c.client.Start(); err != nil {
+		return err
+	}
 	return nil
 }
 
