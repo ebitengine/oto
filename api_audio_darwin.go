@@ -55,7 +55,7 @@ type _AudioQueueBuffer struct {
 	mPacketDescriptionCount    uint32
 }
 
-type _AudioQueueOutputCallback func(inUserData unsafe.Pointer, inAQ _AudioQueueRef, inBuffer _AudioQueueBufferRef)
+type _AudioQueueOutputCallback func(inUserData unsafe.Pointer, inAQ _AudioQueueRef, inBuffer _AudioQueueBufferRef) uintptr
 
 var (
 	toolbox                    = purego.Dlopen("/System/Library/Frameworks/AudioToolbox.framework/Versions/Current/AudioToolbox", purego.RTLD_GLOBAL)
