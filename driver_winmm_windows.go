@@ -79,10 +79,7 @@ type winmmContext struct {
 
 var theWinMMContext *winmmContext
 
-func newWinMMContext(sampleRate, channelCount int, players *players) (*winmmContext, chan struct{}, error) {
-	ready := make(chan struct{})
-	close(ready)
-
+func newWinMMContext(sampleRate, channelCount int, players *players) (*winmmContext, error) {
 	c := &winmmContext{
 		players: players,
 		cond:    sync.NewCond(&sync.Mutex{}),
@@ -105,10 +102,10 @@ func newWinMMContext(sampleRate, channelCount int, players *players) (*winmmCont
 	if errors.Is(err, windows.ERROR_NOT_FOUND) {
 		// TODO: No device was found. Return the dummy device (#77).
 		// TODO: Retry to open the device when possible.
-		return nil, nil, err
+		return nil, err
 	}
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	c.waveOut = w
@@ -116,7 +113,7 @@ func newWinMMContext(sampleRate, channelCount int, players *players) (*winmmCont
 	for len(c.headers) < cap(c.headers) {
 		h, err := newHeader(c.waveOut, headerBufferSize)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		c.headers = append(c.headers, h)
 	}
@@ -124,7 +121,7 @@ func newWinMMContext(sampleRate, channelCount int, players *players) (*winmmCont
 	c.buf32 = make([]float32, headerBufferSize/4)
 	go c.loop()
 
-	return c, ready, nil
+	return c, nil
 }
 
 func (c *winmmContext) Suspend() error {

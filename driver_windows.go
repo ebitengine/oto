@@ -27,6 +27,9 @@ type context struct {
 
 	wasapiContext *wasapiContext
 	winmmContext  *winmmContext
+
+	ready chan struct{}
+	err   atomicError
 }
 
 func newContext(sampleRate, channelCount, bitDepthInBytes int) (*context, chan struct{}, error) {
@@ -36,22 +39,33 @@ func newContext(sampleRate, channelCount, bitDepthInBytes int) (*context, chan s
 		channelCount:    channelCount,
 		bitDepthInBytes: bitDepthInBytes,
 		players:         p,
+		ready:           make(chan struct{}),
 	}
 
-	xc, ready, err0 := newWASAPIContext(sampleRate, channelCount, p)
-	if err0 == nil {
-		ctx.wasapiContext = xc
-		return ctx, ready, nil
-	}
-	wc, ready, err1 := newWinMMContext(sampleRate, channelCount, p)
-	if err1 == nil {
-		ctx.winmmContext = wc
-		return ctx, ready, nil
-	}
-	return nil, nil, fmt.Errorf("oto: initialization failed: WASAPI: %v, WinMM: %v", err0, err1)
+	// Initializing drivers might take some time. Do this asynchronously.
+	go func() {
+		defer close(ctx.ready)
+
+		xc, err0 := newWASAPIContext(sampleRate, channelCount, p)
+		if err0 == nil {
+			ctx.wasapiContext = xc
+			return
+		}
+
+		wc, err1 := newWinMMContext(sampleRate, channelCount, p)
+		if err1 == nil {
+			ctx.winmmContext = wc
+			return
+		}
+
+		ctx.err.TryStore(fmt.Errorf("oto: initialization failed: WASAPI: %v, WinMM: %v", err0, err1))
+	}()
+
+	return ctx, ctx.ready, nil
 }
 
 func (c *context) Suspend() error {
+	<-c.ready
 	if c.wasapiContext != nil {
 		return c.wasapiContext.Suspend()
 	}
@@ -62,6 +76,7 @@ func (c *context) Suspend() error {
 }
 
 func (c *context) Resume() error {
+	<-c.ready
 	if c.wasapiContext != nil {
 		return c.wasapiContext.Resume()
 	}
@@ -72,6 +87,16 @@ func (c *context) Resume() error {
 }
 
 func (c *context) Err() error {
+	if err := c.err.Load(); err != nil {
+		return err
+	}
+
+	select {
+	case <-c.ready:
+	default:
+		return nil
+	}
+
 	if c.wasapiContext != nil {
 		return c.wasapiContext.Err()
 	}

@@ -84,10 +84,10 @@ type wasapiContext struct {
 	m sync.Mutex
 }
 
-func newWASAPIContext(sampleRate, channelCount int, players *players) (*wasapiContext, chan struct{}, error) {
+func newWASAPIContext(sampleRate, channelCount int, players *players) (*wasapiContext, error) {
 	t, err := newCOMThread()
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	c := &wasapiContext{
@@ -105,13 +105,10 @@ func newWASAPIContext(sampleRate, channelCount int, players *players) (*wasapiCo
 		}
 	})
 	if cerr != nil {
-		return nil, nil, cerr
+		return nil, cerr
 	}
 
-	ready := make(chan struct{})
-	close(ready)
-
-	return c, ready, nil
+	return c, nil
 }
 
 func (c *wasapiContext) initOnCOMThread() error {
