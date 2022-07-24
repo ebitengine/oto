@@ -210,20 +210,17 @@ func (c *context) Err() error {
 	return nil
 }
 
-func oto_render(inUserData unsafe.Pointer, inAQ _AudioQueueRef, inBuffer _AudioQueueBufferRef) uintptr {
+func oto_render(inUserData unsafe.Pointer, inAQ _AudioQueueRef, inBuffer _AudioQueueBufferRef) {
 	theContext.cond.L.Lock()
 	defer theContext.cond.L.Unlock()
 	theContext.unqueuedBuffers = append(theContext.unqueuedBuffers, inBuffer)
 	theContext.cond.Signal()
-	return 0
 }
 
-func oto_setGlobalPause(self objc.ID, _cmd objc.SEL, notification objc.ID) uintptr {
+func oto_setGlobalPause(self objc.ID, _cmd objc.SEL, notification objc.ID) {
 	theContext.Suspend()
-	return 0
 }
 
-func oto_setGlobalResume(self objc.ID, _cmd objc.SEL, notification objc.ID) uintptr {
+func oto_setGlobalResume(self objc.ID, _cmd objc.SEL, notification objc.ID) {
 	theContext.Resume()
-	return 0
 }
