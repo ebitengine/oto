@@ -1,6 +1,6 @@
 package oto
 
-import _ "runtime/cgo" // TODO: remove once purego(#1) is solved.
+import _ "runtime/cgo" // TODO: remove once purego(#12) is solved.
 import (
 	"unsafe"
 
