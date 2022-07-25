@@ -35,15 +35,10 @@ func setNotificationHandler() {
 	class.AddMethod(objc.RegisterName("receiveSleepNote:\x00"), objc.IMP(oto_setGlobalPause), "v@:@\x00")
 	class.AddMethod(objc.RegisterName("receiveWakeNote:\x00"), objc.IMP(oto_setGlobalResume), "v@:@\x00")
 	class.Register()
-	//OtoNotificationObserver *observer = [OtoNotificationObserver new];
+
 	observer := objc.ID(class).Send(objc.RegisterName("new\x00"))
-	//id notificationCenter = [[NSWorkspace sharedWorkspace] notificationCenter];
+
 	notificationCenter := objc.ID(objc.GetClass("NSWorkspace\x00")).Send(objc.RegisterName("sharedWorkspace\x00")).Send(objc.RegisterName("notificationCenter\x00"))
-	//[notificationCenter
-	//      addObserver:observer
-	//         selector:@selector(receiveSleepNote:)
-	//             name:NSWorkspaceWillSleepNotification
-	//           object:NULL];
 	notificationCenter.Send(objc.RegisterName("addObserver:selector:name:object:\x00"),
 		observer,
 		objc.RegisterName("receiveSleepNote:\x00"),
@@ -51,11 +46,6 @@ func setNotificationHandler() {
 		*(*uintptr)(unsafe.Pointer(purego.Dlsym(appkit, "NSWorkspaceWillSleepNotification"))),
 		0,
 	)
-	//  [notificationCenter
-	//      addObserver:observer
-	//         selector:@selector(receiveWakeNote:)
-	//             name:NSWorkspaceDidWakeNotification
-	//           object:NULL];
 	notificationCenter.Send(objc.RegisterName("addObserver:selector:name:object:\x00"),
 		observer,
 		objc.RegisterName("receiveWakeNote:\x00"),
