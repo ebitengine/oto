@@ -105,7 +105,7 @@ func newContext(sampleRate, channelCount, bitDepthInBytes int) (*context, chan s
 	c.audioQueue = q
 	c.unqueuedBuffers = bs
 
-	oto_setNotificationHandler()
+	setNotificationHandler()
 
 	var retryCount int
 try:

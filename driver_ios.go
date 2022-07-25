@@ -23,9 +23,7 @@ package oto
 
 const bufferSizeInBytes = 12288
 
-var _ = purego.Dlopen("/System/Library/Frameworks/AppKit.framework/Versions/Current/AppKit", purego.RTLD_GLOBAL)
-
-func oto_setNotificationHandler() {
+func setNotificationHandler() {
 	// AVAudioSessionInterruptionNotification is not reliable on iOS. Rely on
 	// applicationWillResignActive and applicationDidBecomeActive instead. See
 	// https://stackoverflow.com/questions/24404463/ios-siri-not-available-does-not-return-avaudiosessioninterruptionoptionshouldre

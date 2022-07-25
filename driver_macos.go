@@ -28,8 +28,8 @@ const bufferSizeInBytes = 2048
 
 var appkit = purego.Dlopen("/System/Library/Frameworks/AppKit.framework/Versions/Current/AppKit", purego.RTLD_GLOBAL)
 
-// oto_setNotificationHandler sets a handler for sleep/wake notifications.
-func oto_setNotificationHandler() {
+// setNotificationHandler sets a handler for sleep/wake notifications.
+func setNotificationHandler() {
 	// Create the Observer object
 	class := objc.AllocateClassPair(objc.GetClass("NSObject\x00"), "OtoNotificationObserver\x00", 0)
 	class.AddMethod(objc.RegisterName("receiveSleepNote:\x00"), objc.IMP(oto_setGlobalPause), "v@:@\x00")
