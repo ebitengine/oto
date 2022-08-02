@@ -229,7 +229,7 @@ func (c *wasapiContext) initOnCOMThread() error {
 
 func (c *wasapiContext) loopOnRenderThread() error {
 	for {
-		evt, err := windows.WaitForSingleObject(c.sampleReadyEvent, 2000)
+		evt, err := windows.WaitForSingleObject(c.sampleReadyEvent, windows.INFINITE)
 		if err != nil {
 			return err
 		}
