@@ -30,9 +30,7 @@ import (
 )
 
 type context struct {
-	sampleRate      int
-	channelCount    int
-	bitDepthInBytes int
+	channelCount int
 
 	suspended bool
 
@@ -110,11 +108,9 @@ func newContext(sampleRate, channelCount, bitDepthInBytes int) (*context, chan s
 	close(ready)
 
 	c := &context{
-		sampleRate:      sampleRate,
-		channelCount:    channelCount,
-		bitDepthInBytes: bitDepthInBytes,
-		cond:            sync.NewCond(&sync.Mutex{}),
-		players:         newPlayers(sampleRate, channelCount, bitDepthInBytes),
+		channelCount: channelCount,
+		cond:         sync.NewCond(&sync.Mutex{}),
+		players:      newPlayers(sampleRate, channelCount, bitDepthInBytes),
 	}
 	theContext = c
 
@@ -154,7 +150,7 @@ func newContext(sampleRate, channelCount, bitDepthInBytes int) (*context, chan s
 	}
 
 	go func() {
-		buf32 := make([]float32, int(periodSize)*c.channelCount)
+		buf32 := make([]float32, int(periodSize)*channelCount)
 		for {
 			if !c.readAndWrite(buf32) {
 				return

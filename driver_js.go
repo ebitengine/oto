@@ -23,10 +23,6 @@ import (
 )
 
 type context struct {
-	sampleRate      int
-	channelCount    int
-	bitDepthInBytes int
-
 	audioContext            js.Value
 	scriptProcessor         js.Value
 	scriptProcessorCallback js.Func
@@ -50,11 +46,8 @@ func newContext(sampleRate int, channelCount int, bitDepthInBytes int) (*context
 	options.Set("sampleRate", sampleRate)
 
 	d := &context{
-		sampleRate:      sampleRate,
-		channelCount:    channelCount,
-		bitDepthInBytes: bitDepthInBytes,
-		audioContext:    class.New(options),
-		players:         newPlayers(sampleRate, channelCount, bitDepthInBytes),
+		audioContext: class.New(options),
+		players:      newPlayers(sampleRate, channelCount, bitDepthInBytes),
 	}
 
 	// 4096 was not great at least on Safari 15.

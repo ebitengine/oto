@@ -19,10 +19,6 @@ import (
 )
 
 type context struct {
-	sampleRate      int
-	channelCount    int
-	bitDepthInBytes int
-
 	players *players
 }
 
@@ -31,10 +27,7 @@ func newContext(sampleRate int, channelCount int, bitDepthInBytes int) (*context
 	close(ready)
 
 	c := &context{
-		sampleRate:      sampleRate,
-		channelCount:    channelCount,
-		bitDepthInBytes: bitDepthInBytes,
-		players:         newPlayers(sampleRate, channelCount, bitDepthInBytes),
+		players: newPlayers(sampleRate, channelCount, bitDepthInBytes),
 	}
 	if err := oboe.Play(sampleRate, channelCount, bitDepthInBytes, c.players.read); err != nil {
 		return nil, nil, err

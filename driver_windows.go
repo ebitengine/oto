@@ -19,9 +19,8 @@ import (
 )
 
 type context struct {
-	sampleRate      int
-	channelCount    int
-	bitDepthInBytes int
+	sampleRate   int
+	channelCount int
 
 	players *players
 
@@ -35,11 +34,10 @@ type context struct {
 func newContext(sampleRate, channelCount, bitDepthInBytes int) (*context, chan struct{}, error) {
 	p := newPlayers(sampleRate, channelCount, bitDepthInBytes)
 	ctx := &context{
-		sampleRate:      sampleRate,
-		channelCount:    channelCount,
-		bitDepthInBytes: bitDepthInBytes,
-		players:         p,
-		ready:           make(chan struct{}),
+		sampleRate:   sampleRate,
+		channelCount: channelCount,
+		players:      p,
+		ready:        make(chan struct{}),
 	}
 
 	// Initializing drivers might take some time. Do this asynchronously.

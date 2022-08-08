@@ -67,10 +67,6 @@ func newAudioQueue(sampleRate, channelCount, bitDepthInBytes int) (_AudioQueueRe
 }
 
 type context struct {
-	sampleRate      int
-	channelCount    int
-	bitDepthInBytes int
-
 	audioQueue      _AudioQueueRef
 	unqueuedBuffers []_AudioQueueBufferRef
 
@@ -90,11 +86,8 @@ func newContext(sampleRate, channelCount, bitDepthInBytes int) (*context, chan s
 	close(ready)
 
 	c := &context{
-		sampleRate:      sampleRate,
-		channelCount:    channelCount,
-		bitDepthInBytes: bitDepthInBytes,
-		cond:            sync.NewCond(&sync.Mutex{}),
-		players:         newPlayers(sampleRate, channelCount, bitDepthInBytes),
+		cond:    sync.NewCond(&sync.Mutex{}),
+		players: newPlayers(sampleRate, channelCount, bitDepthInBytes),
 	}
 	theContext = c
 
