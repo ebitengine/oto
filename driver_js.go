@@ -20,6 +20,8 @@ import (
 	"runtime"
 	"syscall/js"
 	"unsafe"
+
+	"github.com/hajimehoshi/oto/v2/mux"
 )
 
 type context struct {
@@ -29,7 +31,7 @@ type context struct {
 	ready                   bool
 	callbacks               map[string]js.Func
 
-	players *players
+	mux *mux.Mux
 }
 
 func newContext(sampleRate int, channelCount int, bitDepthInBytes int) (*context, chan struct{}, error) {
@@ -47,7 +49,7 @@ func newContext(sampleRate int, channelCount int, bitDepthInBytes int) (*context
 
 	d := &context{
 		audioContext: class.New(options),
-		players:      newPlayers(sampleRate, channelCount, bitDepthInBytes),
+		mux:          mux.New(sampleRate, channelCount, bitDepthInBytes),
 	}
 
 	// 4096 was not great at least on Safari 15.
@@ -62,7 +64,7 @@ func newContext(sampleRate int, channelCount int, bitDepthInBytes int) (*context
 	// TODO: Use AudioWorklet if available.
 	sp := d.audioContext.Call("createScriptProcessor", bufferSizeInBytes/4/channelCount, 0, channelCount)
 	f := js.FuncOf(func(this js.Value, arguments []js.Value) interface{} {
-		d.players.read(buf32)
+		d.mux.ReadFloat32s(buf32)
 		for i := 0; i < channelCount; i++ {
 			for j := range chBuf32[i] {
 				chBuf32[i][j] = buf32[j*channelCount+i]

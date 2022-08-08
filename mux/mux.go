@@ -12,7 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package oto
+// Package mux offers APIs for a low-level multiplexer of audio players.
+// Usually you don't have to use this.
+package mux
 
 import (
 	"errors"
@@ -22,7 +24,8 @@ import (
 	"time"
 )
 
-type players struct {
+// Mux is a low-level multiplexer of audio players.
+type Mux struct {
 	sampleRate      int
 	channelCount    int
 	bitDepthInBytes int
@@ -32,8 +35,9 @@ type players struct {
 	cond    *sync.Cond
 }
 
-func newPlayers(sampleRate, channelCount, bitDepthInBytes int) *players {
-	p := &players{
+// New creates a new Mux.
+func New(sampleRate, channelCount, bitDepthInBytes int) *Mux {
+	p := &Mux{
 		sampleRate:      sampleRate,
 		channelCount:    channelCount,
 		bitDepthInBytes: bitDepthInBytes,
@@ -43,8 +47,8 @@ func newPlayers(sampleRate, channelCount, bitDepthInBytes int) *players {
 	return p
 }
 
-func (ps *players) shouldWait() bool {
-	for p := range ps.players {
+func (m *Mux) shouldWait() bool {
+	for p := range m.players {
 		if p.canReadSourceToBuffer() {
 			return false
 		}
@@ -52,26 +56,26 @@ func (ps *players) shouldWait() bool {
 	return true
 }
 
-func (ps *players) wait() {
-	ps.cond.L.Lock()
-	defer ps.cond.L.Unlock()
+func (m *Mux) wait() {
+	m.cond.L.Lock()
+	defer m.cond.L.Unlock()
 
-	for ps.shouldWait() {
-		ps.cond.Wait()
+	for m.shouldWait() {
+		m.cond.Wait()
 	}
 }
 
-func (ps *players) loop() {
+func (m *Mux) loop() {
 	var players []*playerImpl
 	for {
-		ps.wait()
+		m.wait()
 
-		ps.cond.L.Lock()
+		m.cond.L.Lock()
 		players = players[:0]
-		for p := range ps.players {
+		for p := range m.players {
 			players = append(players, p)
 		}
-		ps.cond.L.Unlock()
+		m.cond.L.Unlock()
 
 		allZero := true
 		for _, p := range players {
@@ -89,32 +93,32 @@ func (ps *players) loop() {
 	}
 }
 
-func (ps *players) addPlayer(player *playerImpl) {
-	ps.cond.L.Lock()
-	defer ps.cond.L.Unlock()
+func (m *Mux) addPlayer(player *playerImpl) {
+	m.cond.L.Lock()
+	defer m.cond.L.Unlock()
 
-	if ps.players == nil {
-		ps.players = map[*playerImpl]struct{}{}
+	if m.players == nil {
+		m.players = map[*playerImpl]struct{}{}
 	}
-	ps.players[player] = struct{}{}
-	ps.cond.Signal()
+	m.players[player] = struct{}{}
+	m.cond.Signal()
 }
 
-func (ps *players) removePlayer(player *playerImpl) {
-	ps.cond.L.Lock()
-	defer ps.cond.L.Unlock()
+func (m *Mux) removePlayer(player *playerImpl) {
+	m.cond.L.Lock()
+	defer m.cond.L.Unlock()
 
-	delete(ps.players, player)
-	ps.cond.Signal()
+	delete(m.players, player)
+	m.cond.Signal()
 }
 
-func (ps *players) read(buf []float32) {
-	ps.cond.L.Lock()
-	players := make([]*playerImpl, 0, len(ps.players))
-	for p := range ps.players {
+func (m *Mux) ReadFloat32s(buf []float32) {
+	m.cond.L.Lock()
+	players := make([]*playerImpl, 0, len(m.players))
+	for p := range m.players {
 		players = append(players, p)
 	}
-	ps.cond.L.Unlock()
+	m.cond.L.Unlock()
 
 	for i := range buf {
 		buf[i] = 0
@@ -122,10 +126,10 @@ func (ps *players) read(buf []float32) {
 	for _, p := range players {
 		p.readBufferAndAdd(buf)
 	}
-	ps.cond.Signal()
+	m.cond.Signal()
 }
 
-type player struct {
+type Player struct {
 	p *playerImpl
 }
 
@@ -138,7 +142,7 @@ const (
 )
 
 type playerImpl struct {
-	players    *players
+	players    *Mux
 	src        io.Reader
 	volume     float64
 	err        error
@@ -151,8 +155,8 @@ type playerImpl struct {
 	m sync.Mutex
 }
 
-func (p *players) newPlayer(src io.Reader) *player {
-	pl := &player{
+func (p *Mux) NewPlayer(src io.Reader) *Player {
+	pl := &Player{
 		p: &playerImpl{
 			players:    p,
 			src:        src,
@@ -160,11 +164,11 @@ func (p *players) newPlayer(src io.Reader) *player {
 			bufferSize: p.defaultBufferSize(),
 		},
 	}
-	runtime.SetFinalizer(pl, (*player).Close)
+	runtime.SetFinalizer(pl, (*Player).Close)
 	return pl
 }
 
-func (p *player) Err() error {
+func (p *Player) Err() error {
 	return p.p.Err()
 }
 
@@ -175,7 +179,7 @@ func (p *playerImpl) Err() error {
 	return p.err
 }
 
-func (p *player) Play() {
+func (p *Player) Play() {
 	p.p.Play()
 }
 
@@ -199,7 +203,7 @@ func (p *playerImpl) Play() {
 	}
 }
 
-func (p *player) SetBufferSize(bufferSize int) {
+func (p *Player) SetBufferSize(bufferSize int) {
 	p.p.setBufferSize(bufferSize)
 }
 
@@ -257,7 +261,7 @@ func (p *playerImpl) playImpl() {
 	p.m.Lock()
 }
 
-func (p *player) Pause() {
+func (p *Player) Pause() {
 	p.p.Pause()
 }
 
@@ -271,7 +275,7 @@ func (p *playerImpl) Pause() {
 	p.state = playerPaused
 }
 
-func (p *player) Seek(offset int64, whence int) (int64, error) {
+func (p *Player) Seek(offset int64, whence int) (int64, error) {
 	return p.p.Seek(offset, whence)
 }
 
@@ -295,7 +299,7 @@ func (p *playerImpl) Seek(offset int64, whence int) (int64, error) {
 	return s.Seek(offset, whence)
 }
 
-func (p *player) Reset() {
+func (p *Player) Reset() {
 	p.p.Reset()
 }
 
@@ -314,7 +318,7 @@ func (p *playerImpl) resetImpl() {
 	p.eof = false
 }
 
-func (p *player) IsPlaying() bool {
+func (p *Player) IsPlaying() bool {
 	return p.p.IsPlaying()
 }
 
@@ -324,7 +328,7 @@ func (p *playerImpl) IsPlaying() bool {
 	return p.state == playerPlay
 }
 
-func (p *player) Volume() float64 {
+func (p *Player) Volume() float64 {
 	return p.p.Volume()
 }
 
@@ -334,7 +338,7 @@ func (p *playerImpl) Volume() float64 {
 	return p.volume
 }
 
-func (p *player) SetVolume(volume float64) {
+func (p *Player) SetVolume(volume float64) {
 	p.p.SetVolume(volume)
 }
 
@@ -344,7 +348,7 @@ func (p *playerImpl) SetVolume(volume float64) {
 	p.volume = volume
 }
 
-func (p *player) UnplayedBufferSize() int {
+func (p *Player) UnplayedBufferSize() int {
 	return p.p.UnplayedBufferSize()
 }
 
@@ -354,7 +358,7 @@ func (p *playerImpl) UnplayedBufferSize() int {
 	return len(p.buf)
 }
 
-func (p *player) Close() error {
+func (p *Player) Close() error {
 	runtime.SetFinalizer(p, nil)
 	return p.p.Close()
 }
@@ -469,9 +473,9 @@ func (p *playerImpl) setErrorImpl(err error) {
 
 // defaultBufferSize returns the default size of the buffer for the audio source.
 // This buffer is used when unreading on pausing the player.
-func (p *players) defaultBufferSize() int {
-	bytesPerSample := p.channelCount * p.bitDepthInBytes
-	s := p.sampleRate * bytesPerSample / 2 // 0.5[s]
+func (m *Mux) defaultBufferSize() int {
+	bytesPerSample := m.channelCount * m.bitDepthInBytes
+	s := m.sampleRate * bytesPerSample / 2 // 0.5[s]
 	// Align s in multiples of bytes per sample, or a buffer could have extra bytes.
 	return s / bytesPerSample * bytesPerSample
 }

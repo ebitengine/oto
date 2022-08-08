@@ -21,6 +21,8 @@ import (
 	"unsafe"
 
 	"golang.org/x/sys/windows"
+
+	"github.com/hajimehoshi/oto/v2/mux"
 )
 
 // Avoid goroutines on Windows (hajimehoshi/ebiten#1768).
@@ -71,18 +73,18 @@ type winmmContext struct {
 
 	buf32 []float32
 
-	players *players
-	err     atomicError
+	mux *mux.Mux
+	err atomicError
 
 	cond *sync.Cond
 }
 
 var theWinMMContext *winmmContext
 
-func newWinMMContext(sampleRate, channelCount int, players *players) (*winmmContext, error) {
+func newWinMMContext(sampleRate, channelCount int, mux *mux.Mux) (*winmmContext, error) {
 	c := &winmmContext{
-		players: players,
-		cond:    sync.NewCond(&sync.Mutex{}),
+		mux:  mux,
+		cond: sync.NewCond(&sync.Mutex{}),
 	}
 	theWinMMContext = c
 
@@ -208,7 +210,7 @@ func (c *winmmContext) appendBuffers() {
 		return
 	}
 
-	c.players.read(c.buf32)
+	c.mux.ReadFloat32s(c.buf32)
 
 	for _, h := range c.headers {
 		if h.IsQueued() {

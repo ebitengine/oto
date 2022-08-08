@@ -16,13 +16,15 @@ package oto
 
 import (
 	"fmt"
+
+	"github.com/hajimehoshi/oto/v2/mux"
 )
 
 type context struct {
 	sampleRate   int
 	channelCount int
 
-	players *players
+	mux *mux.Mux
 
 	wasapiContext *wasapiContext
 	winmmContext  *winmmContext
@@ -32,11 +34,10 @@ type context struct {
 }
 
 func newContext(sampleRate, channelCount, bitDepthInBytes int) (*context, chan struct{}, error) {
-	p := newPlayers(sampleRate, channelCount, bitDepthInBytes)
 	ctx := &context{
 		sampleRate:   sampleRate,
 		channelCount: channelCount,
-		players:      p,
+		mux:          mux.New(sampleRate, channelCount, bitDepthInBytes),
 		ready:        make(chan struct{}),
 	}
 
@@ -44,13 +45,13 @@ func newContext(sampleRate, channelCount, bitDepthInBytes int) (*context, chan s
 	go func() {
 		defer close(ctx.ready)
 
-		xc, err0 := newWASAPIContext(sampleRate, channelCount, p)
+		xc, err0 := newWASAPIContext(sampleRate, channelCount, ctx.mux)
 		if err0 == nil {
 			ctx.wasapiContext = xc
 			return
 		}
 
-		wc, err1 := newWinMMContext(sampleRate, channelCount, p)
+		wc, err1 := newWinMMContext(sampleRate, channelCount, ctx.mux)
 		if err1 == nil {
 			ctx.winmmContext = wc
 			return

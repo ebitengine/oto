@@ -22,6 +22,8 @@ import (
 	"unsafe"
 
 	"golang.org/x/sys/windows"
+
+	"github.com/hajimehoshi/oto/v2/mux"
 )
 
 type comThread struct {
@@ -68,7 +70,7 @@ func (c *comThread) Run(f func()) {
 type wasapiContext struct {
 	sampleRate   int
 	channelCount int
-	players      *players
+	mux          *mux.Mux
 
 	comThread *comThread
 	err       atomicError
@@ -84,7 +86,7 @@ type wasapiContext struct {
 	m sync.Mutex
 }
 
-func newWASAPIContext(sampleRate, channelCount int, players *players) (*wasapiContext, error) {
+func newWASAPIContext(sampleRate, channelCount int, mux *mux.Mux) (*wasapiContext, error) {
 	t, err := newCOMThread()
 	if err != nil {
 		return nil, err
@@ -93,7 +95,7 @@ func newWASAPIContext(sampleRate, channelCount int, players *players) (*wasapiCo
 	c := &wasapiContext{
 		sampleRate:   sampleRate,
 		channelCount: channelCount,
-		players:      players,
+		mux:          mux,
 		comThread:    t,
 	}
 
@@ -272,7 +274,7 @@ func (c *wasapiContext) writeOnRenderThread() error {
 	}
 
 	// Read the buffer from the players.
-	c.players.read(c.buf)
+	c.mux.ReadFloat32s(c.buf)
 
 	// Copy the read buf to the destination buffer.
 	var dst []float32

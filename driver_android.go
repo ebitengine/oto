@@ -16,10 +16,11 @@ package oto
 
 import (
 	"github.com/hajimehoshi/oto/v2/internal/oboe"
+	"github.com/hajimehoshi/oto/v2/mux"
 )
 
 type context struct {
-	players *players
+	mux *mux.Mux
 }
 
 func newContext(sampleRate int, channelCount int, bitDepthInBytes int) (*context, chan struct{}, error) {
@@ -27,9 +28,9 @@ func newContext(sampleRate int, channelCount int, bitDepthInBytes int) (*context
 	close(ready)
 
 	c := &context{
-		players: newPlayers(sampleRate, channelCount, bitDepthInBytes),
+		mux: mux.New(sampleRate, channelCount, bitDepthInBytes),
 	}
-	if err := oboe.Play(sampleRate, channelCount, bitDepthInBytes, c.players.read); err != nil {
+	if err := oboe.Play(sampleRate, channelCount, bitDepthInBytes, c.mux.ReadFloat32s); err != nil {
 		return nil, nil, err
 	}
 	return c, ready, nil

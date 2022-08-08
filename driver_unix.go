@@ -27,6 +27,8 @@ import (
 	"strings"
 	"sync"
 	"unsafe"
+
+	"github.com/hajimehoshi/oto/v2/mux"
 )
 
 type context struct {
@@ -38,8 +40,8 @@ type context struct {
 
 	cond *sync.Cond
 
-	players *players
-	err     atomicError
+	mux *mux.Mux
+	err atomicError
 }
 
 var theContext *context
@@ -110,7 +112,7 @@ func newContext(sampleRate, channelCount, bitDepthInBytes int) (*context, chan s
 	c := &context{
 		channelCount: channelCount,
 		cond:         sync.NewCond(&sync.Mutex{}),
-		players:      newPlayers(sampleRate, channelCount, bitDepthInBytes),
+		mux:          mux.New(sampleRate, channelCount, bitDepthInBytes),
 	}
 	theContext = c
 
@@ -208,7 +210,7 @@ func (c *context) readAndWrite(buf32 []float32) bool {
 		return false
 	}
 
-	c.players.read(buf32)
+	c.mux.ReadFloat32s(buf32)
 
 	for len(buf32) > 0 {
 		n := C.snd_pcm_writei(c.handle, unsafe.Pointer(&buf32[0]), C.snd_pcm_uframes_t(len(buf32)/c.channelCount))

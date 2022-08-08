@@ -82,7 +82,7 @@ func NewContext(sampleRate int, channelCount int, bitDepthInBytes int) (*Context
 //
 // All the functions of a Player returned by NewPlayer are concurrent-safe.
 func (c *Context) NewPlayer(r io.Reader) Player {
-	return c.context.players.newPlayer(r)
+	return c.context.mux.NewPlayer(r)
 }
 
 // Suspend suspends the entire audio play.

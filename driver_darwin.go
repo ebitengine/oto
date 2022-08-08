@@ -21,6 +21,8 @@ import (
 	"unsafe"
 
 	"github.com/ebitengine/purego/objc"
+
+	"github.com/hajimehoshi/oto/v2/mux"
 )
 
 const (
@@ -72,8 +74,8 @@ type context struct {
 
 	cond *sync.Cond
 
-	players *players
-	err     atomicError
+	mux *mux.Mux
+	err atomicError
 }
 
 // TODO: Convert the error code correctly.
@@ -86,8 +88,8 @@ func newContext(sampleRate, channelCount, bitDepthInBytes int) (*context, chan s
 	close(ready)
 
 	c := &context{
-		cond:    sync.NewCond(&sync.Mutex{}),
-		players: newPlayers(sampleRate, channelCount, bitDepthInBytes),
+		cond: sync.NewCond(&sync.Mutex{}),
+		mux:  mux.New(sampleRate, channelCount, bitDepthInBytes),
 	}
 	theContext = c
 
@@ -148,7 +150,7 @@ func (c *context) appendBuffer(buf32 []float32) {
 	copy(c.unqueuedBuffers, c.unqueuedBuffers[1:])
 	c.unqueuedBuffers = c.unqueuedBuffers[:len(c.unqueuedBuffers)-1]
 
-	c.players.read(buf32)
+	c.mux.ReadFloat32s(buf32)
 	for i, f := range buf32 {
 		*(*float32)(unsafe.Pointer(buf.mAudioData + uintptr(i)*float32SizeInBytes)) = f
 	}
