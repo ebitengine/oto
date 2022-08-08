@@ -33,9 +33,11 @@ type Context struct {
 // It is safe to create multiple players.
 //
 // The format of r is as follows:
-//   [data]      = [sample 1] [sample 2] [sample 3] ...
-//   [sample *]  = [channel 1] [channel 2] ...
-//   [channel *] = [byte 1] [byte 2] ...
+//
+//	[data]      = [sample 1] [sample 2] [sample 3] ...
+//	[sample *]  = [channel 1] [channel 2] ...
+//	[channel *] = [byte 1] [byte 2] ...
+//
 // Byte ordering is little endian.
 //
 // A player has some amount of an underlying buffer.
@@ -103,56 +105,6 @@ func NewContext(sampleRate int, channelCount int, bitDepthInBytes int) (*Context
 	}
 	return &Context{context: ctx}, ready, nil
 }
-
-// Player is a PCM (pulse-code modulation) audio player.
-type Player interface {
-	// Pause pauses its playing.
-	Pause()
-
-	// Play starts its playing if it doesn't play.
-	Play()
-
-	// IsPlaying reports whether this player is playing.
-	IsPlaying() bool
-
-	// Reset clears the underyling buffer and pauses its playing.
-	// Deprecated: use Pause or Seek instead.
-	Reset()
-
-	// Volume returns the current volume in the range of [0, 1].
-	// The default volume is 1.
-	Volume() float64
-
-	// SetVolume sets the current volume in the range of [0, 1].
-	SetVolume(volume float64)
-
-	// UnplayedBufferSize returns the byte size in the underlying buffer that is not played yet.
-	UnplayedBufferSize() int
-
-	// Err returns an error if this player has an error.
-	Err() error
-
-	io.Closer
-
-	// A player returned at NewPlayer also implements BufferSizeSetter and io.Seeker, but
-	// these are not defined in this interface for backward compatibility in v2.
-}
-
-// BufferSizeSetter sets a buffer size.
-// A player created by (*Context).NewPlayer implments both Player and BufferSizeSetter.
-type BufferSizeSetter interface {
-	// SetBufferSize sets the buffer size.
-	// If 0 is specified, the default buffer size is used.
-	SetBufferSize(bufferSize int)
-}
-
-type playerState int
-
-const (
-	playerPaused playerState = iota
-	playerPlay
-	playerClosed
-)
 
 // TODO: The term 'buffer' is confusing. Name each buffer with good terms.
 
