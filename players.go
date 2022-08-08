@@ -145,22 +145,18 @@ type playerImpl struct {
 	m sync.Mutex
 }
 
-func (c *context) NewPlayer(src io.Reader) Player {
-	return newPlayer(c, c.players, src)
-}
-
-func newPlayer(context *context, players *players, src io.Reader) *player {
-	p := &player{
+func (p *players) newPlayer(context *context, src io.Reader) *player {
+	pl := &player{
 		p: &playerImpl{
 			context:    context,
-			players:    players,
+			players:    p,
 			src:        src,
 			volume:     1,
 			bufferSize: context.defaultBufferSize(),
 		},
 	}
-	runtime.SetFinalizer(p, (*player).Close)
-	return p
+	runtime.SetFinalizer(pl, (*player).Close)
+	return pl
 }
 
 func (p *player) Err() error {

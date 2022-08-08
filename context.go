@@ -29,6 +29,28 @@ type Context struct {
 	context *context
 }
 
+// NewContext creates a new context, that creates and holds ready-to-use Player objects,
+// and returns a context, a channel that is closed when the context is ready, and an error if it exists.
+//
+// Creating multiple contexts is NOT supported.
+//
+// The sampleRate argument specifies the number of samples that should be played during one second.
+// Usual numbers are 44100 or 48000. One context has only one sample rate. You cannot play multiple audio
+// sources with different sample rates at the same time.
+//
+// The channelCount argument specifies the number of channels. One channel is mono playback. Two
+// channels are stereo playback. No other values are supported.
+//
+// The bitDepthInBytes argument specifies the number of bytes per sample per channel. The usual value
+// is 2. Only values 1 and 2 are supported.
+func NewContext(sampleRate int, channelCount int, bitDepthInBytes int) (*Context, chan struct{}, error) {
+	ctx, ready, err := newContext(sampleRate, channelCount, bitDepthInBytes)
+	if err != nil {
+		return nil, nil, err
+	}
+	return &Context{context: ctx}, ready, nil
+}
+
 // NewPlayer creates a new, ready-to-use Player belonging to the Context.
 // It is safe to create multiple players.
 //
@@ -60,7 +82,7 @@ type Context struct {
 //
 // All the functions of a Player returned by NewPlayer are concurrent-safe.
 func (c *Context) NewPlayer(r io.Reader) Player {
-	return c.context.NewPlayer(r)
+	return c.context.players.newPlayer(c.context, r)
 }
 
 // Suspend suspends the entire audio play.
@@ -82,28 +104,6 @@ func (c *Context) Resume() error {
 // Err is concurrent-safe.
 func (c *Context) Err() error {
 	return c.context.Err()
-}
-
-// NewContext creates a new context, that creates and holds ready-to-use Player objects,
-// and returns a context, a channel that is closed when the context is ready, and an error if it exists.
-//
-// Creating multiple contexts is NOT supported.
-//
-// The sampleRate argument specifies the number of samples that should be played during one second.
-// Usual numbers are 44100 or 48000. One context has only one sample rate. You cannot play multiple audio
-// sources with different sample rates at the same time.
-//
-// The channelCount argument specifies the number of channels. One channel is mono playback. Two
-// channels are stereo playback. No other values are supported.
-//
-// The bitDepthInBytes argument specifies the number of bytes per sample per channel. The usual value
-// is 2. Only values 1 and 2 are supported.
-func NewContext(sampleRate int, channelCount int, bitDepthInBytes int) (*Context, chan struct{}, error) {
-	ctx, ready, err := newContext(sampleRate, channelCount, bitDepthInBytes)
-	if err != nil {
-		return nil, nil, err
-	}
-	return &Context{context: ctx}, ready, nil
 }
 
 // TODO: The term 'buffer' is confusing. Name each buffer with good terms.
