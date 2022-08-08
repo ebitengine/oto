@@ -112,6 +112,7 @@ func (m *Mux) removePlayer(player *playerImpl) {
 	m.cond.Signal()
 }
 
+// ReadFloat32s fills buf with the multiplexed data of the players as float32 values.
 func (m *Mux) ReadFloat32s(buf []float32) {
 	m.cond.L.Lock()
 	players := make([]*playerImpl, 0, len(m.players))
