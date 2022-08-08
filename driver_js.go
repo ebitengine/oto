@@ -54,7 +54,7 @@ func newContext(sampleRate int, channelCount int, bitDepthInBytes int) (*context
 		channelCount:    channelCount,
 		bitDepthInBytes: bitDepthInBytes,
 		audioContext:    class.New(options),
-		players:         newPlayers(),
+		players:         newPlayers(sampleRate, channelCount, bitDepthInBytes),
 	}
 
 	// 4096 was not great at least on Safari 15.

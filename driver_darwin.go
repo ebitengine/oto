@@ -94,7 +94,7 @@ func newContext(sampleRate, channelCount, bitDepthInBytes int) (*context, chan s
 		channelCount:    channelCount,
 		bitDepthInBytes: bitDepthInBytes,
 		cond:            sync.NewCond(&sync.Mutex{}),
-		players:         newPlayers(),
+		players:         newPlayers(sampleRate, channelCount, bitDepthInBytes),
 	}
 	theContext = c
 

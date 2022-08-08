@@ -23,14 +23,21 @@ import (
 )
 
 type players struct {
+	sampleRate      int
+	channelCount    int
+	bitDepthInBytes int
+
 	players map[*playerImpl]struct{}
 	buf     []float32
 	cond    *sync.Cond
 }
 
-func newPlayers() *players {
+func newPlayers(sampleRate, channelCount, bitDepthInBytes int) *players {
 	p := &players{
-		cond: sync.NewCond(&sync.Mutex{}),
+		sampleRate:      sampleRate,
+		channelCount:    channelCount,
+		bitDepthInBytes: bitDepthInBytes,
+		cond:            sync.NewCond(&sync.Mutex{}),
 	}
 	go p.loop()
 	return p
@@ -131,7 +138,6 @@ const (
 )
 
 type playerImpl struct {
-	context    *context
 	players    *players
 	src        io.Reader
 	volume     float64
@@ -145,14 +151,13 @@ type playerImpl struct {
 	m sync.Mutex
 }
 
-func (p *players) newPlayer(context *context, src io.Reader) *player {
+func (p *players) newPlayer(src io.Reader) *player {
 	pl := &player{
 		p: &playerImpl{
-			context:    context,
 			players:    p,
 			src:        src,
 			volume:     1,
-			bufferSize: context.defaultBufferSize(),
+			bufferSize: p.defaultBufferSize(),
 		},
 	}
 	runtime.SetFinalizer(pl, (*player).Close)
@@ -205,7 +210,7 @@ func (p *playerImpl) setBufferSize(bufferSize int) {
 	orig := p.bufferSize
 	p.bufferSize = bufferSize
 	if bufferSize == 0 {
-		p.bufferSize = p.context.defaultBufferSize()
+		p.bufferSize = p.players.defaultBufferSize()
 	}
 	if orig != p.bufferSize {
 		p.tmpbuf = nil
@@ -381,7 +386,7 @@ func (p *playerImpl) readBufferAndAdd(buf []float32) int {
 		return 0
 	}
 
-	bitDepthInBytes := p.context.bitDepthInBytes
+	bitDepthInBytes := p.players.bitDepthInBytes
 	n := len(p.buf) / bitDepthInBytes
 	if n > len(buf) {
 		n = len(buf)
@@ -458,4 +463,15 @@ func (p *playerImpl) readSourceToBuffer() int {
 func (p *playerImpl) setErrorImpl(err error) {
 	p.err = err
 	p.closeImpl()
+}
+
+// TODO: The term 'buffer' is confusing. Name each buffer with good terms.
+
+// defaultBufferSize returns the default size of the buffer for the audio source.
+// This buffer is used when unreading on pausing the player.
+func (p *players) defaultBufferSize() int {
+	bytesPerSample := p.channelCount * p.bitDepthInBytes
+	s := p.sampleRate * bytesPerSample / 2 // 0.5[s]
+	// Align s in multiples of bytes per sample, or a buffer could have extra bytes.
+	return s / bytesPerSample * bytesPerSample
 }

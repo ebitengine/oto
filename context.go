@@ -82,7 +82,7 @@ func NewContext(sampleRate int, channelCount int, bitDepthInBytes int) (*Context
 //
 // All the functions of a Player returned by NewPlayer are concurrent-safe.
 func (c *Context) NewPlayer(r io.Reader) Player {
-	return c.context.players.newPlayer(c.context, r)
+	return c.context.players.newPlayer(r)
 }
 
 // Suspend suspends the entire audio play.
@@ -104,17 +104,6 @@ func (c *Context) Resume() error {
 // Err is concurrent-safe.
 func (c *Context) Err() error {
 	return c.context.Err()
-}
-
-// TODO: The term 'buffer' is confusing. Name each buffer with good terms.
-
-// defaultBufferSize returns the default size of the buffer for the audio source.
-// This buffer is used when unreading on pausing the player.
-func (c *context) defaultBufferSize() int {
-	bytesPerSample := c.channelCount * c.bitDepthInBytes
-	s := c.sampleRate * bytesPerSample / 2 // 0.5[s]
-	// Align s in multiples of bytes per sample, or a buffer could have extra bytes.
-	return s / bytesPerSample * bytesPerSample
 }
 
 type atomicError struct {

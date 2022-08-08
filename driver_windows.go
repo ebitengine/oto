@@ -33,7 +33,7 @@ type context struct {
 }
 
 func newContext(sampleRate, channelCount, bitDepthInBytes int) (*context, chan struct{}, error) {
-	p := newPlayers()
+	p := newPlayers(sampleRate, channelCount, bitDepthInBytes)
 	ctx := &context{
 		sampleRate:      sampleRate,
 		channelCount:    channelCount,
