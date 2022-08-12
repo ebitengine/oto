@@ -23,7 +23,7 @@ import (
 
 	"golang.org/x/sys/windows"
 
-	"github.com/hajimehoshi/oto/v2/mux"
+	"github.com/hajimehoshi/oto/v2/internal/mux"
 )
 
 type comThread struct {
