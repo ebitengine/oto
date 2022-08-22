@@ -15,7 +15,6 @@
 package oto
 
 import (
-	_ "runtime/cgo" // TODO: remove once purego(#12) is solved.
 	"unsafe"
 
 	"github.com/ebitengine/purego"
