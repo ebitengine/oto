@@ -22,3 +22,9 @@ package oto
 // '4' is float32 size in bytes. '2' is a number of channels for stereo.
 
 const bufferSizeInBytes = 12288
+
+func setNotificationHandler() {
+	// AVAudioSessionInterruptionNotification is not reliable on iOS. Rely on
+	// applicationWillResignActive and applicationDidBecomeActive instead. See
+	// https://stackoverflow.com/questions/24404463/ios-siri-not-available-does-not-return-avaudiosessioninterruptionoptionshouldre
+}
