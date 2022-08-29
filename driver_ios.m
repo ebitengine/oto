@@ -12,13 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build darwin && ios
-// +build darwin,ios
+//go:build ios
+// +build ios
 
-package oto
-
-// 12288 seems necessary at least on iPod touch (7th).
-// With 48000[Hz] stereo, the maximum delay is (12288 / 4 / 2 [samples]) / 48000 [Hz] = 0.032 [sec].
-// '4' is float32 size in bytes. '2' is a number of channels for stereo.
-
-const bufferSizeInBytes = 12288
+void oto_setNotificationHandler() {
+  // AVAudioSessionInterruptionNotification is not reliable on iOS. Rely on
+  // applicationWillResignActive and applicationDidBecomeActive instead. See
+  // https://stackoverflow.com/questions/24404463/ios-siri-not-available-does-not-return-avaudiosessioninterruptionoptionshouldre
+  return;
+}

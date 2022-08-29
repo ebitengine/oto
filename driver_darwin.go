@@ -14,13 +14,20 @@
 
 package oto
 
+// #cgo LDFLAGS: -framework AudioToolbox
+//
+// #import <AudioToolbox/AudioToolbox.h>
+//
+// void oto_render(void* inUserData, AudioQueueRef inAQ, AudioQueueBufferRef inBuffer);
+//
+// void oto_setNotificationHandler();
+import "C"
+
 import (
 	"fmt"
 	"sync"
 	"time"
 	"unsafe"
-
-	"github.com/ebitengine/purego/objc"
 
 	"github.com/hajimehoshi/oto/v2/internal/mux"
 )
@@ -28,38 +35,39 @@ import (
 const (
 	float32SizeInBytes = 4
 
-	noErr = 0
+	avAudioSessionErrorCodeCannotStartPlaying = 0x21706c61 // '!pla'
+	avAudioSessionErrorCodeSiriIsRecording    = 0x73697269 // 'siri'
 )
 
-func newAudioQueue(sampleRate, channelCount, bitDepthInBytes int) (_AudioQueueRef, []_AudioQueueBufferRef, error) {
-	desc := _AudioStreamBasicDescription{
-		mSampleRate:       float64(sampleRate),
-		mFormatID:         uint32(kAudioFormatLinearPCM),
-		mFormatFlags:      uint32(kAudioFormatFlagIsFloat),
-		mBytesPerPacket:   uint32(channelCount * float32SizeInBytes),
+func newAudioQueue(sampleRate, channelCount, bitDepthInBytes int) (C.AudioQueueRef, []C.AudioQueueBufferRef, error) {
+	desc := C.AudioStreamBasicDescription{
+		mSampleRate:       C.double(sampleRate),
+		mFormatID:         C.kAudioFormatLinearPCM,
+		mFormatFlags:      C.kAudioFormatFlagIsFloat,
+		mBytesPerPacket:   C.UInt32(channelCount * float32SizeInBytes),
 		mFramesPerPacket:  1,
-		mBytesPerFrame:    uint32(channelCount * float32SizeInBytes),
-		mChannelsPerFrame: uint32(channelCount),
-		mBitsPerChannel:   uint32(8 * float32SizeInBytes),
+		mBytesPerFrame:    C.UInt32(channelCount * float32SizeInBytes),
+		mChannelsPerFrame: C.UInt32(channelCount),
+		mBitsPerChannel:   C.UInt32(8 * float32SizeInBytes),
 	}
 
-	var audioQueue _AudioQueueRef
-	if osstatus := _AudioQueueNewOutput(
+	var audioQueue C.AudioQueueRef
+	if osstatus := C.AudioQueueNewOutput(
 		&desc,
-		oto_render,
+		(C.AudioQueueOutputCallback)(C.oto_render),
 		nil,
-		0, //CFRunLoopRef
-		0, //CFStringRef
+		(C.CFRunLoopRef)(0),
+		(C.CFStringRef)(0),
 		0,
-		&audioQueue); osstatus != noErr {
-		return 0, nil, fmt.Errorf("oto: AudioQueueNewFormat with StreamFormat failed: %d", osstatus)
+		&audioQueue); osstatus != C.noErr {
+		return nil, nil, fmt.Errorf("oto: AudioQueueNewFormat with StreamFormat failed: %d", osstatus)
 	}
 
-	bufs := make([]_AudioQueueBufferRef, 0, 4)
+	bufs := make([]C.AudioQueueBufferRef, 0, 4)
 	for len(bufs) < cap(bufs) {
-		var buf _AudioQueueBufferRef
-		if osstatus := _AudioQueueAllocateBuffer(audioQueue, bufferSizeInBytes, &buf); osstatus != noErr {
-			return 0, nil, fmt.Errorf("oto: AudioQueueAllocateBuffer failed: %d", osstatus)
+		var buf C.AudioQueueBufferRef
+		if osstatus := C.AudioQueueAllocateBuffer(audioQueue, bufferSizeInBytes, &buf); osstatus != C.noErr {
+			return nil, nil, fmt.Errorf("oto: AudioQueueAllocateBuffer failed: %d", osstatus)
 		}
 		buf.mAudioDataByteSize = bufferSizeInBytes
 		bufs = append(bufs, buf)
@@ -69,8 +77,8 @@ func newAudioQueue(sampleRate, channelCount, bitDepthInBytes int) (_AudioQueueRe
 }
 
 type context struct {
-	audioQueue      _AudioQueueRef
-	unqueuedBuffers []_AudioQueueBufferRef
+	audioQueue      C.AudioQueueRef
+	unqueuedBuffers []C.AudioQueueBufferRef
 
 	cond *sync.Cond
 
@@ -78,7 +86,7 @@ type context struct {
 	err atomicError
 }
 
-// TODO: Convert the error code correctly.
+// TOOD: Convert the error code correctly.
 // See https://stackoverflow.com/questions/2196869/how-do-you-convert-an-iphone-osstatus-code-to-something-useful
 
 var theContext *context
@@ -100,11 +108,11 @@ func newContext(sampleRate, channelCount, bitDepthInBytes int) (*context, chan s
 	c.audioQueue = q
 	c.unqueuedBuffers = bs
 
-	setNotificationHandler()
+	C.oto_setNotificationHandler()
 
 	var retryCount int
 try:
-	if osstatus := _AudioQueueStart(c.audioQueue, nil); osstatus != noErr {
+	if osstatus := C.AudioQueueStart(c.audioQueue, nil); osstatus != C.noErr {
 		if osstatus == avAudioSessionErrorCodeCannotStartPlaying && retryCount < 100 {
 			time.Sleep(10 * time.Millisecond)
 			retryCount++
@@ -152,10 +160,10 @@ func (c *context) appendBuffer(buf32 []float32) {
 
 	c.mux.ReadFloat32s(buf32)
 	for i, f := range buf32 {
-		*(*float32)(unsafe.Pointer(buf.mAudioData + uintptr(i)*float32SizeInBytes)) = f
+		*(*float32)(unsafe.Pointer(uintptr(buf.mAudioData) + uintptr(i)*float32SizeInBytes)) = f
 	}
 
-	if osstatus := _AudioQueueEnqueueBuffer(c.audioQueue, buf, 0, nil); osstatus != noErr {
+	if osstatus := C.AudioQueueEnqueueBuffer(c.audioQueue, buf, 0, nil); osstatus != C.noErr {
 		c.err.TryStore(fmt.Errorf("oto: AudioQueueEnqueueBuffer failed: %d", osstatus))
 	}
 }
@@ -167,7 +175,8 @@ func (c *context) Suspend() error {
 	if err := c.err.Load(); err != nil {
 		return err.(error)
 	}
-	if osstatus := _AudioQueuePause(c.audioQueue); osstatus != noErr {
+
+	if osstatus := C.AudioQueuePause(c.audioQueue); osstatus != C.noErr {
 		return fmt.Errorf("oto: AudioQueuePause failed: %d", osstatus)
 	}
 	return nil
@@ -183,7 +192,7 @@ func (c *context) Resume() error {
 
 	var retryCount int
 try:
-	if osstatus := _AudioQueueStart(c.audioQueue, nil); osstatus != noErr {
+	if osstatus := C.AudioQueueStart(c.audioQueue, nil); osstatus != C.noErr {
 		if osstatus == avAudioSessionErrorCodeCannotStartPlaying && retryCount < 100 {
 			time.Sleep(10 * time.Millisecond)
 			retryCount++
@@ -205,17 +214,20 @@ func (c *context) Err() error {
 	return nil
 }
 
-func oto_render(inUserData unsafe.Pointer, inAQ _AudioQueueRef, inBuffer _AudioQueueBufferRef) {
+//export oto_render
+func oto_render(inUserData unsafe.Pointer, inAQ C.AudioQueueRef, inBuffer C.AudioQueueBufferRef) {
 	theContext.cond.L.Lock()
 	defer theContext.cond.L.Unlock()
 	theContext.unqueuedBuffers = append(theContext.unqueuedBuffers, inBuffer)
 	theContext.cond.Signal()
 }
 
-func oto_setGlobalPause(self objc.ID, _cmd objc.SEL, notification objc.ID) {
+//export oto_setGlobalPause
+func oto_setGlobalPause() {
 	theContext.Suspend()
 }
 
-func oto_setGlobalResume(self objc.ID, _cmd objc.SEL, notification objc.ID) {
+//export oto_setGlobalResume
+func oto_setGlobalResume() {
 	theContext.Resume()
 }
