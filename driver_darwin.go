@@ -35,8 +35,9 @@ import (
 const (
 	float32SizeInBytes = 4
 
-	avAudioSessionErrorCodeCannotStartPlaying = 0x21706c61 // '!pla'
-	avAudioSessionErrorCodeSiriIsRecording    = 0x73697269 // 'siri'
+	avAudioSessionErrorCodeCannotStartPlaying    = 0x21706c61 // '!pla'
+	avAudioSessionErrorCodeCannotInterruptOthers = 0x21696e74 // '!int'
+	avAudioSessionErrorCodeSiriIsRecording       = 0x73697269 // 'siri'
 )
 
 func newAudioQueue(sampleRate, channelCount, bitDepthInBytes int) (C.AudioQueueRef, []C.AudioQueueBufferRef, error) {
@@ -114,6 +115,7 @@ func newContext(sampleRate, channelCount, bitDepthInBytes int) (*context, chan s
 try:
 	if osstatus := C.AudioQueueStart(c.audioQueue, nil); osstatus != C.noErr {
 		if osstatus == avAudioSessionErrorCodeCannotStartPlaying && retryCount < 100 {
+			// TODO: use sleepTime() after investigating when this error happens.
 			time.Sleep(10 * time.Millisecond)
 			retryCount++
 			goto try
@@ -193,12 +195,16 @@ func (c *context) Resume() error {
 	var retryCount int
 try:
 	if osstatus := C.AudioQueueStart(c.audioQueue, nil); osstatus != C.noErr {
-		if osstatus == avAudioSessionErrorCodeCannotStartPlaying && retryCount < 100 {
-			time.Sleep(10 * time.Millisecond)
+		if (osstatus == avAudioSessionErrorCodeCannotStartPlaying ||
+			osstatus == avAudioSessionErrorCodeCannotInterruptOthers) &&
+			retryCount < 30 {
+			// It is uncertain that this error is temporary or not. Then let's use exponential-time sleeping.
+			time.Sleep(sleepTime(retryCount))
 			retryCount++
 			goto try
 		}
 		if osstatus == avAudioSessionErrorCodeSiriIsRecording {
+			// As this error should be temporary, it should be OK to use a short time for sleep anytime.
 			time.Sleep(10 * time.Millisecond)
 			goto try
 		}
@@ -230,4 +236,17 @@ func oto_setGlobalPause() {
 //export oto_setGlobalResume
 func oto_setGlobalResume() {
 	theContext.Resume()
+}
+
+func sleepTime(count int) time.Duration {
+	switch count {
+	case 0:
+		return 10 * time.Millisecond
+	case 1:
+		return 20 * time.Millisecond
+	case 2:
+		return 50 * time.Millisecond
+	default:
+		return 100 * time.Millisecond
+	}
 }
