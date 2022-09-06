@@ -67,6 +67,21 @@ jobs:
           # Check cross-compiling Windows binaries.
           env GOOS=windows GOARCH=arm64 go build -tags=example -v ./...
 
+      - name: go mod vendor
+        run: |
+          mkdir /tmp/vendoring
+          cd /tmp/vendoring
+          go mod init foo
+          echo 'package main' > main.go
+          echo 'import (' >> main.go
+          echo '  _ "github.com/hajimehoshi/oto/v2"' >> main.go
+          echo ')' >> main.go
+          echo 'func main() {}' >> main.go
+          go mod edit -replace github.com/hajimehoshi/oto/v2=$GITHUB_WORKSPACE
+          go mod tidy
+          go mod vendor
+          go build -v .
+
       - name: go test
         run: |
           go test -tags=example ${{ !startsWith(matrix.go, '1.16.') && '-shuffle=on' || '' }} -v -count=10 ./...
