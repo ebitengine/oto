@@ -46,7 +46,7 @@ func newAudioQueue(sampleRate, channelCount, bitDepthInBytes int) (_AudioQueueRe
 	var audioQueue _AudioQueueRef
 	if osstatus := _AudioQueueNewOutput(
 		&desc,
-		oto_render,
+		render,
 		nil,
 		0, //CFRunLoopRef
 		0, //CFStringRef
@@ -210,18 +210,18 @@ func (c *context) Err() error {
 	return nil
 }
 
-func oto_render(inUserData unsafe.Pointer, inAQ _AudioQueueRef, inBuffer _AudioQueueBufferRef) {
+func render(inUserData unsafe.Pointer, inAQ _AudioQueueRef, inBuffer _AudioQueueBufferRef) {
 	theContext.cond.L.Lock()
 	defer theContext.cond.L.Unlock()
 	theContext.unqueuedBuffers = append(theContext.unqueuedBuffers, inBuffer)
 	theContext.cond.Signal()
 }
 
-func oto_setGlobalPause(self objc.ID, _cmd objc.SEL, notification objc.ID) {
+func setGlobalPause(self objc.ID, _cmd objc.SEL, notification objc.ID) {
 	theContext.Suspend()
 }
 
-func oto_setGlobalResume(self objc.ID, _cmd objc.SEL, notification objc.ID) {
+func setGlobalResume(self objc.ID, _cmd objc.SEL, notification objc.ID) {
 	theContext.Resume()
 }
 

@@ -32,8 +32,8 @@ var appkit = purego.Dlopen("/System/Library/Frameworks/AppKit.framework/Versions
 func setNotificationHandler() {
 	// Create the Observer object
 	class := objc.AllocateClassPair(objc.GetClass("NSObject\x00"), "OtoNotificationObserver\x00", 0)
-	class.AddMethod(objc.RegisterName("receiveSleepNote:\x00"), objc.NewIMP(oto_setGlobalPause), "v@:@\x00")
-	class.AddMethod(objc.RegisterName("receiveWakeNote:\x00"), objc.NewIMP(oto_setGlobalResume), "v@:@\x00")
+	class.AddMethod(objc.RegisterName("receiveSleepNote:\x00"), objc.NewIMP(setGlobalPause), "v@:@\x00")
+	class.AddMethod(objc.RegisterName("receiveWakeNote:\x00"), objc.NewIMP(setGlobalResume), "v@:@\x00")
 	class.Register()
 
 	observer := objc.ID(class).Send(objc.RegisterName("new\x00"))
