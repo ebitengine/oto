@@ -124,25 +124,37 @@ func (c *context) Err() error {
 	return nil
 }
 
-type nullContext struct{}
-
-func newNullContext(sampleRate int, channelCount int, mux *mux.Mux) *nullContext {
-	var buf32 [4096]float32
-	sleep := time.Duration(float64(time.Second) * float64(len(buf32)) / float64(channelCount) / float64(sampleRate))
-	go func() {
-		for {
-			mux.ReadFloat32s(buf32[:])
-			time.Sleep(sleep)
-		}
-	}()
-	return &nullContext{}
+type nullContext struct {
+	suspended bool
 }
 
-func (*nullContext) Suspend() error {
+func newNullContext(sampleRate int, channelCount int, mux *mux.Mux) *nullContext {
+	c := &nullContext{}
+	go c.loop(sampleRate, channelCount, mux)
+	return c
+}
+
+func (c *nullContext) loop(sampleRate int, channelCount int, mux *mux.Mux) {
+	var buf32 [4096]float32
+	sleep := time.Duration(float64(time.Second) * float64(len(buf32)) / float64(channelCount) / float64(sampleRate))
+	for {
+		if c.suspended {
+			time.Sleep(time.Second)
+			continue
+		}
+
+		mux.ReadFloat32s(buf32[:])
+		time.Sleep(sleep)
+	}
+}
+
+func (c *nullContext) Suspend() error {
+	c.suspended = true
 	return nil
 }
 
-func (*nullContext) Resume() error {
+func (c *nullContext) Resume() error {
+	c.suspended = false
 	return nil
 }
 
