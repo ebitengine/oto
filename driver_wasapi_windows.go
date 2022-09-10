@@ -169,7 +169,7 @@ func (c *wasapiContext) start() error {
 
 	go func() {
 		if err := c.loop(); err != nil {
-			if !errors.Is(err, _AUDCLNT_E_DEVICE_INVALIDATED) && errors.Is(err, _AUDCLNT_E_RESOURCES_INVALIDATED) && !errors.Is(err, errDeviceSwitched) {
+			if !errors.Is(err, _AUDCLNT_E_DEVICE_INVALIDATED) && !errors.Is(err, _AUDCLNT_E_RESOURCES_INVALIDATED) && !errors.Is(err, errDeviceSwitched) {
 				c.err.TryStore(err)
 				return
 			}
@@ -426,7 +426,7 @@ func (c *wasapiContext) Resume() error {
 		c.suspended = false
 
 		if err := c.client.Start(); err != nil {
-			if !errors.Is(err, _AUDCLNT_E_DEVICE_INVALIDATED) && errors.Is(err, _AUDCLNT_E_RESOURCES_INVALIDATED) {
+			if !errors.Is(err, _AUDCLNT_E_DEVICE_INVALIDATED) && !errors.Is(err, _AUDCLNT_E_RESOURCES_INVALIDATED) {
 				cerr = err
 				return
 			}
