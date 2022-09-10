@@ -421,6 +421,15 @@ func (i *_IMMDevice) Activate(iid *windows.GUID, dwClsCtx uint32, pActivationPar
 	return v, nil
 }
 
+func (i *_IMMDevice) GetId() (string, error) {
+	var strId *uint16
+	r, _, _ := syscall.Syscall(i.vtbl.GetId, 2, uintptr(unsafe.Pointer(i)), uintptr(unsafe.Pointer(&strId)), 0)
+	if uint32(r) != uint32(windows.S_OK) {
+		return "", fmt.Errorf("oto: IMMDevice::GetId failed: HRESULT(%d)", uint32(r))
+	}
+	return windows.UTF16PtrToString(strId), nil
+}
+
 func (i *_IMMDevice) Release() {
 	syscall.Syscall(i.vtbl.Release, 1, uintptr(unsafe.Pointer(i)), 0, 0)
 }
