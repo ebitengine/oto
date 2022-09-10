@@ -303,6 +303,11 @@ func (i *_IAudioClient2) IsFormatSupported(shareMode _AUDCLNT_SHAREMODE, pFormat
 	return nil, nil
 }
 
+func (i *_IAudioClient2) Release() uint32 {
+	r, _, _ := syscall.Syscall(i.vtbl.Release, 1, uintptr(unsafe.Pointer(i)), 0, 0)
+	return uint32(r)
+}
+
 func (i *_IAudioClient2) SetClientProperties(pProperties *_AudioClientProperties) error {
 	r, _, _ := syscall.Syscall(i.vtbl.SetClientProperties, 2, uintptr(unsafe.Pointer(i)), uintptr(unsafe.Pointer(pProperties)), 0)
 	runtime.KeepAlive(pProperties)
@@ -371,6 +376,11 @@ func (i *_IAudioRenderClient) GetBuffer(numFramesRequested uint32) (*byte, error
 		return nil, fmt.Errorf("oto: IAudioRenderClient::GetBuffer failed: HRESULT(%d)", uint32(r))
 	}
 	return data, nil
+}
+
+func (i *_IAudioRenderClient) Release() uint32 {
+	r, _, _ := syscall.Syscall(i.vtbl.Release, 1, uintptr(unsafe.Pointer(i)), 0, 0)
+	return uint32(r)
 }
 
 func (i *_IAudioRenderClient) ReleaseBuffer(numFramesWritten uint32, dwFlags uint32) error {
