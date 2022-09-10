@@ -115,9 +115,12 @@ func (c *winmmContext) start() error {
 	// TOOD: What about using an event instead of a callback? PortAudio and other libraries do that.
 	w, err := waveOutOpen(f, waveOutOpenCallback)
 	if errors.Is(err, windows.ERROR_NOT_FOUND) {
-		// TODO: No device was found. Return the dummy device (#77).
-		// TODO: Retry to open the device when possible.
-		return err
+		// This can happen when no device is found (#77).
+		return errDeviceNotFound
+	}
+	if errors.Is(err, _MMSYSERR_BADDEVICEID) {
+		// This can happen when no device is found (hajimehoshi/ebiten#2316).
+		return errDeviceNotFound
 	}
 	if err != nil {
 		return err

@@ -209,6 +209,9 @@ func (c *wasapiContext) startOnCOMThread() (ferr error) {
 
 	device, err := c.enumerator.GetDefaultAudioEndPoint(eRender, eConsole)
 	if err != nil {
+		if errors.Is(err, _E_NOTFOUND) {
+			return errDeviceNotFound
+		}
 		return err
 	}
 	defer device.Release()

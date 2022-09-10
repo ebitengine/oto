@@ -15,10 +15,14 @@
 package oto
 
 import (
+	"errors"
 	"fmt"
+	"time"
 
 	"github.com/hajimehoshi/oto/v2/internal/mux"
 )
+
+var errDeviceNotFound = errors.New("oto: device not found")
 
 type context struct {
 	sampleRate   int
@@ -28,6 +32,7 @@ type context struct {
 
 	wasapiContext *wasapiContext
 	winmmContext  *winmmContext
+	nullContext   *nullContext
 
 	ready chan struct{}
 	err   atomicError
@@ -57,6 +62,11 @@ func newContext(sampleRate, channelCount, bitDepthInBytes int) (*context, chan s
 			return
 		}
 
+		if errors.Is(err0, errDeviceNotFound) && errors.Is(err1, errDeviceNotFound) {
+			ctx.nullContext = newNullContext(sampleRate, channelCount, ctx.mux)
+			return
+		}
+
 		ctx.err.TryStore(fmt.Errorf("oto: initialization failed: WASAPI: %v, WinMM: %v", err0, err1))
 	}()
 
@@ -71,6 +81,9 @@ func (c *context) Suspend() error {
 	if c.winmmContext != nil {
 		return c.winmmContext.Suspend()
 	}
+	if c.nullContext != nil {
+		return c.nullContext.Suspend()
+	}
 	return nil
 }
 
@@ -81,6 +94,9 @@ func (c *context) Resume() error {
 	}
 	if c.winmmContext != nil {
 		return c.winmmContext.Resume()
+	}
+	if c.nullContext != nil {
+		return c.nullContext.Resume()
 	}
 	return nil
 }
@@ -102,5 +118,34 @@ func (c *context) Err() error {
 	if c.winmmContext != nil {
 		return c.winmmContext.Err()
 	}
+	if c.nullContext != nil {
+		return c.nullContext.Err()
+	}
+	return nil
+}
+
+type nullContext struct{}
+
+func newNullContext(sampleRate int, channelCount int, mux *mux.Mux) *nullContext {
+	var buf32 [4096]float32
+	sleep := time.Duration(float64(time.Second) * float64(len(buf32)) / float64(channelCount) / float64(sampleRate))
+	go func() {
+		for {
+			mux.ReadFloat32s(buf32[:])
+			time.Sleep(sleep)
+		}
+	}()
+	return &nullContext{}
+}
+
+func (*nullContext) Suspend() error {
+	return nil
+}
+
+func (*nullContext) Resume() error {
+	return nil
+}
+
+func (*nullContext) Err() error {
 	return nil
 }

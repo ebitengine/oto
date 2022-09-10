@@ -136,6 +136,25 @@ const (
 	eConsole _ERole = 0
 )
 
+type _WIN32_ERR uint32
+
+const (
+	_E_NOTFOUND _WIN32_ERR = 0x80070490
+)
+
+func isWin32Err(hresult uint32) bool {
+	return hresult&0xffff0000 == (1<<31)|(windows.FACILITY_WIN32<<16)
+}
+
+func (e _WIN32_ERR) Error() string {
+	switch e {
+	case _E_NOTFOUND:
+		return "E_NOTFOUND"
+	default:
+		return fmt.Sprintf("HRESULT(%d)", e)
+	}
+}
+
 type _AudioClientProperties struct {
 	cbSize     uint32
 	bIsOffload int32
@@ -455,6 +474,9 @@ func (i *_IMMDeviceEnumerator) GetDefaultAudioEndPoint(dataFlow _EDataFlow, role
 	r, _, _ := syscall.Syscall6(i.vtbl.GetDefaultAudioEndpoint, 4, uintptr(unsafe.Pointer(i)),
 		uintptr(dataFlow), uintptr(role), uintptr(unsafe.Pointer(&endPoint)), 0, 0)
 	if uint32(r) != uint32(windows.S_OK) {
+		if isWin32Err(uint32(r)) {
+			return nil, fmt.Errorf("oto: IMMDeviceEnumerator::GetDefaultAudioEndPoint failed: %w", _E_NOTFOUND)
+		}
 		return nil, fmt.Errorf("oto: IMMDeviceEnumerator::GetDefaultAudioEndPoint failed: HRESULT(%d)", uint32(r))
 	}
 	return endPoint, nil
