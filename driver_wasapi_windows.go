@@ -75,6 +75,7 @@ type wasapiContext struct {
 
 	comThread *comThread
 	err       atomicError
+	suspended bool
 
 	sampleReadyEvent windows.Handle
 	client           *_IAudioClient2
@@ -136,6 +137,12 @@ func (c *wasapiContext) start() error {
 				c.err.TryStore(err)
 				return
 			}
+
+			// If the context is suspended, do not resume now.
+			if c.isSuspended() {
+				return
+			}
+
 			// Probably the driver is missing temporarily e.g. plugging out the headset.
 			// Recreate the device.
 			if err := c.start(); err != nil {
@@ -328,6 +335,7 @@ func (c *wasapiContext) Suspend() error {
 	c.comThread.Run(func() {
 		c.m.Lock()
 		defer c.m.Unlock()
+		c.suspended = true
 
 		if err := c.client.Stop(); err != nil {
 			cerr = err
@@ -342,13 +350,32 @@ func (c *wasapiContext) Resume() error {
 	c.comThread.Run(func() {
 		c.m.Lock()
 		defer c.m.Unlock()
+		c.suspended = false
 
 		if err := c.client.Start(); err != nil {
-			cerr = err
+			if !errors.Is(err, _AUDCLNT_E_DEVICE_INVALIDATED) && errors.Is(err, _AUDCLNT_E_RESOURCES_INVALIDATED) {
+				cerr = err
+				return
+			}
+
+			go func() {
+				// Probably the driver is missing temporarily e.g. plugging out the headset.
+				// Recreate the device.
+				if err := c.start(); err != nil {
+					c.err.TryStore(err)
+					return
+				}
+			}()
 			return
 		}
 	})
 	return cerr
+}
+
+func (c *wasapiContext) isSuspended() bool {
+	c.m.Lock()
+	defer c.m.Unlock()
+	return c.suspended
 }
 
 func (c *wasapiContext) Err() error {

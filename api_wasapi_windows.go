@@ -67,7 +67,7 @@ const (
 )
 
 func isAudclntErr(hresult uint32) bool {
-	return hresult&0xffff0000 == (1 << 31) | (windows.FACILITY_AUDCLNT << 16)
+	return hresult&0xffff0000 == (1<<31)|(windows.FACILITY_AUDCLNT<<16)
 }
 
 func (e _AUDCLNT_ERR) Error() string {
