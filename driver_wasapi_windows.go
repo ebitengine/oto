@@ -20,6 +20,7 @@ import (
 	"reflect"
 	"runtime"
 	"sync"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -82,11 +83,15 @@ type wasapiContext struct {
 	mixFormat        *_WAVEFORMATEXTENSIBLE
 	bufferFrames     uint32
 	renderClient     *_IAudioRenderClient
+	currentDeviceID  string
+	enumerator       *_IMMDeviceEnumerator
 
 	buf []float32
 
 	m sync.Mutex
 }
+
+var errDeviceSwitched = errors.New("oto: device switched")
 
 func newWASAPIContext(sampleRate, channelCount int, mux *mux.Mux) (context *wasapiContext, ferr error) {
 	t, err := newCOMThread()
@@ -119,6 +124,37 @@ func newWASAPIContext(sampleRate, channelCount int, mux *mux.Mux) (context *wasa
 	return c, nil
 }
 
+func (c *wasapiContext) isDeviceSwitched() (bool, error) {
+	// If the audio is suspended, do nothing.
+	if c.isSuspended() {
+		return false, nil
+	}
+
+	var switched bool
+	var cerr error
+	c.comThread.Run(func() {
+		device, err := c.enumerator.GetDefaultAudioEndPoint(eRender, eConsole)
+		if err != nil {
+			cerr = err
+			return
+		}
+		defer device.Release()
+
+		id, err := device.GetId()
+		if err != nil {
+			cerr = err
+			return
+		}
+
+		if c.currentDeviceID == id {
+			return
+		}
+		switched = true
+	})
+
+	return switched, cerr
+}
+
 func (c *wasapiContext) start() error {
 	var cerr error
 	c.comThread.Run(func() {
@@ -133,7 +169,7 @@ func (c *wasapiContext) start() error {
 
 	go func() {
 		if err := c.loop(); err != nil {
-			if !errors.Is(err, _AUDCLNT_E_DEVICE_INVALIDATED) && errors.Is(err, _AUDCLNT_E_RESOURCES_INVALIDATED) {
+			if !errors.Is(err, _AUDCLNT_E_DEVICE_INVALIDATED) && errors.Is(err, _AUDCLNT_E_RESOURCES_INVALIDATED) && !errors.Is(err, errDeviceSwitched) {
 				c.err.TryStore(err)
 				return
 			}
@@ -156,19 +192,32 @@ func (c *wasapiContext) start() error {
 	return nil
 }
 
-func (c *wasapiContext) startOnCOMThread() error {
-	e, err := _CoCreateInstance(&uuidMMDeviceEnumerator, nil, uint32(_CLSCTX_ALL), &uuidIMMDeviceEnumerator)
-	if err != nil {
-		return err
+func (c *wasapiContext) startOnCOMThread() (ferr error) {
+	if c.enumerator == nil {
+		e, err := _CoCreateInstance(&uuidMMDeviceEnumerator, nil, uint32(_CLSCTX_ALL), &uuidIMMDeviceEnumerator)
+		if err != nil {
+			return err
+		}
+		c.enumerator = (*_IMMDeviceEnumerator)(e)
+		defer func() {
+			if ferr != nil {
+				c.enumerator.Release()
+				c.enumerator = nil
+			}
+		}()
 	}
-	enumerator := (*_IMMDeviceEnumerator)(e)
-	defer enumerator.Release()
 
-	device, err := enumerator.GetDefaultAudioEndPoint(eRender, eConsole)
+	device, err := c.enumerator.GetDefaultAudioEndPoint(eRender, eConsole)
 	if err != nil {
 		return err
 	}
 	defer device.Release()
+
+	id, err := device.GetId()
+	if err != nil {
+		return err
+	}
+	c.currentDeviceID = id
 
 	if c.client != nil {
 		c.client.Release()
@@ -277,6 +326,7 @@ func (c *wasapiContext) loop() error {
 }
 
 func (c *wasapiContext) loopOnRenderThread() error {
+	last := time.Now()
 	for {
 		evt, err := windows.WaitForSingleObject(c.sampleReadyEvent, windows.INFINITE)
 		if err != nil {
@@ -288,6 +338,19 @@ func (c *wasapiContext) loopOnRenderThread() error {
 
 		if err := c.writeOnRenderThread(); err != nil {
 			return err
+		}
+
+		// Checking the current default audio device might be an expensive operation.
+		// Check this repeatedly but with some time interval.
+		if now := time.Now(); now.Sub(last) >= 500*time.Millisecond {
+			switched, err := c.isDeviceSwitched()
+			if err != nil {
+				return err
+			}
+			if switched {
+				return errDeviceSwitched
+			}
+			last = now
 		}
 	}
 }
