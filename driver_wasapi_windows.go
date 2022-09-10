@@ -170,6 +170,11 @@ func (c *wasapiContext) startOnCOMThread() error {
 	}
 	defer device.Release()
 
+	if c.client != nil {
+		c.client.Release()
+		c.client = nil
+	}
+
 	client, err := device.Activate(&uuidIAudioClient2, uint32(_CLSCTX_ALL), nil)
 	if err != nil {
 		return err
@@ -228,6 +233,11 @@ func (c *wasapiContext) startOnCOMThread() error {
 		return err
 	}
 	c.bufferFrames = frames
+
+	if c.renderClient != nil {
+		c.renderClient.Release()
+		c.renderClient = nil
+	}
 
 	renderClient, err := c.client.GetService(&uuidIAudioRenderClient)
 	if err != nil {
