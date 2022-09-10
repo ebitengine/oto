@@ -78,7 +78,7 @@ type winmmContext struct {
 
 	mux       *mux.Mux
 	err       atomicError
-	loopEndCh chan struct{}
+	loopEndCh chan error
 
 	cond *sync.Cond
 }
@@ -101,8 +101,6 @@ func newWinMMContext(sampleRate, channelCount int, mux *mux.Mux) (*winmmContext,
 }
 
 func (c *winmmContext) start() error {
-	c.stopLoopIfNeeded()
-
 	const bitsPerSample = 32
 	nBlockAlign := c.channelCount * bitsPerSample / 8
 	f := &_WAVEFORMATEX{
@@ -162,6 +160,10 @@ func (c *winmmContext) Resume() (ferr error) {
 			return
 		}
 		if !restart {
+			return
+		}
+		if err := c.stopLoopIfNeeded(); err != nil {
+			ferr = err
 			return
 		}
 		if err := c.start(); err != nil {
@@ -226,23 +228,24 @@ func (c *winmmContext) waitUntilHeaderAvailable() bool {
 	return c.err.Load() == nil && c.loopEndCh == nil
 }
 
-func (c *winmmContext) stopLoopIfNeeded() {
+func (c *winmmContext) stopLoopIfNeeded() error {
 	ch := c.stopLoop()
 	if ch == nil {
-		return
+		return nil
 	}
-	<-ch
+	return <-ch
 }
 
-func (c *winmmContext) stopLoop() chan struct{} {
+func (c *winmmContext) stopLoop() chan error {
 	c.cond.L.Lock()
 	defer c.cond.L.Unlock()
 
-	if c.loopEndCh == nil {
+	// If the loop is already stopping, do nothing.
+	if c.loopEndCh != nil {
 		return nil
 	}
 
-	ch := make(chan struct{})
+	ch := make(chan error)
 	c.loopEndCh = ch
 	c.cond.Signal()
 	return ch
@@ -262,12 +265,16 @@ func (c *winmmContext) loop() {
 	}
 }
 
-func (c *winmmContext) closeLoop() error {
+func (c *winmmContext) closeLoop() (ferr error) {
 	c.cond.L.Lock()
 	defer c.cond.L.Unlock()
 
 	defer func() {
 		if c.loopEndCh != nil {
+			if ferr != nil {
+				c.loopEndCh <- ferr
+				ferr = nil
+			}
 			close(c.loopEndCh)
 			c.loopEndCh = nil
 		}
