@@ -68,13 +68,17 @@ func (h *header) Close() error {
 }
 
 type winmmContext struct {
+	sampleRate   int
+	channelCount int
+
 	waveOut uintptr
 	headers []*header
 
 	buf32 []float32
 
-	mux *mux.Mux
-	err atomicError
+	mux       *mux.Mux
+	err       atomicError
+	loopEndCh chan struct{}
 
 	cond *sync.Cond
 }
@@ -83,18 +87,29 @@ var theWinMMContext *winmmContext
 
 func newWinMMContext(sampleRate, channelCount int, mux *mux.Mux) (*winmmContext, error) {
 	c := &winmmContext{
-		mux:  mux,
-		cond: sync.NewCond(&sync.Mutex{}),
+		sampleRate:   sampleRate,
+		channelCount: channelCount,
+		mux:          mux,
+		cond:         sync.NewCond(&sync.Mutex{}),
 	}
 	theWinMMContext = c
 
+	if err := c.start(); err != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
+func (c *winmmContext) start() error {
+	c.stopLoopIfNeeded()
+
 	const bitsPerSample = 32
-	nBlockAlign := channelCount * bitsPerSample / 8
+	nBlockAlign := c.channelCount * bitsPerSample / 8
 	f := &_WAVEFORMATEX{
 		wFormatTag:      _WAVE_FORMAT_IEEE_FLOAT,
-		nChannels:       uint16(channelCount),
-		nSamplesPerSec:  uint32(sampleRate),
-		nAvgBytesPerSec: uint32(sampleRate * nBlockAlign),
+		nChannels:       uint16(c.channelCount),
+		nSamplesPerSec:  uint32(c.sampleRate),
+		nAvgBytesPerSec: uint32(c.sampleRate * nBlockAlign),
 		nBlockAlign:     uint16(nBlockAlign),
 		wBitsPerSample:  bitsPerSample,
 	}
@@ -104,10 +119,10 @@ func newWinMMContext(sampleRate, channelCount int, mux *mux.Mux) (*winmmContext,
 	if errors.Is(err, windows.ERROR_NOT_FOUND) {
 		// TODO: No device was found. Return the dummy device (#77).
 		// TODO: Retry to open the device when possible.
-		return nil, err
+		return err
 	}
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	c.waveOut = w
@@ -115,7 +130,7 @@ func newWinMMContext(sampleRate, channelCount int, mux *mux.Mux) (*winmmContext,
 	for len(c.headers) < cap(c.headers) {
 		h, err := newHeader(c.waveOut, headerBufferSize)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		c.headers = append(c.headers, h)
 	}
@@ -123,7 +138,7 @@ func newWinMMContext(sampleRate, channelCount int, mux *mux.Mux) (*winmmContext,
 	c.buf32 = make([]float32, headerBufferSize/4)
 	go c.loop()
 
-	return c, nil
+	return nil
 }
 
 func (c *winmmContext) Suspend() error {
@@ -140,7 +155,21 @@ func (c *winmmContext) Suspend() error {
 	return nil
 }
 
-func (c *winmmContext) Resume() error {
+func (c *winmmContext) Resume() (ferr error) {
+	var restart bool
+	defer func() {
+		if ferr != nil {
+			return
+		}
+		if !restart {
+			return
+		}
+		if err := c.start(); err != nil {
+			ferr = err
+			return
+		}
+	}()
+
 	c.cond.L.Lock()
 	defer c.cond.L.Unlock()
 
@@ -151,6 +180,10 @@ func (c *winmmContext) Resume() error {
 	// TODO: Ensure at least one header is queued?
 
 	if err := waveOutRestart(c.waveOut); err != nil {
+		if errors.Is(err, _MMSYSERR_NODRIVER) {
+			restart = true
+			return nil
+		}
 		return err
 	}
 	return nil
@@ -187,19 +220,71 @@ func (c *winmmContext) waitUntilHeaderAvailable() bool {
 	c.cond.L.Lock()
 	defer c.cond.L.Unlock()
 
-	for !c.isHeaderAvailable() && c.err.Load() == nil {
+	for !c.isHeaderAvailable() && c.err.Load() == nil && c.loopEndCh == nil {
 		c.cond.Wait()
 	}
-	return c.err.Load() == nil
+	return c.err.Load() == nil && c.loopEndCh == nil
+}
+
+func (c *winmmContext) stopLoopIfNeeded() {
+	ch := c.stopLoop()
+	if ch == nil {
+		return
+	}
+	<-ch
+}
+
+func (c *winmmContext) stopLoop() chan struct{} {
+	c.cond.L.Lock()
+	defer c.cond.L.Unlock()
+
+	if c.loopEndCh == nil {
+		return nil
+	}
+
+	ch := make(chan struct{})
+	c.loopEndCh = ch
+	c.cond.Signal()
+	return ch
 }
 
 func (c *winmmContext) loop() {
+	defer func() {
+		if err := c.closeLoop(); err != nil {
+			c.err.TryStore(err)
+		}
+	}()
 	for {
 		if !c.waitUntilHeaderAvailable() {
 			return
 		}
 		c.appendBuffers()
 	}
+}
+
+func (c *winmmContext) closeLoop() error {
+	c.cond.L.Lock()
+	defer c.cond.L.Unlock()
+
+	defer func() {
+		if c.loopEndCh != nil {
+			close(c.loopEndCh)
+			c.loopEndCh = nil
+		}
+	}()
+
+	for _, h := range c.headers {
+		if err := h.Close(); err != nil {
+			return err
+		}
+	}
+	c.headers = nil
+
+	if err := waveOutClose(c.waveOut); err != nil {
+		return err
+	}
+	c.waveOut = 0
+	return nil
 }
 
 func (c *winmmContext) appendBuffers() {
