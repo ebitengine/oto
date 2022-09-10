@@ -59,6 +59,28 @@ var (
 	_KSDATAFORMAT_SUBTYPE_PCM        = windows.GUID{0x00000001, 0x0000, 0x0010, [...]byte{0x80, 0x00, 0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71}}
 )
 
+type _AUDCLNT_ERR uint32
+
+const (
+	_AUDCLNT_E_DEVICE_INVALIDATED    _AUDCLNT_ERR = 0x88890004
+	_AUDCLNT_E_RESOURCES_INVALIDATED _AUDCLNT_ERR = 0x88890026
+)
+
+func isAudclntErr(hresult uint32) bool {
+	return hresult&0xffff0000 == (1 << 31) | (windows.FACILITY_AUDCLNT << 16)
+}
+
+func (e _AUDCLNT_ERR) Error() string {
+	switch e {
+	case _AUDCLNT_E_DEVICE_INVALIDATED:
+		return "AUDCLNT_E_DEVICE_INVALIDATED"
+	case _AUDCLNT_E_RESOURCES_INVALIDATED:
+		return "AUDCLNT_E_RESOURCES_INVALIDATED"
+	default:
+		return fmt.Sprintf("AUDCLNT_ERR(%d)", e)
+	}
+}
+
 type _AUDCLNT_SHAREMODE int32
 
 const (
@@ -192,6 +214,9 @@ func (i *_IAudioClient2) GetBufferSize() (uint32, error) {
 	var numBufferFrames uint32
 	r, _, _ := syscall.Syscall(i.vtbl.GetBufferSize, 2, uintptr(unsafe.Pointer(i)), uintptr(unsafe.Pointer(&numBufferFrames)), 0)
 	if uint32(r) != uint32(windows.S_OK) {
+		if isAudclntErr(uint32(r)) {
+			return 0, fmt.Errorf("oto: IAudioClient2::GetBufferSize failed: %w", _AUDCLNT_ERR(r))
+		}
 		return 0, fmt.Errorf("oto: IAudioClient2::GetBufferSize failed: HRESULT(%d)", uint32(r))
 	}
 	return numBufferFrames, nil
@@ -201,6 +226,9 @@ func (i *_IAudioClient2) GetCurrentPadding() (uint32, error) {
 	var numPaddingFrames uint32
 	r, _, _ := syscall.Syscall(i.vtbl.GetCurrentPadding, 2, uintptr(unsafe.Pointer(i)), uintptr(unsafe.Pointer(&numPaddingFrames)), 0)
 	if uint32(r) != uint32(windows.S_OK) {
+		if isAudclntErr(uint32(r)) {
+			return 0, fmt.Errorf("oto: IAudioClient2::GetCurrentPadding failed: %w", _AUDCLNT_ERR(r))
+		}
 		return 0, fmt.Errorf("oto: IAudioClient2::GetCurrentPadding failed: HRESULT(%d)", uint32(r))
 	}
 	return numPaddingFrames, nil
@@ -212,6 +240,9 @@ func (i *_IAudioClient2) GetDevicePeriod() (_REFERENCE_TIME, _REFERENCE_TIME, er
 	r, _, _ := syscall.Syscall(i.vtbl.GetDevicePeriod, 3, uintptr(unsafe.Pointer(i)),
 		uintptr(unsafe.Pointer(&defaultDevicePeriod)), uintptr(unsafe.Pointer(&minimumDevicePeriod)))
 	if uint32(r) != uint32(windows.S_OK) {
+		if isAudclntErr(uint32(r)) {
+			return 0, 0, fmt.Errorf("oto: IAudioClient2::GetDevicePeriod failed: %w", _AUDCLNT_ERR(r))
+		}
 		return 0, 0, fmt.Errorf("oto: IAudioClient2::GetDevicePeriod failed: HRESULT(%d)", uint32(r))
 	}
 	return defaultDevicePeriod, minimumDevicePeriod, nil
@@ -221,6 +252,9 @@ func (i *_IAudioClient2) GetService(riid *windows.GUID) (unsafe.Pointer, error) 
 	var v unsafe.Pointer
 	r, _, _ := syscall.Syscall(i.vtbl.GetService, 3, uintptr(unsafe.Pointer(i)), uintptr(unsafe.Pointer(riid)), uintptr(unsafe.Pointer(&v)))
 	if uint32(r) != uint32(windows.S_OK) {
+		if isAudclntErr(uint32(r)) {
+			return nil, fmt.Errorf("oto: IAudioClient2::GetService failed: %w", _AUDCLNT_ERR(r))
+		}
 		return nil, fmt.Errorf("oto: IAudioClient2::GetService failed: HRESULT(%d)", uint32(r))
 	}
 	return v, nil
@@ -244,6 +278,9 @@ func (i *_IAudioClient2) Initialize(shareMode _AUDCLNT_SHAREMODE, streamFlags ui
 	runtime.KeepAlive(pFormat)
 	runtime.KeepAlive(audioSessionGuid)
 	if uint32(r) != uint32(windows.S_OK) {
+		if isAudclntErr(uint32(r)) {
+			return fmt.Errorf("oto: IAudioClient2::Initialize failed: %w", _AUDCLNT_ERR(r))
+		}
 		return fmt.Errorf("oto: IAudioClient2::Initialize failed: HRESULT(%d)", uint32(r))
 	}
 	return nil
@@ -258,6 +295,9 @@ func (i *_IAudioClient2) IsFormatSupported(shareMode _AUDCLNT_SHAREMODE, pFormat
 		if uint32(r) == uint32(windows.S_FALSE) {
 			return closestMatch, nil
 		}
+		if isAudclntErr(uint32(r)) {
+			return nil, fmt.Errorf("oto: IAudioClient2::IsFormatSupported failed: %w", _AUDCLNT_ERR(r))
+		}
 		return nil, fmt.Errorf("oto: IAudioClient2::IsFormatSupported failed: HRESULT(%d)", uint32(r))
 	}
 	return nil, nil
@@ -267,6 +307,9 @@ func (i *_IAudioClient2) SetClientProperties(pProperties *_AudioClientProperties
 	r, _, _ := syscall.Syscall(i.vtbl.SetClientProperties, 2, uintptr(unsafe.Pointer(i)), uintptr(unsafe.Pointer(pProperties)), 0)
 	runtime.KeepAlive(pProperties)
 	if uint32(r) != uint32(windows.S_OK) {
+		if isAudclntErr(uint32(r)) {
+			return fmt.Errorf("oto: IAudioClient2::SetClientProperties failed: %w", _AUDCLNT_ERR(r))
+		}
 		return fmt.Errorf("oto: IAudioClient2::SetClientProperties failed: HRESULT(%d)", uint32(r))
 	}
 	return nil
@@ -275,6 +318,9 @@ func (i *_IAudioClient2) SetClientProperties(pProperties *_AudioClientProperties
 func (i *_IAudioClient2) SetEventHandle(eventHandle windows.Handle) error {
 	r, _, _ := syscall.Syscall(i.vtbl.SetEventHandle, 2, uintptr(unsafe.Pointer(i)), uintptr(eventHandle), 0)
 	if uint32(r) != uint32(windows.S_OK) {
+		if isAudclntErr(uint32(r)) {
+			return fmt.Errorf("oto: IAudioClient2::SetEventHandle failed: %w", _AUDCLNT_ERR(r))
+		}
 		return fmt.Errorf("oto: IAudioClient2::SetEventHandle failed: HRESULT(%d)", uint32(r))
 	}
 	return nil
@@ -283,6 +329,9 @@ func (i *_IAudioClient2) SetEventHandle(eventHandle windows.Handle) error {
 func (i *_IAudioClient2) Start() error {
 	r, _, _ := syscall.Syscall(i.vtbl.Start, 1, uintptr(unsafe.Pointer(i)), 0, 0)
 	if uint32(r) != uint32(windows.S_OK) {
+		if isAudclntErr(uint32(r)) {
+			return fmt.Errorf("oto: IAudioClient2::Start failed: %w", _AUDCLNT_ERR(r))
+		}
 		return fmt.Errorf("oto: IAudioClient2::Start failed: HRESULT(%d)", uint32(r))
 	}
 	return nil
@@ -291,6 +340,9 @@ func (i *_IAudioClient2) Start() error {
 func (i *_IAudioClient2) Stop() error {
 	r, _, _ := syscall.Syscall(i.vtbl.Stop, 1, uintptr(unsafe.Pointer(i)), 0, 0)
 	if uint32(r) != uint32(windows.S_OK) {
+		if isAudclntErr(uint32(r)) {
+			return fmt.Errorf("oto: IAudioClient2::Stop failed: %w", _AUDCLNT_ERR(r))
+		}
 		return fmt.Errorf("oto: IAudioClient2::Stop failed: HRESULT(%d)", uint32(r))
 	}
 	return nil
@@ -313,6 +365,9 @@ func (i *_IAudioRenderClient) GetBuffer(numFramesRequested uint32) (*byte, error
 	var data *byte
 	r, _, _ := syscall.Syscall(i.vtbl.GetBuffer, 3, uintptr(unsafe.Pointer(i)), uintptr(numFramesRequested), uintptr(unsafe.Pointer(&data)))
 	if uint32(r) != uint32(windows.S_OK) {
+		if isAudclntErr(uint32(r)) {
+			return nil, fmt.Errorf("oto: IAudioRenderClient::GetBuffer failed: %w", _AUDCLNT_ERR(r))
+		}
 		return nil, fmt.Errorf("oto: IAudioRenderClient::GetBuffer failed: HRESULT(%d)", uint32(r))
 	}
 	return data, nil
@@ -321,6 +376,9 @@ func (i *_IAudioRenderClient) GetBuffer(numFramesRequested uint32) (*byte, error
 func (i *_IAudioRenderClient) ReleaseBuffer(numFramesWritten uint32, dwFlags uint32) error {
 	r, _, _ := syscall.Syscall(i.vtbl.ReleaseBuffer, 3, uintptr(unsafe.Pointer(i)), uintptr(numFramesWritten), uintptr(dwFlags))
 	if uint32(r) != uint32(windows.S_OK) {
+		if isAudclntErr(uint32(r)) {
+			return fmt.Errorf("oto: IAudioRenderClient::ReleaseBuffer failed: %w", _AUDCLNT_ERR(r))
+		}
 		return fmt.Errorf("oto: IAudioRenderClient::ReleaseBuffer failed: HRESULT(%d)", uint32(r))
 	}
 	return nil

@@ -15,6 +15,7 @@
 package oto
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 	"runtime"
@@ -86,7 +87,7 @@ type wasapiContext struct {
 	m sync.Mutex
 }
 
-func newWASAPIContext(sampleRate, channelCount int, mux *mux.Mux) (*wasapiContext, error) {
+func newWASAPIContext(sampleRate, channelCount int, mux *mux.Mux) (context *wasapiContext, ferr error) {
 	t, err := newCOMThread()
 	if err != nil {
 		return nil, err
@@ -99,21 +100,56 @@ func newWASAPIContext(sampleRate, channelCount int, mux *mux.Mux) (*wasapiContex
 		comThread:    t,
 	}
 
-	var cerr error
-	t.Run(func() {
-		if err := c.initOnCOMThread(); err != nil {
-			cerr = err
-			return
+	ev, err := windows.CreateEventEx(nil, nil, 0, windows.EVENT_ALL_ACCESS)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if ferr != nil {
+			windows.CloseHandle(ev)
 		}
-	})
-	if cerr != nil {
-		return nil, cerr
+	}()
+	c.sampleReadyEvent = ev
+
+	if err := c.start(); err != nil {
+		return nil, err
 	}
 
 	return c, nil
 }
 
-func (c *wasapiContext) initOnCOMThread() error {
+func (c *wasapiContext) start() error {
+	var cerr error
+	c.comThread.Run(func() {
+		if err := c.startOnCOMThread(); err != nil {
+			cerr = err
+			return
+		}
+	})
+	if cerr != nil {
+		return cerr
+	}
+
+	go func() {
+		if err := c.loop(); err != nil {
+			if !errors.Is(err, _AUDCLNT_E_DEVICE_INVALIDATED) && errors.Is(err, _AUDCLNT_E_RESOURCES_INVALIDATED) {
+				c.err.TryStore(err)
+				return
+			}
+			// Probably the driver is missing temporarily e.g. plugging out the headset.
+			// Recreate the device.
+			if err := c.start(); err != nil {
+				c.err.TryStore(err)
+				return
+			}
+			return
+		}
+	}()
+
+	return nil
+}
+
+func (c *wasapiContext) startOnCOMThread() error {
 	e, err := _CoCreateInstance(&uuidMMDeviceEnumerator, nil, uint32(_CLSCTX_ALL), &uuidIMMDeviceEnumerator)
 	if err != nil {
 		return err
@@ -192,12 +228,6 @@ func (c *wasapiContext) initOnCOMThread() error {
 	}
 	c.renderClient = (*_IAudioRenderClient)(renderClient)
 
-	ev, err := windows.CreateEventEx(nil, nil, 0, windows.EVENT_ALL_ACCESS)
-	if err != nil {
-		return err
-	}
-	c.sampleReadyEvent = ev
-
 	if err := c.client.SetEventHandle(c.sampleReadyEvent); err != nil {
 		return err
 	}
@@ -208,23 +238,23 @@ func (c *wasapiContext) initOnCOMThread() error {
 		return err
 	}
 
-	go func() {
-		runtime.LockOSThread()
-		defer runtime.UnlockOSThread()
+	return nil
+}
 
-		if err := _CoInitializeEx(nil, _COINIT_MULTITHREADED); err != nil {
-			c.client.Stop()
-			c.err.TryStore(err)
-			return
-		}
-		defer _CoUninitialize()
+func (c *wasapiContext) loop() error {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 
-		if err := c.loopOnRenderThread(); err != nil {
-			c.client.Stop()
-			c.err.TryStore(err)
-			return
-		}
-	}()
+	if err := _CoInitializeEx(nil, _COINIT_MULTITHREADED); err != nil {
+		c.client.Stop()
+		return err
+	}
+	defer _CoUninitialize()
+
+	if err := c.loopOnRenderThread(); err != nil {
+		c.client.Stop()
+		return err
+	}
 
 	return nil
 }
