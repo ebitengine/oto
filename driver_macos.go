@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build darwin && !ios && !js
-// +build darwin,!ios,!js
+//go:build darwin && !ios && !js && !kinc
+// +build darwin,!ios,!js,!kinc
 
 package oto
 
