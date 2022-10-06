@@ -236,11 +236,16 @@ func (p *playerImpl) playImpl() {
 	if p.state != playerPaused {
 		return
 	}
+	p.state = playerPlay
 
 	if !p.eof {
 		buf := p.ensureTmpBuf()
 		for len(p.buf) < p.bufferSize {
+			// Avoid locking during an external function call, as this might block (#188).
+			p.m.Unlock()
 			n, err := p.src.Read(buf)
+			p.m.Lock()
+
 			if err != nil && err != io.EOF {
 				p.setErrorImpl(err)
 				return
@@ -253,8 +258,9 @@ func (p *playerImpl) playImpl() {
 		}
 	}
 
-	if !p.eof || len(p.buf) > 0 {
-		p.state = playerPlay
+	if p.eof && len(p.buf) == 0 {
+		p.state = playerPaused
+		return
 	}
 
 	p.m.Unlock()
@@ -448,7 +454,11 @@ func (p *playerImpl) readSourceToBuffer() int {
 	}
 
 	buf := p.ensureTmpBuf()
+
+	// Avoid locking during an external function call, as this might block (#188).
+	p.m.Unlock()
 	n, err := p.src.Read(buf)
+	p.m.Lock()
 
 	if err != nil && err != io.EOF {
 		p.setErrorImpl(err)
