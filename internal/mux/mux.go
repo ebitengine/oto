@@ -229,6 +229,17 @@ func (p *playerImpl) ensureTmpBuf() []byte {
 	return p.tmpbuf
 }
 
+// read reads the source to buf.
+// read unlocks the mutex temporarily and locks when reading finishes.
+// This avoids locking during an external function call Read (#188).
+//
+// When read is called, the mutex m must be locked.
+func (p *playerImpl) read(buf []byte) (int, error) {
+	p.m.Unlock()
+	defer p.m.Lock()
+	return p.src.Read(buf)
+}
+
 func (p *playerImpl) playImpl() {
 	if p.err != nil {
 		return
@@ -241,11 +252,7 @@ func (p *playerImpl) playImpl() {
 	if !p.eof {
 		buf := p.ensureTmpBuf()
 		for len(p.buf) < p.bufferSize {
-			// Avoid locking during an external function call, as this might block (#188).
-			p.m.Unlock()
-			n, err := p.src.Read(buf)
-			p.m.Lock()
-
+			n, err := p.read(buf)
 			if err != nil && err != io.EOF {
 				p.setErrorImpl(err)
 				return
@@ -453,11 +460,7 @@ func (p *playerImpl) readSourceToBuffer() int {
 	}
 
 	buf := p.ensureTmpBuf()
-
-	// Avoid locking during an external function call, as this might block (#188).
-	p.m.Unlock()
-	n, err := p.src.Read(buf)
-	p.m.Lock()
+	n, err := p.read(buf)
 
 	if err != nil && err != io.EOF {
 		p.setErrorImpl(err)
