@@ -260,7 +260,6 @@ func (p *playerImpl) playImpl() {
 
 	if p.eof && len(p.buf) == 0 {
 		p.state = playerPaused
-		return
 	}
 
 	p.m.Unlock()
