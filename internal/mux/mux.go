@@ -229,6 +229,35 @@ func (p *playerImpl) ensureTmpBuf() []byte {
 	return p.tmpbuf
 }
 
+// read reads the source to buf.
+// read unlocks the mutex temporarily and locks when reading finishes.
+// This avoids locking during an external function call Read (#188).
+//
+// When read is called, the mutex m must be locked.
+func (p *playerImpl) read(buf []byte) (int, error) {
+	p.m.Unlock()
+	defer p.m.Lock()
+	return p.src.Read(buf)
+}
+
+// addToPlayers adds p to the players set.
+//
+// When addToPlayers is called, the mutex m must be locked.
+func (p *playerImpl) addToPlayers() {
+	p.m.Unlock()
+	defer p.m.Lock()
+	p.players.addPlayer(p)
+}
+
+// removeFromPlayers removes p from the players set.
+//
+// When removeFromPlayers is called, the mutex m must be locked.
+func (p *playerImpl) removeFromPlayers() {
+	p.m.Unlock()
+	defer p.m.Lock()
+	p.players.removePlayer(p)
+}
+
 func (p *playerImpl) playImpl() {
 	if p.err != nil {
 		return
@@ -236,11 +265,12 @@ func (p *playerImpl) playImpl() {
 	if p.state != playerPaused {
 		return
 	}
+	p.state = playerPlay
 
 	if !p.eof {
 		buf := p.ensureTmpBuf()
 		for len(p.buf) < p.bufferSize {
-			n, err := p.src.Read(buf)
+			n, err := p.read(buf)
 			if err != nil && err != io.EOF {
 				p.setErrorImpl(err)
 				return
@@ -253,13 +283,11 @@ func (p *playerImpl) playImpl() {
 		}
 	}
 
-	if !p.eof || len(p.buf) > 0 {
-		p.state = playerPlay
+	if p.eof && len(p.buf) == 0 {
+		p.state = playerPaused
 	}
 
-	p.m.Unlock()
-	p.players.addPlayer(p)
-	p.m.Lock()
+	p.addToPlayers()
 }
 
 func (p *Player) Pause() {
@@ -371,9 +399,7 @@ func (p *playerImpl) Close() error {
 }
 
 func (p *playerImpl) closeImpl() error {
-	p.m.Unlock()
-	p.players.removePlayer(p)
-	p.m.Lock()
+	p.removeFromPlayers()
 
 	if p.state == playerClosed {
 		return p.err
@@ -448,7 +474,7 @@ func (p *playerImpl) readSourceToBuffer() int {
 	}
 
 	buf := p.ensureTmpBuf()
-	n, err := p.src.Read(buf)
+	n, err := p.read(buf)
 
 	if err != nil && err != io.EOF {
 		p.setErrorImpl(err)
