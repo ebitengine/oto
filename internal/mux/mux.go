@@ -240,6 +240,24 @@ func (p *playerImpl) read(buf []byte) (int, error) {
 	return p.src.Read(buf)
 }
 
+// addToPlayers adds p to the players set.
+//
+// When addToPlayers is called, the mutex m must be locked.
+func (p *playerImpl) addToPlayers() {
+	p.m.Unlock()
+	defer p.m.Lock()
+	p.players.addPlayer(p)
+}
+
+// removeFromPlayers removes p from the players set.
+//
+// When removeFromPlayers is called, the mutex m must be locked.
+func (p *playerImpl) removeFromPlayers() {
+	p.m.Unlock()
+	defer p.m.Lock()
+	p.players.removePlayer(p)
+}
+
 func (p *playerImpl) playImpl() {
 	if p.err != nil {
 		return
@@ -269,9 +287,7 @@ func (p *playerImpl) playImpl() {
 		p.state = playerPaused
 	}
 
-	p.m.Unlock()
-	p.players.addPlayer(p)
-	p.m.Lock()
+	p.addToPlayers()
 }
 
 func (p *Player) Pause() {
@@ -383,9 +399,7 @@ func (p *playerImpl) Close() error {
 }
 
 func (p *playerImpl) closeImpl() error {
-	p.m.Unlock()
-	p.players.removePlayer(p)
-	p.m.Lock()
+	p.removeFromPlayers()
 
 	if p.state == playerClosed {
 		return p.err
