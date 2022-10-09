@@ -20,14 +20,13 @@ package oto
 // #cgo !darwin LDFLAGS: -Wl,-unresolved-symbols=ignore-all
 // #cgo darwin LDFLAGS: -Wl,-undefined,dynamic_lookup
 //
-// typedef void (*OnReadCallback)(float* buf, size_t length);
+// typedef void (*oto_OnReadCallbackType)(float* buf, size_t length);
 //
-// // TODO: This odd function name is for backward compatibility. Rename them.
-// void EbitenOpenAudio(int sample_rate, int channel_num, OnReadCallback on_read_callback);
+// void oto_OpenAudio(int sample_rate, int channel_num, oto_OnReadCallbackType on_read_callback);
 //
 // void oto_OnReadCallback(float* buf, size_t length);
 // static void oto_OpenProxy(int sample_rate, int channel_num) {
-//   EbitenOpenAudio(sample_rate, channel_num, oto_OnReadCallback);
+//   oto_OpenAudio(sample_rate, channel_num, oto_OnReadCallback);
 // }
 import "C"
 
