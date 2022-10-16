@@ -59,7 +59,7 @@ ALSA is required. On Ubuntu or Debian, run this command:
 apt install libasound2-dev
 ```
 
-On RedHat-based linux distributions run:
+On RedHat-based linux distributions, run:
 
 ```sh
 dnf install alsa-lib-devel
