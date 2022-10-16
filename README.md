@@ -165,8 +165,9 @@ In such cases you might want to stream the file. Luckily this is very simple, ju
 package main
 
 import (
-    "time"
+    "bytes"
     "os"
+    "time"
 
     "github.com/hajimehoshi/go-mp3"
     "github.com/hajimehoshi/oto/v2"
