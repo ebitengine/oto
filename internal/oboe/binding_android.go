@@ -26,7 +26,6 @@ import "C"
 
 import (
 	"fmt"
-	"reflect"
 	"unsafe"
 )
 
@@ -57,10 +56,5 @@ func Resume() error {
 
 //export oto_oboe_read
 func oto_oboe_read(buf *C.float, len C.size_t) {
-	var s []float32
-	h := (*reflect.SliceHeader)(unsafe.Pointer(&s))
-	h.Data = uintptr(unsafe.Pointer(buf))
-	h.Len = int(len)
-	h.Cap = int(len)
-	theReadFunc(s)
+	theReadFunc(unsafe.Slice((*float32)(unsafe.Pointer(buf)), len))
 }

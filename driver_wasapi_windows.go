@@ -17,7 +17,6 @@ package oto
 import (
 	"errors"
 	"fmt"
-	"reflect"
 	"runtime"
 	"sync"
 	"time"
@@ -390,12 +389,7 @@ func (c *wasapiContext) writeOnRenderThread() error {
 	c.mux.ReadFloat32s(c.buf)
 
 	// Copy the read buf to the destination buffer.
-	var dst []float32
-	h := (*reflect.SliceHeader)(unsafe.Pointer(&dst))
-	h.Data = uintptr(unsafe.Pointer(dstBuf))
-	h.Len = buflen
-	h.Cap = buflen
-	copy(dst, c.buf)
+	copy(unsafe.Slice((*float32)(unsafe.Pointer(dstBuf)), buflen), c.buf)
 
 	// Release the buffer.
 	if err := c.renderClient.ReleaseBuffer(frames, 0); err != nil {

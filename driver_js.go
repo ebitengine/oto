@@ -16,7 +16,6 @@ package oto
 
 import (
 	"errors"
-	"reflect"
 	"runtime"
 	"syscall/js"
 	"unsafe"
@@ -131,11 +130,7 @@ func (c *context) Err() error {
 }
 
 func float32SliceToTypedArray(s []float32) js.Value {
-	h := (*reflect.SliceHeader)(unsafe.Pointer(&s))
-	h.Len *= 4
-	h.Cap *= 4
-	bs := *(*[]byte)(unsafe.Pointer(h))
-
+	bs := unsafe.Slice((*byte)(unsafe.Pointer(&s[0])), len(s)*4)
 	a := js.Global().Get("Uint8Array").New(len(bs))
 	js.CopyBytesToJS(a, bs)
 	runtime.KeepAlive(s)

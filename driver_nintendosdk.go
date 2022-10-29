@@ -30,7 +30,6 @@ package oto
 import "C"
 
 import (
-	"reflect"
 	"unsafe"
 
 	"github.com/hajimehoshi/oto/v2/internal/mux"
@@ -38,12 +37,7 @@ import (
 
 //export oto_OnReadCallback
 func oto_OnReadCallback(buf *C.float, length C.size_t) {
-	var s []float32
-	h := (*reflect.SliceHeader)(unsafe.Pointer(&s))
-	h.Data = uintptr(unsafe.Pointer(buf))
-	h.Len = int(length)
-	h.Cap = int(length)
-	theContext.mux.ReadFloat32s(s)
+	theContext.mux.ReadFloat32s(unsafe.Slice((*float32)(unsafe.Pointer(buf)), length))
 }
 
 type context struct {
