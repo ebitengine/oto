@@ -4,7 +4,7 @@ go 1.18
 
 require (
 	github.com/ebitengine/purego v0.2.0-alpha.0.20221019153918-7128aea44c77
-	golang.org/x/sys v0.0.0-20220712014510-0a85c31ab51e
+	golang.org/x/sys v0.1.0
 )
 
 retract v2.3.0-alpha.4 // Wrongly tagged
