@@ -13,7 +13,6 @@
 // limitations under the License.
 
 //go:build darwin && !ios
-// +build darwin,!ios
 
 package oto
 
