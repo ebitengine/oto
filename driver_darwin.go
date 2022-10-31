@@ -152,8 +152,9 @@ func (c *context) appendBuffer(buf32 []float32) {
 	c.unqueuedBuffers = c.unqueuedBuffers[:len(c.unqueuedBuffers)-1]
 
 	c.mux.ReadFloat32s(buf32)
+	audioSlice := unsafe.Slice((*float32)(unsafe.Pointer(buf.mAudioData)), buf.mAudioDataByteSize/float32SizeInBytes)
 	for i, f := range buf32 {
-		*(*float32)(unsafe.Pointer(buf.mAudioData + uintptr(i)*float32SizeInBytes)) = f
+		audioSlice[i] = f
 	}
 
 	if osstatus := _AudioQueueEnqueueBuffer(c.audioQueue, buf, 0, nil); osstatus != noErr {
