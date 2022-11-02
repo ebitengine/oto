@@ -62,7 +62,7 @@ func newContext(sampleRate int, channelCount int, bitDepthInBytes int) (*context
 
 	// TODO: Use AudioWorklet if available.
 	sp := d.audioContext.Call("createScriptProcessor", bufferSizeInBytes/4/channelCount, 0, channelCount)
-	f := js.FuncOf(func(this js.Value, arguments []js.Value) interface{} {
+	f := js.FuncOf(func(this js.Value, arguments []js.Value) any {
 		d.mux.ReadFloat32s(buf32)
 		for i := 0; i < channelCount; i++ {
 			for j := range chBuf32[i] {
@@ -91,7 +91,7 @@ func newContext(sampleRate int, channelCount int, bitDepthInBytes int) (*context
 
 	setCallback := func(event string) js.Func {
 		var f js.Func
-		f = js.FuncOf(func(this js.Value, arguments []js.Value) interface{} {
+		f = js.FuncOf(func(this js.Value, arguments []js.Value) any {
 			if !d.ready {
 				d.audioContext.Call("resume")
 				d.ready = true
