@@ -18,17 +18,39 @@ package mux
 
 import (
 	"errors"
+	"fmt"
 	"io"
+	"math"
 	"runtime"
 	"sync"
 	"time"
 )
 
+type Format int
+
+const (
+	FormatFloat32LE     Format = 0
+	FormatUnsignedInt8  Format = 1 // This must be 1 for backward compatibility during v2.
+	FormatSignedInt16LE Format = 2 // This must be 2 for backward compatibility during v2.
+)
+
+func (f Format) ByteLength() int {
+	switch f {
+	case FormatFloat32LE:
+		return 4
+	case FormatUnsignedInt8:
+		return 1
+	case FormatSignedInt16LE:
+		return 2
+	}
+	panic(fmt.Sprintf("mux: unexpected format: %d", f))
+}
+
 // Mux is a low-level multiplexer of audio players.
 type Mux struct {
-	sampleRate      int
-	channelCount    int
-	bitDepthInBytes int
+	sampleRate   int
+	channelCount int
+	format       Format
 
 	players map[*playerImpl]struct{}
 	buf     []float32
@@ -36,12 +58,12 @@ type Mux struct {
 }
 
 // New creates a new Mux.
-func New(sampleRate, channelCount, bitDepthInBytes int) *Mux {
+func New(sampleRate int, channelCount int, format Format) *Mux {
 	p := &Mux{
-		sampleRate:      sampleRate,
-		channelCount:    channelCount,
-		bitDepthInBytes: bitDepthInBytes,
-		cond:            sync.NewCond(&sync.Mutex{}),
+		sampleRate:   sampleRate,
+		channelCount: channelCount,
+		format:       format,
+		cond:         sync.NewCond(&sync.Mutex{}),
 	}
 	go p.loop()
 	return p
@@ -417,7 +439,8 @@ func (p *playerImpl) readBufferAndAdd(buf []float32) int {
 		return 0
 	}
 
-	bitDepthInBytes := p.players.bitDepthInBytes
+	format := p.players.format
+	bitDepthInBytes := format.ByteLength()
 	n := len(p.buf) / bitDepthInBytes
 	if n > len(buf) {
 		n = len(buf)
@@ -427,13 +450,17 @@ func (p *playerImpl) readBufferAndAdd(buf []float32) int {
 
 	for i := 0; i < n; i++ {
 		var v float32
-		switch bitDepthInBytes {
-		case 1:
+		switch format {
+		case FormatFloat32LE:
+			v = math.Float32frombits(uint32(src[4*i]) | uint32(src[4*i+1])<<8 | uint32(src[4*i+2])<<16 | uint32(src[4*i+3])<<24)
+		case FormatUnsignedInt8:
 			v8 := src[i]
 			v = float32(v8-(1<<7)) / (1 << 7)
-		case 2:
+		case FormatSignedInt16LE:
 			v16 := int16(src[2*i]) | (int16(src[2*i+1]) << 8)
 			v = float32(v16) / (1 << 15)
+		default:
+			panic(fmt.Sprintf("mux: unexpected format: %d", format))
 		}
 		buf[i] += v * volume
 	}
@@ -501,7 +528,7 @@ func (p *playerImpl) setErrorImpl(err error) {
 // defaultBufferSize returns the default size of the buffer for the audio source.
 // This buffer is used when unreading on pausing the player.
 func (m *Mux) defaultBufferSize() int {
-	bytesPerSample := m.channelCount * m.bitDepthInBytes
+	bytesPerSample := m.channelCount * m.format.ByteLength()
 	s := m.sampleRate * bytesPerSample / 2 // 0.5[s]
 	// Align s in multiples of bytes per sample, or a buffer could have extra bytes.
 	return s / bytesPerSample * bytesPerSample

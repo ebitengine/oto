@@ -33,7 +33,7 @@ type context struct {
 	mux *mux.Mux
 }
 
-func newContext(sampleRate int, channelCount int, bitDepthInBytes int) (*context, chan struct{}, error) {
+func newContext(sampleRate int, channelCount int, format mux.Format) (*context, chan struct{}, error) {
 	ready := make(chan struct{})
 
 	class := js.Global().Get("AudioContext")
@@ -48,7 +48,7 @@ func newContext(sampleRate int, channelCount int, bitDepthInBytes int) (*context
 
 	d := &context{
 		audioContext: class.New(options),
-		mux:          mux.New(sampleRate, channelCount, bitDepthInBytes),
+		mux:          mux.New(sampleRate, channelCount, format),
 	}
 
 	// 4096 was not great at least on Safari 15.

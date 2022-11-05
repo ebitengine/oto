@@ -38,11 +38,11 @@ type context struct {
 	err   atomicError
 }
 
-func newContext(sampleRate, channelCount, bitDepthInBytes int) (*context, chan struct{}, error) {
+func newContext(sampleRate int, channelCount int, format mux.Format) (*context, chan struct{}, error) {
 	ctx := &context{
 		sampleRate:   sampleRate,
 		channelCount: channelCount,
-		mux:          mux.New(sampleRate, channelCount, bitDepthInBytes),
+		mux:          mux.New(sampleRate, channelCount, format),
 		ready:        make(chan struct{}),
 	}
 

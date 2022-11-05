@@ -16,6 +16,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"io"
 	"math"
 	"runtime"
@@ -26,9 +27,9 @@ import (
 )
 
 var (
-	sampleRate      = flag.Int("samplerate", 48000, "sample rate")
-	channelCount    = flag.Int("channelcount", 2, "number of channel")
-	bitDepthInBytes = flag.Int("bitdepthinbytes", 2, "bit depth in bytes")
+	sampleRate   = flag.Int("samplerate", 48000, "sample rate")
+	channelCount = flag.Int("channelcount", 2, "number of channel")
+	format       = flag.String("format", "s16le", "source format (u8, s16le, or f32le)")
 )
 
 type SineWave struct {
@@ -36,15 +37,33 @@ type SineWave struct {
 	length int64
 	pos    int64
 
+	channelCount int
+	format       int
+
 	remaining []byte
 }
 
-func NewSineWave(freq float64, duration time.Duration) *SineWave {
-	l := int64(*channelCount) * int64(*bitDepthInBytes) * int64(*sampleRate) * int64(duration) / int64(time.Second)
+func formatByteLength(format int) int {
+	switch format {
+	case oto.FormatFloat32LE:
+		return 4
+	case oto.FormatUnsignedInt8:
+		return 1
+	case oto.FormatSignedInt16LE:
+		return 2
+	default:
+		panic(fmt.Sprintf("unexpected format: %d", format))
+	}
+}
+
+func NewSineWave(freq float64, duration time.Duration, channelCount int, format int) *SineWave {
+	l := int64(channelCount) * int64(formatByteLength(format)) * int64(*sampleRate) * int64(duration) / int64(time.Second)
 	l = l / 4 * 4
 	return &SineWave{
-		freq:   freq,
-		length: l,
+		freq:         freq,
+		length:       l,
+		channelCount: channelCount,
+		format:       format,
 	}
 }
 
@@ -74,10 +93,21 @@ func (s *SineWave) Read(buf []byte) (int, error) {
 
 	length := float64(*sampleRate) / float64(s.freq)
 
-	num := (*bitDepthInBytes) * (*channelCount)
+	num := formatByteLength(s.format) * s.channelCount
 	p := s.pos / int64(num)
-	switch *bitDepthInBytes {
-	case 1:
+	switch s.format {
+	case oto.FormatFloat32LE:
+		for i := 0; i < len(buf)/num; i++ {
+			bs := math.Float32bits(float32(math.Sin(2*math.Pi*float64(p)/length) * 0.3))
+			for ch := 0; ch < *channelCount; ch++ {
+				buf[num*i+4*ch] = byte(bs)
+				buf[num*i+1+4*ch] = byte(bs >> 8)
+				buf[num*i+2+4*ch] = byte(bs >> 16)
+				buf[num*i+3+4*ch] = byte(bs >> 24)
+			}
+			p++
+		}
+	case oto.FormatUnsignedInt8:
 		for i := 0; i < len(buf)/num; i++ {
 			const max = 127
 			b := int(math.Sin(2*math.Pi*float64(p)/length) * 0.3 * max)
@@ -86,7 +116,7 @@ func (s *SineWave) Read(buf []byte) (int, error) {
 			}
 			p++
 		}
-	case 2:
+	case oto.FormatSignedInt16LE:
 		for i := 0; i < len(buf)/num; i++ {
 			const max = 32767
 			b := int16(math.Sin(2*math.Pi*float64(p)/length) * 0.3 * max)
@@ -112,8 +142,8 @@ func (s *SineWave) Read(buf []byte) (int, error) {
 	return n, nil
 }
 
-func play(context *oto.Context, freq float64, duration time.Duration) oto.Player {
-	p := context.NewPlayer(NewSineWave(freq, duration))
+func play(context *oto.Context, freq float64, duration time.Duration, channelCount int, format int) oto.Player {
+	p := context.NewPlayer(NewSineWave(freq, duration, channelCount, format))
 	p.Play()
 	return p
 }
@@ -125,7 +155,18 @@ func run() error {
 		freqG = 784.0
 	)
 
-	c, ready, err := oto.NewContext(*sampleRate, *channelCount, *bitDepthInBytes)
+	var f int
+	switch *format {
+	case "f32le":
+		f = oto.FormatFloat32LE
+	case "u8":
+		f = oto.FormatUnsignedInt8
+	case "s16le":
+		f = oto.FormatSignedInt16LE
+	default:
+		return fmt.Errorf("format must be u8, s16le, or f32le but: %s", *format)
+	}
+	c, ready, err := oto.NewContext(*sampleRate, *channelCount, f)
 	if err != nil {
 		return err
 	}
@@ -138,7 +179,7 @@ func run() error {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		p := play(c, freqC, 3*time.Second)
+		p := play(c, freqC, 3*time.Second, *channelCount, f)
 		m.Lock()
 		players = append(players, p)
 		m.Unlock()
@@ -149,7 +190,7 @@ func run() error {
 	go func() {
 		defer wg.Done()
 		time.Sleep(1 * time.Second)
-		p := play(c, freqE, 3*time.Second)
+		p := play(c, freqE, 3*time.Second, *channelCount, f)
 		m.Lock()
 		players = append(players, p)
 		m.Unlock()
@@ -160,7 +201,7 @@ func run() error {
 	go func() {
 		defer wg.Done()
 		time.Sleep(2 * time.Second)
-		p := play(c, freqG, 3*time.Second)
+		p := play(c, freqG, 3*time.Second, *channelCount, f)
 		m.Lock()
 		players = append(players, p)
 		m.Unlock()

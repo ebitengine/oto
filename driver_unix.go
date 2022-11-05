@@ -106,11 +106,11 @@ func deviceCandidates() []string {
 	return devices
 }
 
-func newContext(sampleRate, channelCount, bitDepthInBytes int) (*context, chan struct{}, error) {
+func newContext(sampleRate int, channelCount int, format mux.Format) (*context, chan struct{}, error) {
 	c := &context{
 		channelCount: channelCount,
 		cond:         sync.NewCond(&sync.Mutex{}),
-		mux:          mux.New(sampleRate, channelCount, bitDepthInBytes),
+		mux:          mux.New(sampleRate, channelCount, format),
 		ready:        make(chan struct{}),
 	}
 	theContext = c

@@ -92,13 +92,13 @@ type context struct {
 
 var theContext *context
 
-func newContext(sampleRate, channelCount, bitDepthInBytes int) (*context, chan struct{}, error) {
+func newContext(sampleRate int, channelCount int, format mux.Format) (*context, chan struct{}, error) {
 	ready := make(chan struct{})
 	close(ready)
 
 	c := &context{
 		cond: sync.NewCond(&sync.Mutex{}),
-		mux:  mux.New(sampleRate, channelCount, bitDepthInBytes),
+		mux:  mux.New(sampleRate, channelCount, format),
 	}
 	theContext = c
 

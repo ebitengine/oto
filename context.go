@@ -17,6 +17,8 @@ package oto
 import (
 	"io"
 	"sync"
+
+	"github.com/hajimehoshi/oto/v2/internal/mux"
 )
 
 // Context is the main object in Oto. It interacts with the audio drivers.
@@ -28,6 +30,17 @@ import (
 type Context struct {
 	context *context
 }
+
+const (
+	// FormatFloat32LE is the format of 32 bits floats little endian.
+	FormatFloat32LE = 0
+
+	// FormatUnsignedInt8 is the format of 8 bits integers.
+	FormatUnsignedInt8 = 1
+
+	//FormatSignedInt16LE is the format of 16 bits integers little endian.
+	FormatSignedInt16LE = 2
+)
 
 // NewContext creates a new context, that creates and holds ready-to-use Player objects,
 // and returns a context, a channel that is closed when the context is ready, and an error if it exists.
@@ -41,10 +54,10 @@ type Context struct {
 // The channelCount argument specifies the number of channels. One channel is mono playback. Two
 // channels are stereo playback. No other values are supported.
 //
-// The bitDepthInBytes argument specifies the number of bytes per sample per channel. The usual value
-// is 2. Only values 1 and 2 are supported.
-func NewContext(sampleRate int, channelCount int, bitDepthInBytes int) (*Context, chan struct{}, error) {
-	ctx, ready, err := newContext(sampleRate, channelCount, bitDepthInBytes)
+// The format argument specifies the format of sources.
+// This value must be FormatFloat32LE, FormatUnsignedInt8, or FormatSignedInt16LE.
+func NewContext(sampleRate int, channelCount int, format int) (*Context, chan struct{}, error) {
+	ctx, ready, err := newContext(sampleRate, channelCount, mux.Format(format))
 	if err != nil {
 		return nil, nil, err
 	}
