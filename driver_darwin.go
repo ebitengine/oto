@@ -20,6 +20,7 @@ package oto
 //
 // void oto_render(void* inUserData, AudioQueueRef inAQ, AudioQueueBufferRef inBuffer);
 import "C"
+
 import (
 	"fmt"
 	"sync"
