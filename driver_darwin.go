@@ -14,12 +14,20 @@
 
 package oto
 
+// #cgo LDFLAGS: -framework AudioToolbox
+//
+// #import <AudioToolbox/AudioToolbox.h>
+//
+// void oto_render(void* inUserData, AudioQueueRef inAQ, AudioQueueBufferRef inBuffer);
+//
+import "C"
 import (
 	"fmt"
 	"sync"
 	"time"
 	"unsafe"
 
+	"github.com/ebitengine/purego"
 	"github.com/ebitengine/purego/objc"
 
 	"github.com/hajimehoshi/oto/v2/internal/mux"
@@ -44,14 +52,15 @@ func newAudioQueue(sampleRate, channelCount, bitDepthInBytes int) (_AudioQueueRe
 	}
 
 	var audioQueue _AudioQueueRef
-	if osstatus := _AudioQueueNewOutput(
-		&desc,
-		render,
-		nil,
+	// FIXME: Using Cgo callback because using NewCallback will eventually SIGSEGVs on amd64
+	if osstatus, _, _ := purego.SyscallN(_AudioQueueNewOutput,
+		uintptr(unsafe.Pointer(&desc)),
+		uintptr(C.oto_render),
+		0,
 		0, //CFRunLoopRef
 		0, //CFStringRef
 		0,
-		&audioQueue); osstatus != noErr {
+		uintptr(unsafe.Pointer(&audioQueue))); osstatus != noErr {
 		return 0, nil, fmt.Errorf("oto: AudioQueueNewFormat with StreamFormat failed: %d", osstatus)
 	}
 
@@ -211,10 +220,11 @@ func (c *context) Err() error {
 	return nil
 }
 
-func render(inUserData unsafe.Pointer, inAQ _AudioQueueRef, inBuffer _AudioQueueBufferRef) {
+//export oto_render
+func oto_render(inUserData unsafe.Pointer, inAQ C.AudioQueueRef, inBuffer C.AudioQueueBufferRef) {
 	theContext.cond.L.Lock()
 	defer theContext.cond.L.Unlock()
-	theContext.unqueuedBuffers = append(theContext.unqueuedBuffers, inBuffer)
+	theContext.unqueuedBuffers = append(theContext.unqueuedBuffers, (_AudioQueueBufferRef)(unsafe.Pointer(inBuffer)))
 	theContext.cond.Signal()
 }
 
