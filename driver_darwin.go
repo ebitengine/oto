@@ -19,7 +19,6 @@ package oto
 // #import <AudioToolbox/AudioToolbox.h>
 //
 // void oto_render(void* inUserData, AudioQueueRef inAQ, AudioQueueBufferRef inBuffer);
-//
 import "C"
 import (
 	"fmt"
