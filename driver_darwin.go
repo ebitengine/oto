@@ -39,7 +39,7 @@ const (
 	noErr = 0
 )
 
-func newAudioQueue(sampleRate, channelCount, bitDepthInBytes int) (_AudioQueueRef, []_AudioQueueBufferRef, error) {
+func newAudioQueue(sampleRate, channelCount int) (_AudioQueueRef, []_AudioQueueBufferRef, error) {
 	desc := _AudioStreamBasicDescription{
 		mSampleRate:       float64(sampleRate),
 		mFormatID:         uint32(kAudioFormatLinearPCM),
@@ -102,7 +102,7 @@ func newContext(sampleRate, channelCount, bitDepthInBytes int) (*context, chan s
 	}
 	theContext = c
 
-	q, bs, err := newAudioQueue(sampleRate, channelCount, bitDepthInBytes)
+	q, bs, err := newAudioQueue(sampleRate, channelCount)
 	if err != nil {
 		return nil, nil, err
 	}
