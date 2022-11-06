@@ -161,10 +161,7 @@ func (c *context) appendBuffer(buf32 []float32) {
 	c.unqueuedBuffers = c.unqueuedBuffers[:len(c.unqueuedBuffers)-1]
 
 	c.mux.ReadFloat32s(buf32)
-	audioSlice := unsafe.Slice((*float32)(unsafe.Pointer(buf.mAudioData)), buf.mAudioDataByteSize/float32SizeInBytes)
-	for i, f := range buf32 {
-		audioSlice[i] = f
-	}
+	copy(unsafe.Slice((*float32)(unsafe.Pointer(buf.mAudioData)), buf.mAudioDataByteSize/float32SizeInBytes), buf32)
 
 	if osstatus := _AudioQueueEnqueueBuffer(c.audioQueue, buf, 0, nil); osstatus != noErr {
 		c.err.TryStore(fmt.Errorf("oto: AudioQueueEnqueueBuffer failed: %d", osstatus))
