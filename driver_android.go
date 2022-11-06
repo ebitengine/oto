@@ -30,7 +30,7 @@ func newContext(sampleRate int, channelCount int, bitDepthInBytes int) (*context
 	c := &context{
 		mux: mux.New(sampleRate, channelCount, bitDepthInBytes),
 	}
-	if err := oboe.Play(sampleRate, channelCount, bitDepthInBytes, c.mux.ReadFloat32s); err != nil {
+	if err := oboe.Play(sampleRate, channelCount, c.mux.ReadFloat32s); err != nil {
 		return nil, nil, err
 	}
 	return c, ready, nil
