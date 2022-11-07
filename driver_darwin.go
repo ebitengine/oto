@@ -44,7 +44,6 @@ func newAudioQueue(sampleRate, channelCount int) (_AudioQueueRef, []_AudioQueueB
 	}
 
 	var audioQueue _AudioQueueRef
-	// FIXME: Using Cgo callback because using NewCallback will eventually SIGSEGVs on amd64
 	if osstatus := _AudioQueueNewOutput(
 		&desc,
 		render,
