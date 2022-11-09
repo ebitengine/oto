@@ -93,6 +93,8 @@ func newContext(sampleRate int, channelCount int, format mux.Format) (*context, 
 	theContext = c
 
 	go func() {
+		defer close(ready)
+
 		q, bs, err := newAudioQueue(sampleRate, channelCount)
 		if err != nil {
 			c.err.TryStore(err)
@@ -117,8 +119,6 @@ func newContext(sampleRate int, channelCount int, format mux.Format) (*context, 
 		}
 
 		go c.loop()
-
-		close(ready)
 	}()
 
 	return c, ready, nil
