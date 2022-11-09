@@ -85,7 +85,6 @@ var theContext *context
 
 func newContext(sampleRate int, channelCount int, format mux.Format) (*context, chan struct{}, error) {
 	ready := make(chan struct{})
-	close(ready)
 
 	c := &context{
 		cond: sync.NewCond(&sync.Mutex{}),
@@ -93,28 +92,34 @@ func newContext(sampleRate int, channelCount int, format mux.Format) (*context, 
 	}
 	theContext = c
 
-	q, bs, err := newAudioQueue(sampleRate, channelCount)
-	if err != nil {
-		return nil, nil, err
-	}
-	c.audioQueue = q
-	c.unqueuedBuffers = bs
-
-	setNotificationHandler()
-
-	var retryCount int
-try:
-	if osstatus := _AudioQueueStart(c.audioQueue, nil); osstatus != noErr {
-		if osstatus == avAudioSessionErrorCodeCannotStartPlaying && retryCount < 100 {
-			// TODO: use sleepTime() after investigating when this error happens.
-			time.Sleep(10 * time.Millisecond)
-			retryCount++
-			goto try
+	go func() {
+		q, bs, err := newAudioQueue(sampleRate, channelCount)
+		if err != nil {
+			c.err.TryStore(err)
+			return
 		}
-		return nil, nil, fmt.Errorf("oto: AudioQueueStart failed at newContext: %d", osstatus)
-	}
+		c.audioQueue = q
+		c.unqueuedBuffers = bs
 
-	go c.loop()
+		setNotificationHandler()
+
+		var retryCount int
+	try:
+		if osstatus := _AudioQueueStart(c.audioQueue, nil); osstatus != noErr {
+			if osstatus == avAudioSessionErrorCodeCannotStartPlaying && retryCount < 100 {
+				// TODO: use sleepTime() after investigating when this error happens.
+				time.Sleep(10 * time.Millisecond)
+				retryCount++
+				goto try
+			}
+			c.err.TryStore(fmt.Errorf("oto: AudioQueueStart failed at newContext: %d", osstatus))
+			return
+		}
+
+		go c.loop()
+
+		close(ready)
+	}()
 
 	return c, ready, nil
 }
