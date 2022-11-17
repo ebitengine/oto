@@ -72,7 +72,7 @@ type _AudioQueueBuffer struct {
 type _AudioQueueOutputCallback func(inUserData unsafe.Pointer, inAQ _AudioQueueRef, inBuffer _AudioQueueBufferRef)
 
 func init() {
-	toolbox := purego.Dlopen("/System/Library/Frameworks/AudioToolbox.framework/AudioToolbox", purego.RTLD_GLOBAL)
+	toolbox := purego.Dlopen("/System/Library/Frameworks/AudioToolbox.framework/AudioToolbox", purego.RTLD_LAZY|purego.RTLD_GLOBAL)
 	purego.RegisterLibFunc(&_AudioQueueNewOutput, toolbox, "AudioQueueNewOutput")
 	purego.RegisterLibFunc(&_AudioQueueAllocateBuffer, toolbox, "AudioQueueAllocateBuffer")
 	purego.RegisterLibFunc(&_AudioQueueEnqueueBuffer, toolbox, "AudioQueueEnqueueBuffer")
