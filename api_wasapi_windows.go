@@ -29,8 +29,6 @@ var (
 
 var (
 	procCoCreateInstance = ole32.NewProc("CoCreateInstance")
-	procCoInitializeEx   = ole32.NewProc("CoInitializeEx")
-	procCoUninitialize   = ole32.NewProc("CoUninitialize")
 )
 
 type _REFERENCE_TIME int64
@@ -188,19 +186,6 @@ func _CoCreateInstance(rclsid *windows.GUID, pUnkOuter unsafe.Pointer, dwClsCont
 		return nil, fmt.Errorf("oto: CoCreateInstance failed: HRESULT(%d)", uint32(r))
 	}
 	return v, nil
-}
-
-func _CoInitializeEx(pvReserved unsafe.Pointer, dwCoInit uint32) error {
-	r, _, _ := procCoInitializeEx.Call(uintptr(pvReserved), uintptr(dwCoInit))
-	// S_FALSE is returned when CoInitializeEx is nested. This is a successful case.
-	if uint32(r) != uint32(windows.S_OK) && uint32(r) != uint32(windows.S_FALSE) {
-		return fmt.Errorf("oto: CoInitializeEx failed: HRESULT(%d)", uint32(r))
-	}
-	return nil
-}
-
-func _CoUninitialize() {
-	procCoUninitialize.Call()
 }
 
 type _IAudioClient2 struct {

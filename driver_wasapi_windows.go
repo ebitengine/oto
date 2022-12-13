@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"runtime"
 	"sync"
+	"syscall"
 	"time"
 	"unsafe"
 
@@ -38,10 +39,12 @@ func newCOMThread() (*comThread, error) {
 		runtime.LockOSThread()
 		defer runtime.UnlockOSThread()
 
-		if err := _CoInitializeEx(nil, _COINIT_MULTITHREADED); err != nil {
+		// S_FALSE is returned when CoInitializeEx is nested. This is a successful case.
+		if err := windows.CoInitializeEx(0, windows.COINIT_MULTITHREADED); err != nil && !errors.Is(err, syscall.Errno(windows.S_FALSE)) {
 			errCh <- err
 		}
-		defer _CoUninitialize()
+		// CoUninitialize should be called even when CoInitializeEx returns S_FALSE.
+		defer windows.CoUninitialize()
 
 		close(errCh)
 
@@ -313,11 +316,13 @@ func (c *wasapiContext) loop() error {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
-	if err := _CoInitializeEx(nil, _COINIT_MULTITHREADED); err != nil {
+	// S_FALSE is returned when CoInitializeEx is nested. This is a successful case.
+	if err := windows.CoInitializeEx(0, windows.COINIT_MULTITHREADED); err != nil && !errors.Is(err, syscall.Errno(windows.S_FALSE)) {
 		c.client.Stop()
 		return err
 	}
-	defer _CoUninitialize()
+	// CoUninitialize should be called even when CoInitializeEx returns S_FALSE.
+	defer windows.CoUninitialize()
 
 	if err := c.loopOnRenderThread(); err != nil {
 		c.client.Stop()
