@@ -316,7 +316,10 @@ func (c *wasapiContext) loop() error {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
-	_SetThreadPriority(_GetCurrentThread(), _THREAD_PRIORITY_ABOVE_NORMAL)
+	if err := _SetThreadPriority(_GetCurrentThread(), _THREAD_PRIORITY_ABOVE_NORMAL); err != nil {
+		c.client.Stop()
+		return err
+	}
 
 	// S_FALSE is returned when CoInitializeEx is nested. This is a successful case.
 	if err := windows.CoInitializeEx(0, windows.COINIT_MULTITHREADED); err != nil && !errors.Is(err, syscall.Errno(windows.S_FALSE)) {

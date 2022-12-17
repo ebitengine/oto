@@ -15,6 +15,7 @@
 package oto
 
 import (
+	"errors"
 	"fmt"
 	"runtime"
 	"syscall"
@@ -195,12 +196,15 @@ func _CoCreateInstance(rclsid *windows.GUID, pUnkOuter unsafe.Pointer, dwClsCont
 
 func _GetCurrentThread() windows.Handle {
 	r, _, _ := procGetCurrentThread.Call()
-	return windows.Handle(uint32(r))
+	return windows.Handle(r)
 }
 
-func _SetThreadPriority(hThread windows.Handle, nPriority int) bool {
-	r, _, _ := procSetThreadPriority.Call(uintptr(hThread), uintptr(nPriority))
-	return uint32(r) != 0
+func _SetThreadPriority(hThread windows.Handle, nPriority int) error {
+	r, _, e := procSetThreadPriority.Call(uintptr(hThread), uintptr(nPriority))
+	if uint32(r) == 0 && !errors.Is(e, windows.ERROR_SUCCESS) {
+		return e
+	}
+	return nil
 }
 
 type _IAudioClient2 struct {
