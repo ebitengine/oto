@@ -202,7 +202,7 @@ func _GetCurrentThread() windows.Handle {
 func _SetThreadPriority(hThread windows.Handle, nPriority int) error {
 	r, _, e := procSetThreadPriority.Call(uintptr(hThread), uintptr(nPriority))
 	if uint32(r) == 0 && !errors.Is(e, windows.ERROR_SUCCESS) {
-		return e
+		return fmt.Errorf("oto: SetThreadPriority failed: %w", e)
 	}
 	return nil
 }
