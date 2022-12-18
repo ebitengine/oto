@@ -15,7 +15,6 @@
 package oto
 
 import (
-	"errors"
 	"fmt"
 	"runtime"
 	"syscall"
@@ -25,14 +24,10 @@ import (
 )
 
 var (
-	kernel32 = windows.NewLazySystemDLL("kernel32")
-	ole32    = windows.NewLazySystemDLL("ole32")
+	ole32 = windows.NewLazySystemDLL("ole32")
 )
 
 var (
-	procGetCurrentThread  = kernel32.NewProc("GetCurrentThread")
-	procSetThreadPriority = kernel32.NewProc("SetThreadPriority")
-
 	procCoCreateInstance = ole32.NewProc("CoCreateInstance")
 )
 
@@ -54,7 +49,6 @@ const (
 	_SPEAKER_FRONT_CENTER              = 0x4
 	_SPEAKER_FRONT_LEFT                = 0x1
 	_SPEAKER_FRONT_RIGHT               = 0x2
-	_THREAD_PRIORITY_ABOVE_NORMAL      = 1
 	_WAVE_FORMAT_EXTENSIBLE            = 0xfffe
 )
 
@@ -192,19 +186,6 @@ func _CoCreateInstance(rclsid *windows.GUID, pUnkOuter unsafe.Pointer, dwClsCont
 		return nil, fmt.Errorf("oto: CoCreateInstance failed: HRESULT(%d)", uint32(r))
 	}
 	return v, nil
-}
-
-func _GetCurrentThread() windows.Handle {
-	r, _, _ := procGetCurrentThread.Call()
-	return windows.Handle(r)
-}
-
-func _SetThreadPriority(hThread windows.Handle, nPriority int) error {
-	r, _, e := procSetThreadPriority.Call(uintptr(hThread), uintptr(nPriority))
-	if uint32(r) == 0 && !errors.Is(e, windows.ERROR_SUCCESS) {
-		return fmt.Errorf("oto: SetThreadPriority failed: %w", e)
-	}
-	return nil
 }
 
 type _IAudioClient2 struct {
