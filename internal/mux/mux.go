@@ -388,7 +388,7 @@ func (p *Player) Volume() float64 {
 func (p *playerImpl) Volume() float64 {
 	p.m.Lock()
 	defer p.m.Unlock()
-	return p.volume
+	return p.nextVolume
 }
 
 func (p *Player) SetVolume(volume float64) {
