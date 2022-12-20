@@ -458,12 +458,13 @@ func (p *playerImpl) readBufferAndAdd(buf []float32) int {
 		volume = 0
 	}
 
-	rateDenom := float32(n)
+	channelCount := p.mux.channelCount
+	rateDenom := float32(n) / float32(channelCount)
 	// If the volume change is caused by a state change, use a small denom.
 	// On browsers, n might be too big and pausing might not be smooth.
 	if p.prevVolume == p.volume {
-		if rateDenom > 256 {
-			rateDenom = 256
+		if rateDenom > float32(256/channelCount) {
+			rateDenom = float32(256 / channelCount)
 		}
 	}
 
@@ -486,7 +487,7 @@ func (p *playerImpl) readBufferAndAdd(buf []float32) int {
 		if volume == prevVolume {
 			buf[i] += v * volume
 		} else {
-			rate := float32(i) / rateDenom
+			rate := float32(i/channelCount) / rateDenom
 			if rate > 1 {
 				rate = 1
 			}
