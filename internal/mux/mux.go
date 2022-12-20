@@ -26,6 +26,13 @@ import (
 	"time"
 )
 
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
 type Format int
 
 const (
@@ -174,6 +181,7 @@ type playerImpl struct {
 	state      playerState
 	tmpbuf     []byte
 	buf        []byte
+	bufToMerge []byte
 	eof        bool
 	bufferSize int
 
@@ -343,7 +351,16 @@ func (p *playerImpl) Seek(offset int64, whence int) (int64, error) {
 	}
 
 	// Reset the internal buffer.
-	p.resetImpl()
+	p.state = playerPaused
+	p.bufToMerge = p.bufToMerge[:0]
+	if cap(p.bufToMerge) < len(p.buf) {
+		p.bufToMerge = make([]byte, len(p.buf))
+	} else {
+		p.bufToMerge = p.bufToMerge[:len(p.buf)]
+	}
+	copy(p.bufToMerge, p.buf)
+	p.buf = p.buf[:0]
+	p.eof = false
 
 	// Check if the source implements io.Seeker.
 	s, ok := p.src.(io.Seeker)
@@ -360,10 +377,7 @@ func (p *Player) Reset() {
 func (p *playerImpl) Reset() {
 	p.m.Lock()
 	defer p.m.Unlock()
-	p.resetImpl()
-}
 
-func (p *playerImpl) resetImpl() {
 	if p.state == playerClosed {
 		return
 	}
@@ -459,35 +473,69 @@ func (p *playerImpl) readBufferAndAdd(buf []float32) int {
 	}
 
 	channelCount := p.mux.channelCount
-	rateDenom := float32(n) / float32(channelCount)
+	volumeRateDenom := float32(n / channelCount)
 	// If the volume change is caused by a state change, use a small denom.
 	// On browsers, n might be too big and pausing might not be smooth.
 	if p.prevVolume == p.volume {
-		if rateDenom > float32(256/channelCount) {
-			rateDenom = float32(256 / channelCount)
+		if volumeRateDenom > float32(256/channelCount) {
+			volumeRateDenom = float32(256 / channelCount)
 		}
 	}
 
 	src := p.buf[:n*bitDepthInBytes]
+	var prevSrc []byte
+	var mergeRateDenom float32
+	if len(p.bufToMerge) > 0 {
+		prevSrc = p.bufToMerge
+		n1 := n
+		if n1 > len(p.bufToMerge)/bitDepthInBytes {
+			n1 = len(p.bufToMerge) / bitDepthInBytes
+		}
+		if n1 > 256 {
+			n1 = 256
+		}
+		mergeRateDenom = float32(n1 / channelCount)
+	}
 
 	for i := 0; i < n; i++ {
 		var v float32
+		var prevV float32
 		switch format {
 		case FormatFloat32LE:
 			v = math.Float32frombits(uint32(src[4*i]) | uint32(src[4*i+1])<<8 | uint32(src[4*i+2])<<16 | uint32(src[4*i+3])<<24)
+			if len(prevSrc) > 4*i+3 {
+				prevV = math.Float32frombits(uint32(prevSrc[4*i]) | uint32(prevSrc[4*i+1])<<8 | uint32(prevSrc[4*i+2])<<16 | uint32(prevSrc[4*i+3])<<24)
+			}
 		case FormatUnsignedInt8:
-			v8 := src[i]
-			v = float32(v8-(1<<7)) / (1 << 7)
+			u8 := src[i]
+			v = float32(u8-(1<<7)) / (1 << 7)
+			if len(prevSrc) > i {
+				u8 := prevSrc[i]
+				prevV = float32(u8-(1<<7)) / (1 << 7)
+			}
 		case FormatSignedInt16LE:
-			v16 := int16(src[2*i]) | (int16(src[2*i+1]) << 8)
-			v = float32(v16) / (1 << 15)
+			i16 := int16(src[2*i]) | (int16(src[2*i+1]) << 8)
+			v = float32(i16) / (1 << 15)
+			if len(prevSrc) > 2*i+1 {
+				i16 := int16(prevSrc[2*i]) | (int16(prevSrc[2*i+1]) << 8)
+				prevV = float32(i16) / (1 << 15)
+			}
 		default:
 			panic(fmt.Sprintf("mux: unexpected format: %d", format))
 		}
+
+		if mergeRateDenom > 0 {
+			rate := float32(i/channelCount) / mergeRateDenom
+			if rate > 1 {
+				rate = 1
+			}
+			v = v*rate + prevV*(1-rate)
+		}
+
 		if volume == prevVolume {
 			buf[i] += v * volume
 		} else {
-			rate := float32(i/channelCount) / rateDenom
+			rate := float32(i/channelCount) / volumeRateDenom
 			if rate > 1 {
 				rate = 1
 			}
@@ -497,6 +545,7 @@ func (p *playerImpl) readBufferAndAdd(buf []float32) int {
 
 	p.prevVolume = p.volume
 	p.prevState = p.state
+	p.bufToMerge = p.bufToMerge[:0]
 
 	copy(p.buf, p.buf[n*bitDepthInBytes:])
 	p.buf = p.buf[:len(p.buf)-n*bitDepthInBytes]
@@ -558,11 +607,15 @@ func (p *playerImpl) setErrorImpl(err error) {
 
 // TODO: The term 'buffer' is confusing. Name each buffer with good terms.
 
+func (m *Mux) bytesPerSample() int {
+	return m.channelCount * m.format.ByteLength()
+}
+
 // defaultBufferSize returns the default size of the buffer for the audio source.
 // This buffer is used when unreading on pausing the player.
 func (m *Mux) defaultBufferSize() int {
-	bytesPerSample := m.channelCount * m.format.ByteLength()
-	s := m.sampleRate * bytesPerSample / 2 // 0.5[s]
+	bps := m.bytesPerSample()
+	s := m.sampleRate * bps / 2 // 0.5[s]
 	// Align s in multiples of bytes per sample, or a buffer could have extra bytes.
-	return s / bytesPerSample * bytesPerSample
+	return s / bps * bps
 }
