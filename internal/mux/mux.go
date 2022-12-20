@@ -167,8 +167,8 @@ const (
 type playerImpl struct {
 	players    *Mux
 	src        io.Reader
+	prevVolume float64
 	volume     float64
-	nextVolume float64
 	err        error
 	state      playerState
 	tmpbuf     []byte
@@ -184,8 +184,8 @@ func (p *Mux) NewPlayer(src io.Reader) *Player {
 		p: &playerImpl{
 			players:    p,
 			src:        src,
+			prevVolume: 1,
 			volume:     1,
-			nextVolume: 1,
 			bufferSize: p.defaultBufferSize(),
 		},
 	}
@@ -388,7 +388,7 @@ func (p *Player) Volume() float64 {
 func (p *playerImpl) Volume() float64 {
 	p.m.Lock()
 	defer p.m.Unlock()
-	return p.nextVolume
+	return p.volume
 }
 
 func (p *Player) SetVolume(volume float64) {
@@ -398,10 +398,7 @@ func (p *Player) SetVolume(volume float64) {
 func (p *playerImpl) SetVolume(volume float64) {
 	p.m.Lock()
 	defer p.m.Unlock()
-
-	// Don't update p.volume here. p.volume is updated at readBufferAndAdd.
-	// The volume is updated gradually there in order to avoid noises.
-	p.nextVolume = volume
+	p.volume = volume
 }
 
 func (p *Player) UnplayedBufferSize() int {
@@ -450,8 +447,8 @@ func (p *playerImpl) readBufferAndAdd(buf []float32) int {
 	if n > len(buf) {
 		n = len(buf)
 	}
+	prevVolume := float32(p.prevVolume)
 	volume := float32(p.volume)
-	nextVolume := float32(p.nextVolume)
 	src := p.buf[:n*bitDepthInBytes]
 
 	for i := 0; i < n; i++ {
@@ -469,9 +466,9 @@ func (p *playerImpl) readBufferAndAdd(buf []float32) int {
 			panic(fmt.Sprintf("mux: unexpected format: %d", format))
 		}
 		rate := float32(i) / float32(n)
-		buf[i] += v * (nextVolume*rate + volume*(1-rate))
+		buf[i] += v * (volume*rate + prevVolume*(1-rate))
 	}
-	p.volume = p.nextVolume
+	p.prevVolume = p.volume
 
 	copy(p.buf, p.buf[n*bitDepthInBytes:])
 	p.buf = p.buf[:len(p.buf)-n*bitDepthInBytes]
