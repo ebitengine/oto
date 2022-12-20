@@ -170,6 +170,7 @@ type playerImpl struct {
 	prevVolume float64
 	volume     float64
 	err        error
+	prevState  playerState
 	state      playerState
 	tmpbuf     []byte
 	buf        []byte
@@ -437,7 +438,7 @@ func (p *playerImpl) readBufferAndAdd(buf []float32) int {
 	p.m.Lock()
 	defer p.m.Unlock()
 
-	if p.state != playerPlay {
+	if p.state != playerPlay && p.prevState != playerPlay {
 		return 0
 	}
 
@@ -447,8 +448,25 @@ func (p *playerImpl) readBufferAndAdd(buf []float32) int {
 	if n > len(buf) {
 		n = len(buf)
 	}
+
 	prevVolume := float32(p.prevVolume)
+	if p.prevState != playerPlay {
+		prevVolume = 0
+	}
 	volume := float32(p.volume)
+	if p.state != playerPlay {
+		volume = 0
+	}
+
+	rateDenom := float32(n)
+	// If the volume change is caused by a state change, use a small denom.
+	// On browsers, n might be too big and pausing might not be smooth.
+	if p.prevVolume == p.volume {
+		if rateDenom > 256 {
+			rateDenom = 256
+		}
+	}
+
 	src := p.buf[:n*bitDepthInBytes]
 
 	for i := 0; i < n; i++ {
@@ -465,10 +483,19 @@ func (p *playerImpl) readBufferAndAdd(buf []float32) int {
 		default:
 			panic(fmt.Sprintf("mux: unexpected format: %d", format))
 		}
-		rate := float32(i) / float32(n)
-		buf[i] += v * (volume*rate + prevVolume*(1-rate))
+		if volume == prevVolume {
+			buf[i] += v * volume
+		} else {
+			rate := float32(i) / rateDenom
+			if rate > 1 {
+				rate = 1
+			}
+			buf[i] += v * (volume*rate + prevVolume*(1-rate))
+		}
 	}
+
 	p.prevVolume = p.volume
+	p.prevState = p.state
 
 	copy(p.buf, p.buf[n*bitDepthInBytes:])
 	p.buf = p.buf[:len(p.buf)-n*bitDepthInBytes]
