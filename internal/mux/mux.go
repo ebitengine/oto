@@ -59,14 +59,14 @@ type Mux struct {
 
 // New creates a new Mux.
 func New(sampleRate int, channelCount int, format Format) *Mux {
-	p := &Mux{
+	m := &Mux{
 		sampleRate:   sampleRate,
 		channelCount: channelCount,
 		format:       format,
 		cond:         sync.NewCond(&sync.Mutex{}),
 	}
-	go p.loop()
-	return p
+	go m.loop()
+	return m
 }
 
 func (m *Mux) shouldWait() bool {
@@ -165,7 +165,7 @@ const (
 )
 
 type playerImpl struct {
-	players    *Mux
+	mux        *Mux
 	src        io.Reader
 	prevVolume float64
 	volume     float64
@@ -180,14 +180,14 @@ type playerImpl struct {
 	m sync.Mutex
 }
 
-func (p *Mux) NewPlayer(src io.Reader) *Player {
+func (m *Mux) NewPlayer(src io.Reader) *Player {
 	pl := &Player{
 		p: &playerImpl{
-			players:    p,
+			mux:        m,
 			src:        src,
 			prevVolume: 1,
 			volume:     1,
-			bufferSize: p.defaultBufferSize(),
+			bufferSize: m.defaultBufferSize(),
 		},
 	}
 	runtime.SetFinalizer(pl, (*Player).Close)
@@ -240,7 +240,7 @@ func (p *playerImpl) setBufferSize(bufferSize int) {
 	orig := p.bufferSize
 	p.bufferSize = bufferSize
 	if bufferSize == 0 {
-		p.bufferSize = p.players.defaultBufferSize()
+		p.bufferSize = p.mux.defaultBufferSize()
 	}
 	if orig != p.bufferSize {
 		p.tmpbuf = nil
@@ -271,7 +271,7 @@ func (p *playerImpl) read(buf []byte) (int, error) {
 func (p *playerImpl) addToPlayers() {
 	p.m.Unlock()
 	defer p.m.Lock()
-	p.players.addPlayer(p)
+	p.mux.addPlayer(p)
 }
 
 // removeFromPlayers removes p from the players set.
@@ -280,7 +280,7 @@ func (p *playerImpl) addToPlayers() {
 func (p *playerImpl) removeFromPlayers() {
 	p.m.Unlock()
 	defer p.m.Lock()
-	p.players.removePlayer(p)
+	p.mux.removePlayer(p)
 }
 
 func (p *playerImpl) playImpl() {
@@ -442,7 +442,7 @@ func (p *playerImpl) readBufferAndAdd(buf []float32) int {
 		return 0
 	}
 
-	format := p.players.format
+	format := p.mux.format
 	bitDepthInBytes := format.ByteLength()
 	n := len(p.buf) / bitDepthInBytes
 	if n > len(buf) {
