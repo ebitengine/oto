@@ -459,7 +459,7 @@ func (p *playerImpl) readBufferAndAdd(buf []float32) int {
 	}
 
 	channelCount := p.mux.channelCount
-	rateDenom := float32(n) / float32(channelCount)
+	rateDenom := float32(n / channelCount)
 	// If the volume change is caused by a state change, use a small denom.
 	// On browsers, n might be too big and pausing might not be smooth.
 	if p.prevVolume == p.volume {
