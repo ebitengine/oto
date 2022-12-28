@@ -399,6 +399,9 @@ func (p *playerImpl) SetVolume(volume float64) {
 	p.m.Lock()
 	defer p.m.Unlock()
 	p.volume = volume
+	if p.state != playerPlay {
+		p.prevVolume = volume
+	}
 }
 
 func (p *Player) UnplayedBufferSize() int {
