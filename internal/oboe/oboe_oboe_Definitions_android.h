@@ -244,11 +244,14 @@ namespace oboe {
 
         /**
          * Use OpenSL ES.
+         * Note that OpenSL ES is deprecated in Android 13, API 30 and above.
          */
         OpenSLES,
 
         /**
          * Try to use AAudio. Fail if unavailable.
+         * AAudio was first supported in Android 8, API 26 and above.
+         * It is only recommended for API 27 and above.
          */
         AAudio
     };
@@ -268,8 +271,17 @@ namespace oboe {
          * This may be implemented using bilinear interpolation.
          */
         Fastest,
+        /**
+         * Low quality conversion with 8 taps.
+         */
         Low,
+        /**
+         * Medium quality conversion with 16 taps.
+         */
         Medium,
+        /**
+         * High quality conversion with 32 taps.
+         */
         High,
         /**
          * Highest quality conversion, which may be expensive in terms of CPU.
@@ -480,6 +492,160 @@ namespace oboe {
        * Use this for stereo audio.
        */
       Stereo = 2,
+    };
+
+    /**
+     * The channel mask of the audio stream. The underlying type is `uint32_t`.
+     * Use of this enum is convenient.
+     *
+     * ChannelMask::Unspecified means this is not specified.
+     * The rest of the enums are channel position masks.
+     * Use the combinations of the channel position masks defined below instead of
+     * using those values directly.
+     */
+    enum class ChannelMask : uint32_t { // aaudio_channel_mask_t
+        Unspecified = kUnspecified,
+        FrontLeft = 1 << 0,
+        FrontRight = 1 << 1,
+        FrontCenter = 1 << 2,
+        LowFrequency = 1 << 3,
+        BackLeft = 1 << 4,
+        BackRight = 1 << 5,
+        FrontLeftOfCenter = 1 << 6,
+        FrontRightOfCenter = 1 << 7,
+        BackCenter = 1 << 8,
+        SideLeft = 1 << 9,
+        SideRight = 1 << 10,
+        TopCenter = 1 << 11,
+        TopFrontLeft = 1 << 12,
+        TopFrontCenter = 1 << 13,
+        TopFrontRight = 1 << 14,
+        TopBackLeft = 1 << 15,
+        TopBackCenter = 1 << 16,
+        TopBackRight = 1 << 17,
+        TopSideLeft = 1 << 18,
+        TopSideRight = 1 << 19,
+        BottomFrontLeft = 1 << 20,
+        BottomFrontCenter = 1 << 21,
+        BottomFrontRight = 1 << 22,
+        LowFrequency2 = 1 << 23,
+        FrontWideLeft = 1 << 24,
+        FrontWideRight = 1 << 25,
+
+        Mono = FrontLeft,
+
+        Stereo = FrontLeft |
+                 FrontRight,
+
+        CM2Point1 = FrontLeft |
+                    FrontRight |
+                    LowFrequency,
+
+        Tri = FrontLeft |
+              FrontRight |
+              FrontCenter,
+
+        TriBack = FrontLeft |
+                  FrontRight |
+                  BackCenter,
+
+        CM3Point1 = FrontLeft |
+                    FrontRight |
+                    FrontCenter |
+                    LowFrequency,
+
+        CM2Point0Point2 = FrontLeft |
+                          FrontRight |
+                          TopSideLeft |
+                          TopSideRight,
+
+        CM2Point1Point2 = CM2Point0Point2 |
+                          LowFrequency,
+
+        CM3Point0Point2 = FrontLeft |
+                          FrontRight |
+                          FrontCenter |
+                          TopSideLeft |
+                          TopSideRight,
+
+        CM3Point1Point2 = CM3Point0Point2 |
+                          LowFrequency,
+
+        Quad = FrontLeft |
+               FrontRight |
+               BackLeft |
+               BackRight,
+
+        QuadSide = FrontLeft |
+                   FrontRight |
+                   SideLeft |
+                   SideRight,
+
+        Surround = FrontLeft |
+                   FrontRight |
+                   FrontCenter |
+                   BackCenter,
+
+        Penta = Quad |
+                FrontCenter,
+
+        // aka 5Point1Back
+        CM5Point1 = FrontLeft |
+                    FrontRight |
+                    FrontCenter |
+                    LowFrequency |
+                    BackLeft |
+                    BackRight,
+
+        CM5Point1Side = FrontLeft |
+                        FrontRight |
+                        FrontCenter |
+                        LowFrequency |
+                        SideLeft |
+                        SideRight,
+
+        CM6Point1 = FrontLeft |
+                    FrontRight |
+                    FrontCenter |
+                    LowFrequency |
+                    BackLeft |
+                    BackRight |
+                    BackCenter,
+
+        CM7Point1 = CM5Point1 |
+                    SideLeft |
+                    SideRight,
+
+        CM5Point1Point2 = CM5Point1 |
+                          TopSideLeft |
+                          TopSideRight,
+
+        CM5Point1Point4 = CM5Point1 |
+                          TopFrontLeft |
+                          TopFrontRight |
+                          TopBackLeft |
+                          TopBackRight,
+
+        CM7Point1Point2 = CM7Point1 |
+                          TopSideLeft |
+                          TopSideRight,
+
+        CM7Point1Point4 = CM7Point1 |
+                          TopFrontLeft |
+                          TopFrontRight |
+                          TopBackLeft |
+                          TopBackRight,
+
+        CM9Point1Point4 = CM7Point1Point4 |
+                          FrontWideLeft |
+                          FrontWideRight,
+
+        CM9Point1Point6 = CM9Point1Point4 |
+                          TopSideLeft |
+                          TopSideRight,
+
+        FrontBack = FrontCenter |
+                    BackCenter,
     };
 
     /**

@@ -16,7 +16,7 @@
 
 #include "oboe_flowgraph_resampler_LinearResampler_android.h"
 
-using namespace resampler;
+using namespace RESAMPLER_OUTER_NAMESPACE::resampler;
 
 LinearResampler::LinearResampler(const MultiChannelResampler::Builder &builder)
         : MultiChannelResampler(builder) {

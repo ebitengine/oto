@@ -178,12 +178,21 @@ public:
         return mSampleRateConversionQuality;
     }
 
+    /**
+     * @return the stream's channel mask.
+     */
+    ChannelMask getChannelMask() const {
+        return mChannelMask;
+    }
+
 protected:
     /** The callback which will be fired when new data is ready to be read/written. **/
     AudioStreamDataCallback        *mDataCallback = nullptr;
+    std::shared_ptr<AudioStreamDataCallback> mSharedDataCallback;
 
     /** The callback which will be fired when an error or a disconnect occurs. **/
     AudioStreamErrorCallback       *mErrorCallback = nullptr;
+    std::shared_ptr<AudioStreamErrorCallback> mSharedErrorCallback;
 
     /** Number of audio frames which will be requested in each callback */
     int32_t                         mFramesPerCallback = kUnspecified;
@@ -197,6 +206,8 @@ protected:
     int32_t                         mBufferCapacityInFrames = kUnspecified;
     /** Stream buffer size specified as a number of audio frames */
     int32_t                         mBufferSizeInFrames = kUnspecified;
+    /** Stream channel mask. Only active on Android 32+ */
+    ChannelMask                     mChannelMask = ChannelMask::Unspecified;
 
     /** Stream sharing mode */
     SharingMode                     mSharingMode = SharingMode::Shared;

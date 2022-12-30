@@ -17,7 +17,7 @@
 #include <cassert>
 #include "oboe_flowgraph_resampler_PolyphaseResamplerMono_android.h"
 
-using namespace resampler;
+using namespace RESAMPLER_OUTER_NAMESPACE::resampler;
 
 #define MONO  1
 

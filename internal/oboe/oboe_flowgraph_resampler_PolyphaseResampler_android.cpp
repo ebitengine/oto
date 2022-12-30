@@ -19,7 +19,7 @@
 #include "oboe_flowgraph_resampler_IntegerRatio_android.h"
 #include "oboe_flowgraph_resampler_PolyphaseResampler_android.h"
 
-using namespace resampler;
+using namespace RESAMPLER_OUTER_NAMESPACE::resampler;
 
 PolyphaseResampler::PolyphaseResampler(const MultiChannelResampler::Builder &builder)
         : MultiChannelResampler(builder)
@@ -40,13 +40,11 @@ void PolyphaseResampler::readFrame(float *frame) {
     // Clear accumulator for mixing.
     std::fill(mSingleFrame.begin(), mSingleFrame.end(), 0.0);
 
-//    printf("PolyphaseResampler: mCoefficientCursor = %4d\n", mCoefficientCursor);
     // Multiply input times windowed sinc function.
     float *coefficients = &mCoefficients[mCoefficientCursor];
-    float *xFrame = &mX[mCursor * getChannelCount()];
+    float *xFrame = &mX[static_cast<size_t>(mCursor) * static_cast<size_t>(getChannelCount())];
     for (int i = 0; i < mNumTaps; i++) {
         float coefficient = *coefficients++;
-//        printf("PolyphaseResampler: coeff = %10.6f, xFrame[0] = %10.6f\n", coefficient, xFrame[0]);
         for (int channel = 0; channel < getChannelCount(); channel++) {
             mSingleFrame[channel] += *xFrame++ * coefficient;
         }

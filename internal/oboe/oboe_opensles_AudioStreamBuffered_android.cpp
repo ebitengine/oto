@@ -18,6 +18,7 @@
 
 #include "oboe_oboe_Oboe_android.h"
 
+#include "oboe_common_OboeDebug_android.h"
 #include "oboe_opensles_AudioStreamBuffered_android.h"
 #include "oboe_common_AudioClock_android.h"
 
@@ -54,9 +55,10 @@ void AudioStreamBuffered::allocateFifo() {
                 capacityFrames = numBursts * getFramesPerBurst();
             }
         }
-        // TODO consider using std::make_unique if we require c++14
-        mFifoBuffer.reset(new FifoBuffer(getBytesPerFrame(), capacityFrames));
+
+        mFifoBuffer = std::make_unique<FifoBuffer>(getBytesPerFrame(), capacityFrames);
         mBufferCapacityInFrames = capacityFrames;
+        mBufferSizeInFrames = mBufferCapacityInFrames;
     }
 }
 

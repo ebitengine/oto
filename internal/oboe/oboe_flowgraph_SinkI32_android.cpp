@@ -14,13 +14,13 @@
  * limitations under the License.
  */
 
-#if FLOWGRAPH_ANDROID_INTERNAL
-#include <audio_utils/primitives.h>
-#endif
-
 #include "oboe_flowgraph_FlowGraphNode_android.h"
 #include "oboe_flowgraph_FlowgraphUtilities_android.h"
 #include "oboe_flowgraph_SinkI32_android.h"
+
+#if FLOWGRAPH_ANDROID_INTERNAL
+#include <audio_utils/primitives.h>
+#endif
 
 using namespace FLOWGRAPH_OUTER_NAMESPACE::flowgraph;
 

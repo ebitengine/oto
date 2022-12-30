@@ -18,7 +18,7 @@
 #include <cassert>
 #include <stdint.h>
 
-#include "oboe_fifo_FifoControllerBase_android.h"
+#include "oboe_oboe_FifoControllerBase_android.h"
 
 namespace oboe {
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 The Android Open Source Project
+ * Copyright 2021 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-#ifndef FLOWGRAPH_MULTI_TO_MONO_CONVERTER_H
-#define FLOWGRAPH_MULTI_TO_MONO_CONVERTER_H
+#ifndef FLOWGRAPH_MULTI_TO_MANY_CONVERTER_H
+#define FLOWGRAPH_MULTI_TO_MANY_CONVERTER_H
 
 #include <unistd.h>
 #include <sys/types.h>
@@ -25,25 +25,25 @@
 namespace FLOWGRAPH_OUTER_NAMESPACE::flowgraph {
 
 /**
- * Convert a multi-channel interleaved stream to a monophonic stream
- * by extracting channel[0].
+ * Convert a multi-channel interleaved stream to multiple mono-channel
+ * outputs
  */
-    class MultiToMonoConverter : public FlowGraphNode {
+    class MultiToManyConverter : public FlowGraphNode {
     public:
-        explicit MultiToMonoConverter(int32_t inputChannelCount);
+        explicit MultiToManyConverter(int32_t channelCount);
 
-        virtual ~MultiToMonoConverter();
+        virtual ~MultiToManyConverter();
 
         int32_t onProcess(int32_t numFrames) override;
 
         const char *getName() override {
-            return "MultiToMonoConverter";
+            return "MultiToManyConverter";
         }
 
-        FlowGraphPortFloatInput input;
-        FlowGraphPortFloatOutput output;
+        std::vector<std::unique_ptr<flowgraph::FlowGraphPortFloatOutput>> outputs;
+        flowgraph::FlowGraphPortFloatInput input;
     };
 
 } /* namespace FLOWGRAPH_OUTER_NAMESPACE::flowgraph */
 
-#endif //FLOWGRAPH_MULTI_TO_MONO_CONVERTER_H
+#endif //FLOWGRAPH_MULTI_TO_MANY_CONVERTER_H

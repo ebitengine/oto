@@ -25,11 +25,12 @@
 #include "oboe_flowgraph_resampler_SincResampler_android.h"
 #include "oboe_flowgraph_resampler_SincResamplerStereo_android.h"
 
-using namespace resampler;
+using namespace RESAMPLER_OUTER_NAMESPACE::resampler;
 
 MultiChannelResampler::MultiChannelResampler(const MultiChannelResampler::Builder &builder)
         : mNumTaps(builder.getNumTaps())
-        , mX(builder.getChannelCount() * builder.getNumTaps() * 2)
+        , mX(static_cast<size_t>(builder.getChannelCount())
+                * static_cast<size_t>(builder.getNumTaps()) * 2)
         , mSingleFrame(builder.getChannelCount())
         , mChannelCount(builder.getChannelCount())
         {
@@ -39,7 +40,7 @@ MultiChannelResampler::MultiChannelResampler(const MultiChannelResampler::Builde
     ratio.reduce();
     mNumerator = ratio.getNumerator();
     mDenominator = ratio.getDenominator();
-    mIntegerPhase = mDenominator;
+    mIntegerPhase = mDenominator; // so we start with a write needed
 }
 
 // static factory method
@@ -110,7 +111,7 @@ void MultiChannelResampler::writeFrame(const float *frame) {
     if (--mCursor < 0) {
         mCursor = getNumTaps() - 1;
     }
-    float *dest = &mX[mCursor * getChannelCount()];
+    float *dest = &mX[static_cast<size_t>(mCursor) * static_cast<size_t>(getChannelCount())];
     int offset = getNumTaps() * getChannelCount();
     for (int channel = 0; channel < getChannelCount(); channel++) {
         // Write twice so we avoid having to wrap when reading.
@@ -130,7 +131,7 @@ void MultiChannelResampler::generateCoefficients(int32_t inputRate,
                                               int32_t numRows,
                                               double phaseIncrement,
                                               float normalizedCutoff) {
-    mCoefficients.resize(getNumTaps() * numRows);
+    mCoefficients.resize(static_cast<size_t>(getNumTaps()) * static_cast<size_t>(numRows));
     int coefficientIndex = 0;
     double phase = 0.0; // ranges from 0.0 to 1.0, fraction between samples
     // Stretch the sinc function for low pass filtering.
@@ -150,7 +151,7 @@ void MultiChannelResampler::generateCoefficients(int32_t inputRate,
 #if MCR_USE_KAISER
             float window = mKaiserWindow(tapPhase * numTapsHalfInverse);
 #else
-            float window = mCoshWindow(tapPhase * numTapsHalfInverse);
+            float window = mCoshWindow(static_cast<double>(tapPhase) * numTapsHalfInverse);
 #endif
             float coefficient = sinc(radians * cutoffScaler) * window;
             mCoefficients.at(coefficientIndex++) = coefficient;

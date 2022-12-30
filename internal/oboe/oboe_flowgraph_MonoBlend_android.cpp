@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 The Android Open Source Project
+ * Copyright 2021 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,27 +15,32 @@
  */
 
 #include <unistd.h>
-#include "oboe_flowgraph_FlowGraphNode_android.h"
-#include "oboe_flowgraph_MultiToMonoConverter_android.h"
+
+#include "oboe_flowgraph_MonoBlend_android.h"
 
 using namespace FLOWGRAPH_OUTER_NAMESPACE::flowgraph;
 
-MultiToMonoConverter::MultiToMonoConverter(int32_t inputChannelCount)
-        : input(*this, inputChannelCount)
-        , output(*this, 1) {
+MonoBlend::MonoBlend(int32_t channelCount)
+        : FlowGraphFilter(channelCount)
+        , mInvChannelCount(1. / channelCount)
+{
 }
 
-MultiToMonoConverter::~MultiToMonoConverter() = default;
-
-int32_t MultiToMonoConverter::onProcess(int32_t numFrames) {
+int32_t MonoBlend::onProcess(int32_t numFrames) {
+    int32_t channelCount = output.getSamplesPerFrame();
     const float *inputBuffer = input.getBuffer();
     float *outputBuffer = output.getBuffer();
-    int32_t channelCount = input.getSamplesPerFrame();
-    for (int i = 0; i < numFrames; i++) {
-        // read first channel of multi stream, write many
-        *outputBuffer++ = *inputBuffer;
-        inputBuffer += channelCount;
+
+    for (size_t i = 0; i < numFrames; ++i) {
+        float accum = 0;
+        for (size_t j = 0; j < channelCount; ++j) {
+            accum += *inputBuffer++;
+        }
+        accum *= mInvChannelCount;
+        for (size_t j = 0; j < channelCount; ++j) {
+            *outputBuffer++ = accum;
+        }
     }
+
     return numFrames;
 }
-

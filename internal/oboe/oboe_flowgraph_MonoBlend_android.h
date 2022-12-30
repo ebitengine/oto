@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 The Android Open Source Project
+ * Copyright 2021 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,36 +14,35 @@
  * limitations under the License.
  */
 
-#ifndef FLOWGRAPH_MULTI_TO_MONO_CONVERTER_H
-#define FLOWGRAPH_MULTI_TO_MONO_CONVERTER_H
+#ifndef FLOWGRAPH_MONO_BLEND_H
+#define FLOWGRAPH_MONO_BLEND_H
 
-#include <unistd.h>
 #include <sys/types.h>
+#include <unistd.h>
 
 #include "oboe_flowgraph_FlowGraphNode_android.h"
 
 namespace FLOWGRAPH_OUTER_NAMESPACE::flowgraph {
 
 /**
- * Convert a multi-channel interleaved stream to a monophonic stream
- * by extracting channel[0].
+ * Combine data between multiple channels so each channel is an average
+ * of all channels.
  */
-    class MultiToMonoConverter : public FlowGraphNode {
-    public:
-        explicit MultiToMonoConverter(int32_t inputChannelCount);
+class MonoBlend : public FlowGraphFilter {
+public:
+    explicit MonoBlend(int32_t channelCount);
 
-        virtual ~MultiToMonoConverter();
+    virtual ~MonoBlend() = default;
 
-        int32_t onProcess(int32_t numFrames) override;
+    int32_t onProcess(int32_t numFrames) override;
 
-        const char *getName() override {
-            return "MultiToMonoConverter";
-        }
-
-        FlowGraphPortFloatInput input;
-        FlowGraphPortFloatOutput output;
-    };
+    const char *getName() override {
+        return "MonoBlend";
+    }
+private:
+    const float mInvChannelCount;
+};
 
 } /* namespace FLOWGRAPH_OUTER_NAMESPACE::flowgraph */
 
-#endif //FLOWGRAPH_MULTI_TO_MONO_CONVERTER_H
+#endif //FLOWGRAPH_MONO_BLEND

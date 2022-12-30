@@ -16,7 +16,7 @@
 
 #include "oboe_flowgraph_resampler_IntegerRatio_android.h"
 
-using namespace resampler;
+using namespace RESAMPLER_OUTER_NAMESPACE::resampler;
 
 // Enough primes to cover the common sample rates.
 static const int kPrimes[] = {

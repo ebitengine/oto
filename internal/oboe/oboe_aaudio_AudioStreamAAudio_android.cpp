@@ -205,7 +205,18 @@ Result AudioStreamAAudio::open() {
     }
     mLibLoader->builder_setBufferCapacityInFrames(aaudioBuilder, capacity);
 
-    mLibLoader->builder_setChannelCount(aaudioBuilder, mChannelCount);
+    // Channel mask was added in SC_V2. Given the corresponding channel count of selected channel
+    // mask may be different from selected channel count, the last set value will be respected.
+    // If channel count is set after channel mask, the previously set channel mask will be cleared.
+    // If channel mask is set after channel count, the channel count will be automatically
+    // calculated from selected channel mask. In that case, only set channel mask when the API
+    // is available and the channel mask is specified.
+    if (mLibLoader->builder_setChannelMask != nullptr && mChannelMask != ChannelMask::Unspecified) {
+        mLibLoader->builder_setChannelMask(aaudioBuilder,
+                                           static_cast<aaudio_channel_mask_t>(mChannelMask));
+    } else {
+        mLibLoader->builder_setChannelCount(aaudioBuilder, mChannelCount);
+    }
     mLibLoader->builder_setDeviceId(aaudioBuilder, mDeviceId);
     mLibLoader->builder_setDirection(aaudioBuilder, static_cast<aaudio_direction_t>(mDirection));
     mLibLoader->builder_setFormat(aaudioBuilder, static_cast<aaudio_format_t>(mFormat));
@@ -309,9 +320,15 @@ Result AudioStreamAAudio::open() {
         mSessionId = SessionId::None;
     }
 
+    if (mLibLoader->stream_getChannelMask != nullptr) {
+        mChannelMask = static_cast<ChannelMask>(mLibLoader->stream_getChannelMask(mAAudioStream));
+    }
+
     LOGD("AudioStreamAAudio.open() format=%d, sampleRate=%d, capacity = %d",
             static_cast<int>(mFormat), static_cast<int>(mSampleRate),
             static_cast<int>(mBufferCapacityInFrames));
+
+    calculateDefaultDelayBeforeCloseMillis();
 
 error2:
     mLibLoader->builder_delete(aaudioBuilder);
@@ -340,12 +357,7 @@ Result AudioStreamAAudio::close() {
             // Make sure we are really stopped. Do it under mLock
             // so another thread cannot call requestStart() right before the close.
             requestStop_l(stream);
-            // Sometimes a callback can occur shortly after a stream has been stopped and
-            // even after a close! If the stream has been closed then the callback
-            // can access memory that has been freed. That causes a crash.
-            // This seems to be more likely in Android P or earlier.
-            // But it can also occur in later versions.
-            usleep(kDelayBeforeCloseMillis * 1000);
+            sleepBeforeClose();
         }
         return static_cast<Result>(mLibLoader->stream_close(stream));
     } else {
@@ -472,6 +484,7 @@ Result AudioStreamAAudio::requestStop_l(AAudioStream *stream) {
 ResultWithValue<int32_t>   AudioStreamAAudio::write(const void *buffer,
                                      int32_t numFrames,
                                      int64_t timeoutNanoseconds) {
+    std::shared_lock<std::shared_mutex> lock(mAAudioStreamLock);
     AAudioStream *stream = mAAudioStream.load();
     if (stream != nullptr) {
         int32_t result = mLibLoader->stream_write(mAAudioStream, buffer,
@@ -485,6 +498,7 @@ ResultWithValue<int32_t>   AudioStreamAAudio::write(const void *buffer,
 ResultWithValue<int32_t>   AudioStreamAAudio::read(void *buffer,
                                  int32_t numFrames,
                                  int64_t timeoutNanoseconds) {
+    std::shared_lock<std::shared_mutex> lock(mAAudioStreamLock);
     AAudioStream *stream = mAAudioStream.load();
     if (stream != nullptr) {
         int32_t result = mLibLoader->stream_read(mAAudioStream, buffer,

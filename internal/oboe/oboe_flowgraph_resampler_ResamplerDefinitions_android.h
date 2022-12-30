@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 The Android Open Source Project
+ * Copyright 2022 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,17 +14,14 @@
  * limitations under the License.
  */
 
-#include <stdint.h>
+// Set flag RESAMPLER_OUTER_NAMESPACE based on whether compiler flag
+// __ANDROID_NDK__ is defined. __ANDROID_NDK__ should be defined in oboe
+// but not in android.
 
-#include "oboe_fifo_FifoController_android.h"
-
-namespace oboe {
-
-FifoController::FifoController(uint32_t numFrames)
-        : FifoControllerBase(numFrames)
-{
-    setReadCounter(0);
-    setWriteCounter(0);
-}
-
-} // namespace oboe
+#ifndef RESAMPLER_OUTER_NAMESPACE
+#ifdef __ANDROID_NDK__
+#define RESAMPLER_OUTER_NAMESPACE oboe
+#else
+#define RESAMPLER_OUTER_NAMESPACE aaudio
+#endif // __ANDROID_NDK__
+#endif // RESAMPLER_OUTER_NAMESPACE

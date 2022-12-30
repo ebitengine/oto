@@ -22,7 +22,7 @@
 #include "oboe_common_OboeDebug_android.h"
 #include "oboe_oboe_AudioStream_android.h"
 #include "oboe_oboe_AudioStreamCallback_android.h"
-#include "oboe_fifo_FifoBuffer_android.h"
+#include "oboe_oboe_FifoBuffer_android.h"
 
 namespace oboe {
 

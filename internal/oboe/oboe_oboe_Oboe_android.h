@@ -33,5 +33,7 @@
 #include "oboe_oboe_Utilities_android.h"
 #include "oboe_oboe_Version_android.h"
 #include "oboe_oboe_StabilizedCallback_android.h"
+#include "oboe_oboe_FifoBuffer_android.h"
+#include "oboe_oboe_OboeExtensions_android.h"
 
 #endif //OBOE_OBOE_H

@@ -17,12 +17,12 @@
 #include <algorithm>
 #include <unistd.h>
 
+#include "oboe_flowgraph_FlowGraphNode_android.h"
+#include "oboe_flowgraph_SourceI32_android.h"
+
 #if FLOWGRAPH_ANDROID_INTERNAL
 #include <audio_utils/primitives.h>
 #endif
-
-#include "oboe_flowgraph_FlowGraphNode_android.h"
-#include "oboe_flowgraph_SourceI32_android.h"
 
 using namespace FLOWGRAPH_OUTER_NAMESPACE::flowgraph;
 

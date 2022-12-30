@@ -18,10 +18,10 @@
 #include <memory.h>
 #include <stdint.h>
 
-#include "oboe_fifo_FifoControllerBase_android.h"
+#include "oboe_oboe_FifoControllerBase_android.h"
 #include "oboe_fifo_FifoController_android.h"
 #include "oboe_fifo_FifoControllerIndirect_android.h"
-#include "oboe_fifo_FifoBuffer_android.h"
+#include "oboe_oboe_FifoBuffer_android.h"
 
 namespace oboe {
 

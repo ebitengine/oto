@@ -14,14 +14,16 @@
  * limitations under the License.
  */
 
-#ifndef OBOE_SINC_RESAMPLER_STEREO_H
-#define OBOE_SINC_RESAMPLER_STEREO_H
+#ifndef RESAMPLER_SINC_RESAMPLER_STEREO_H
+#define RESAMPLER_SINC_RESAMPLER_STEREO_H
 
 #include <sys/types.h>
 #include <unistd.h>
-#include "oboe_flowgraph_resampler_SincResampler_android.h"
 
-namespace resampler {
+#include "oboe_flowgraph_resampler_SincResampler_android.h"
+#include "oboe_flowgraph_resampler_ResamplerDefinitions_android.h"
+
+namespace RESAMPLER_OUTER_NAMESPACE::resampler {
 
 class SincResamplerStereo : public SincResampler {
 public:
@@ -35,5 +37,6 @@ public:
 
 };
 
-}
-#endif //OBOE_SINC_RESAMPLER_STEREO_H
+} /* namespace RESAMPLER_OUTER_NAMESPACE::resampler */
+
+#endif //RESAMPLER_SINC_RESAMPLER_STEREO_H

@@ -23,8 +23,7 @@
 
 #include "oboe_flowgraph_FlowGraphNode_android.h"
 
-namespace FLOWGRAPH_OUTER_NAMESPACE {
-namespace flowgraph {
+namespace FLOWGRAPH_OUTER_NAMESPACE::flowgraph {
 
 /**
  * AudioSink that lets you read data as 32-bit floats.
@@ -41,7 +40,6 @@ public:
     }
 };
 
-} /* namespace flowgraph */
-} /* namespace FLOWGRAPH_OUTER_NAMESPACE */
+} /* namespace FLOWGRAPH_OUTER_NAMESPACE::flowgraph */
 
 #endif //FLOWGRAPH_SINK_FLOAT_H
