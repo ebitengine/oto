@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -85,25 +86,37 @@ func clean() error {
 
 func prepareOboe(tmp string) error {
 	fn := oboeVersion + ".tar.gz"
-	if e, err := exists(fn); err != nil {
-		return err
-	} else if !e {
-		url := "https://github.com/google/oboe/archive/refs/tags/" + fn
-		fmt.Fprintf(os.Stderr, "%s not found: please download it from %s\n", fn, url)
-		return nil
-	}
-
-	fmt.Printf("Copying %s to %s\n", fn, filepath.Join(tmp, fn))
-	in, err := os.Open(fn)
+	e, err := exists(fn)
 	if err != nil {
 		return err
 	}
-	defer in.Close()
+
+	var in io.Reader
+	if e {
+		f, err := os.Open(fn)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		in = f
+	} else {
+		fmt.Printf("Downloading %s\n", fn)
+		url := "https://github.com/google/oboe/archive/refs/tags/" + fn
+		resp, err := http.Get(url)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		in = resp.Body
+	}
+
 	out, err := os.Create(filepath.Join(tmp, fn))
 	if err != nil {
 		return err
 	}
 	defer out.Close()
+
+	fmt.Printf("Copying %s to %s\n", fn, filepath.Join(tmp, fn))
 	if _, err := io.Copy(out, in); err != nil {
 		return err
 	}
