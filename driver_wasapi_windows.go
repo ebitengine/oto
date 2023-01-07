@@ -282,6 +282,10 @@ func (c *wasapiContext) startOnCOMThread() (ferr error) {
 	if c.bufferSizeInBytes != 0 {
 		bufferSizeInFrames := int64(c.bufferSizeInBytes) / int64(nBlockAlign)
 		bufferSizeIn100ns = _REFERENCE_TIME(1e7 * bufferSizeInFrames / int64(c.sampleRate))
+	} else {
+		// The default buffer size can be too small and might cause glitch noises.
+		// Specify 50[ms] as the buffer size.
+		bufferSizeIn100ns = _REFERENCE_TIME(50 * time.Millisecond / 100)
 	}
 
 	if err := c.client.Initialize(_AUDCLNT_SHAREMODE_SHARED,
