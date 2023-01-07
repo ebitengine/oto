@@ -30,24 +30,24 @@ var appkit = purego.Dlopen("/System/Library/Frameworks/AppKit.framework/Versions
 // setNotificationHandler sets a handler for sleep/wake notifications.
 func setNotificationHandler() {
 	// Create the Observer object
-	class := objc.AllocateClassPair(objc.GetClass("NSObject\x00"), "OtoNotificationObserver\x00", 0)
-	class.AddMethod(objc.RegisterName("receiveSleepNote:\x00"), objc.NewIMP(setGlobalPause), "v@:@\x00")
-	class.AddMethod(objc.RegisterName("receiveWakeNote:\x00"), objc.NewIMP(setGlobalResume), "v@:@\x00")
+	class := objc.AllocateClassPair(objc.GetClass("NSObject"), "OtoNotificationObserver", 0)
+	class.AddMethod(objc.RegisterName("receiveSleepNote:"), objc.NewIMP(setGlobalPause), "v@:@")
+	class.AddMethod(objc.RegisterName("receiveWakeNote:"), objc.NewIMP(setGlobalResume), "v@:@")
 	class.Register()
 
-	observer := objc.ID(class).Send(objc.RegisterName("new\x00"))
+	observer := objc.ID(class).Send(objc.RegisterName("new"))
 
-	notificationCenter := objc.ID(objc.GetClass("NSWorkspace\x00")).Send(objc.RegisterName("sharedWorkspace\x00")).Send(objc.RegisterName("notificationCenter\x00"))
-	notificationCenter.Send(objc.RegisterName("addObserver:selector:name:object:\x00"),
+	notificationCenter := objc.ID(objc.GetClass("NSWorkspace")).Send(objc.RegisterName("sharedWorkspace")).Send(objc.RegisterName("notificationCenter"))
+	notificationCenter.Send(objc.RegisterName("addObserver:selector:name:object:"),
 		observer,
-		objc.RegisterName("receiveSleepNote:\x00"),
+		objc.RegisterName("receiveSleepNote:"),
 		// Dlsym returns a pointer to the object so dereference it
 		*(*uintptr)(unsafe.Pointer(purego.Dlsym(appkit, "NSWorkspaceWillSleepNotification"))),
 		0,
 	)
-	notificationCenter.Send(objc.RegisterName("addObserver:selector:name:object:\x00"),
+	notificationCenter.Send(objc.RegisterName("addObserver:selector:name:object:"),
 		observer,
-		objc.RegisterName("receiveWakeNote:\x00"),
+		objc.RegisterName("receiveWakeNote:"),
 		// Dlsym returns a pointer to the object so dereference it
 		*(*uintptr)(unsafe.Pointer(purego.Dlsym(appkit, "NSWorkspaceDidWakeNotification"))),
 		0,
