@@ -28,10 +28,12 @@ import (
 const (
 	float32SizeInBytes = 4
 
+	bufferCount = 4
+
 	noErr = 0
 )
 
-func newAudioQueue(sampleRate, channelCount int, bufferSizeInBytes int) (_AudioQueueRef, []_AudioQueueBufferRef, error) {
+func newAudioQueue(sampleRate, channelCount int, oneBufferSizeInBytes int) (_AudioQueueRef, []_AudioQueueBufferRef, error) {
 	desc := _AudioStreamBasicDescription{
 		mSampleRate:       float64(sampleRate),
 		mFormatID:         uint32(kAudioFormatLinearPCM),
@@ -55,13 +57,13 @@ func newAudioQueue(sampleRate, channelCount int, bufferSizeInBytes int) (_AudioQ
 		return 0, nil, fmt.Errorf("oto: AudioQueueNewFormat with StreamFormat failed: %d", osstatus)
 	}
 
-	bufs := make([]_AudioQueueBufferRef, 0, 4)
+	bufs := make([]_AudioQueueBufferRef, 0, bufferCount)
 	for len(bufs) < cap(bufs) {
 		var buf _AudioQueueBufferRef
-		if osstatus := _AudioQueueAllocateBuffer(audioQueue, uint32(bufferSizeInBytes), &buf); osstatus != noErr {
+		if osstatus := _AudioQueueAllocateBuffer(audioQueue, uint32(oneBufferSizeInBytes), &buf); osstatus != noErr {
 			return 0, nil, fmt.Errorf("oto: AudioQueueAllocateBuffer failed: %d", osstatus)
 		}
-		buf.mAudioDataByteSize = uint32(bufferSizeInBytes)
+		buf.mAudioDataByteSize = uint32(oneBufferSizeInBytes)
 		bufs = append(bufs, buf)
 	}
 
@@ -72,7 +74,7 @@ type context struct {
 	audioQueue      _AudioQueueRef
 	unqueuedBuffers []_AudioQueueBufferRef
 
-	bufferSizeInBytes int
+	oneBufferSizeInBytes int
 
 	cond *sync.Cond
 
@@ -86,23 +88,24 @@ type context struct {
 var theContext *context
 
 func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeInBytes int) (*context, chan struct{}, error) {
-	if bufferSizeInBytes == 0 {
-		bufferSizeInBytes = defaultBufferSizeInBytes
+	oneBufferSizeInBytes := bufferSizeInBytes / bufferCount
+	if oneBufferSizeInBytes == 0 {
+		oneBufferSizeInBytes = defaultOneBufferSizeInBytes
 	}
 
 	ready := make(chan struct{})
 
 	c := &context{
-		cond:              sync.NewCond(&sync.Mutex{}),
-		mux:               mux.New(sampleRate, channelCount, format),
-		bufferSizeInBytes: bufferSizeInBytes,
+		cond:                 sync.NewCond(&sync.Mutex{}),
+		mux:                  mux.New(sampleRate, channelCount, format),
+		oneBufferSizeInBytes: oneBufferSizeInBytes,
 	}
 	theContext = c
 
 	go func() {
 		defer close(ready)
 
-		q, bs, err := newAudioQueue(sampleRate, channelCount, bufferSizeInBytes)
+		q, bs, err := newAudioQueue(sampleRate, channelCount, oneBufferSizeInBytes)
 		if err != nil {
 			c.err.TryStore(err)
 			return
@@ -142,7 +145,7 @@ func (c *context) wait() bool {
 }
 
 func (c *context) loop() {
-	buf32 := make([]float32, c.bufferSizeInBytes/4)
+	buf32 := make([]float32, c.oneBufferSizeInBytes/4)
 	for {
 		if !c.wait() {
 			return
