@@ -17,6 +17,7 @@ package oto
 import (
 	"io"
 	"sync"
+	"time"
 
 	"github.com/hajimehoshi/oto/v2/internal/mux"
 )
@@ -79,13 +80,13 @@ type NewContextOptions struct {
 	// This value must be FormatFloat32LE, FormatUnsignedInt8, or FormatSignedInt16LE.
 	Format int
 
-	// BufferSizeInBytes specifies a buffer size in bytes in the underlying device.
+	// BufferSize specifies a buffer size in the underlying device.
 	//
 	// If 0 is specified, the driver's default buffer size is used.
-	// Set BufferSizeInBytes to adjust the buffer size if you want to adjust latency or reduce noises.
+	// Set BufferSize to adjust the buffer size if you want to adjust latency or reduce noises.
 	// Too big buffer size can increase the latency time.
 	// On the other hand, too small buffer size can cause glitch noises due to buffer shortage.
-	BufferSizeInBytes int
+	BufferSize time.Duration
 }
 
 // NewContextWithOptions creates a new context with given options.
@@ -94,7 +95,15 @@ type NewContextOptions struct {
 //
 // Creating multiple contexts is NOT supported.
 func NewContextWithOptions(options *NewContextOptions) (*Context, chan struct{}, error) {
-	ctx, ready, err := newContext(options.SampleRate, options.ChannelCount, mux.Format(options.Format), options.BufferSizeInBytes)
+	var bufferSizeInBytes int
+	if options.BufferSize != 0 {
+		// The underying driver always uses 32bit floats.
+		bytesPerSample := options.ChannelCount * 4
+		bytesPerSecond := options.SampleRate * bytesPerSample
+		bufferSizeInBytes = int(int64(options.BufferSize) * int64(bytesPerSecond) / int64(time.Second))
+		bufferSizeInBytes = bufferSizeInBytes / bytesPerSample * bytesPerSample
+	}
+	ctx, ready, err := newContext(options.SampleRate, options.ChannelCount, mux.Format(options.Format), bufferSizeInBytes)
 	if err != nil {
 		return nil, nil, err
 	}

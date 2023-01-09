@@ -31,7 +31,7 @@ const (
 	noErr = 0
 )
 
-func newAudioQueue(sampleRate, channelCount, bufferSizeInBytes int) (_AudioQueueRef, []_AudioQueueBufferRef, error) {
+func newAudioQueue(sampleRate, channelCount int, bufferSizeInBytes int) (_AudioQueueRef, []_AudioQueueBufferRef, error) {
 	desc := _AudioStreamBasicDescription{
 		mSampleRate:       float64(sampleRate),
 		mFormatID:         uint32(kAudioFormatLinearPCM),
