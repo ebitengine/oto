@@ -88,10 +88,14 @@ type context struct {
 var theContext *context
 
 func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeInBytes int) (*context, chan struct{}, error) {
-	oneBufferSizeInBytes := bufferSizeInBytes / bufferCount
-	if oneBufferSizeInBytes == 0 {
+	var oneBufferSizeInBytes int
+	if bufferSizeInBytes != 0 {
+		oneBufferSizeInBytes = bufferSizeInBytes / bufferCount
+	} else {
 		oneBufferSizeInBytes = defaultOneBufferSizeInBytes
 	}
+	bytesPerSample := channelCount * 4
+	oneBufferSizeInBytes = oneBufferSizeInBytes / bytesPerSample * bytesPerSample
 
 	ready := make(chan struct{})
 
