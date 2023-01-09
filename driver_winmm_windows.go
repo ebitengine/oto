@@ -28,7 +28,7 @@ import (
 // Avoid goroutines on Windows (hajimehoshi/ebiten#1768).
 // Apparently, switching contexts might take longer than other platforms.
 
-const headerBufferSize = 4096
+const defaultHeaderBufferSize = 4096
 
 type header struct {
 	waveOut uintptr
@@ -68,8 +68,9 @@ func (h *header) Close() error {
 }
 
 type winmmContext struct {
-	sampleRate   int
-	channelCount int
+	sampleRate        int
+	channelCount      int
+	bufferSizeInBytes int
 
 	waveOut uintptr
 	headers []*header
@@ -85,12 +86,13 @@ type winmmContext struct {
 
 var theWinMMContext *winmmContext
 
-func newWinMMContext(sampleRate, channelCount int, mux *mux.Mux) (*winmmContext, error) {
+func newWinMMContext(sampleRate, channelCount int, mux *mux.Mux, bufferSizeInBytes int) (*winmmContext, error) {
 	c := &winmmContext{
-		sampleRate:   sampleRate,
-		channelCount: channelCount,
-		mux:          mux,
-		cond:         sync.NewCond(&sync.Mutex{}),
+		sampleRate:        sampleRate,
+		channelCount:      channelCount,
+		bufferSizeInBytes: bufferSizeInBytes,
+		mux:               mux,
+		cond:              sync.NewCond(&sync.Mutex{}),
 	}
 	theWinMMContext = c
 
@@ -124,6 +126,11 @@ func (c *winmmContext) start() error {
 	}
 	if err != nil {
 		return err
+	}
+
+	headerBufferSize := defaultHeaderBufferSize
+	if c.bufferSizeInBytes != 0 {
+		headerBufferSize = c.bufferSizeInBytes
 	}
 
 	c.waveOut = w

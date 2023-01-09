@@ -31,10 +31,10 @@ import (
 
 var theReadFunc func(buf []float32)
 
-func Play(sampleRate int, channelCount int, readFunc func(buf []float32)) error {
+func Play(sampleRate int, channelCount int, readFunc func(buf []float32), bufferSizeInBytes int) error {
 	// Play can invoke the callback. Set the callback before Play.
 	theReadFunc = readFunc
-	if msg := C.oto_oboe_Play(C.int(sampleRate), C.int(channelCount)); msg != nil {
+	if msg := C.oto_oboe_Play(C.int(sampleRate), C.int(channelCount), C.int(bufferSizeInBytes)); msg != nil {
 		return fmt.Errorf("oboe: Play failed: %s", C.GoString(msg))
 	}
 	return nil

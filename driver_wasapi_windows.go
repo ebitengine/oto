@@ -72,9 +72,10 @@ func (c *comThread) Run(f func()) {
 }
 
 type wasapiContext struct {
-	sampleRate   int
-	channelCount int
-	mux          *mux.Mux
+	sampleRate        int
+	channelCount      int
+	mux               *mux.Mux
+	bufferSizeInBytes int
 
 	comThread *comThread
 	err       atomicError
@@ -95,17 +96,18 @@ type wasapiContext struct {
 
 var errDeviceSwitched = errors.New("oto: device switched")
 
-func newWASAPIContext(sampleRate, channelCount int, mux *mux.Mux) (context *wasapiContext, ferr error) {
+func newWASAPIContext(sampleRate, channelCount int, mux *mux.Mux, bufferSizeInBytes int) (context *wasapiContext, ferr error) {
 	t, err := newCOMThread()
 	if err != nil {
 		return nil, err
 	}
 
 	c := &wasapiContext{
-		sampleRate:   sampleRate,
-		channelCount: channelCount,
-		mux:          mux,
-		comThread:    t,
+		sampleRate:        sampleRate,
+		channelCount:      channelCount,
+		mux:               mux,
+		bufferSizeInBytes: bufferSizeInBytes,
+		comThread:         t,
 	}
 
 	ev, err := windows.CreateEventEx(nil, nil, 0, windows.EVENT_ALL_ACCESS)
@@ -276,9 +278,15 @@ func (c *wasapiContext) startOnCOMThread() (ferr error) {
 	}
 	c.mixFormat = f
 
+	var bufferSizeIn100ns _REFERENCE_TIME
+	if c.bufferSizeInBytes != 0 {
+		bufferSizeInFrames := int64(c.bufferSizeInBytes) / int64(nBlockAlign)
+		bufferSizeIn100ns = _REFERENCE_TIME(1e7 * bufferSizeInFrames / int64(c.sampleRate))
+	}
+
 	if err := c.client.Initialize(_AUDCLNT_SHAREMODE_SHARED,
 		_AUDCLNT_STREAMFLAGS_EVENTCALLBACK|_AUDCLNT_STREAMFLAGS_NOPERSIST,
-		0, 0, c.mixFormat, nil); err != nil {
+		bufferSizeIn100ns, 0, c.mixFormat, nil); err != nil {
 		return err
 	}
 

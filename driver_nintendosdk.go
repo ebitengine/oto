@@ -21,11 +21,11 @@ package oto
 //
 // typedef void (*oto_OnReadCallbackType)(float* buf, size_t length);
 //
-// void oto_OpenAudio(int sample_rate, int channel_num, oto_OnReadCallbackType on_read_callback);
+// void oto_OpenAudio(int sample_rate, int channel_num, oto_OnReadCallbackType on_read_callback, int buffer_size_in_bytes);
 //
 // void oto_OnReadCallback(float* buf, size_t length);
-// static void oto_OpenProxy(int sample_rate, int channel_num) {
-//   oto_OpenAudio(sample_rate, channel_num, oto_OnReadCallback);
+// static void oto_OpenProxy(int sample_rate, int channel_num, int buffer_size_in_bytes) {
+//   oto_OpenAudio(sample_rate, channel_num, oto_OnReadCallback, buffer_size_in_bytes);
 // }
 import "C"
 
@@ -46,7 +46,7 @@ type context struct {
 
 var theContext *context
 
-func newContext(sampleRate int, channelCount int, format mux.Format) (*context, chan struct{}, error) {
+func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeInBytes int) (*context, chan struct{}, error) {
 	ready := make(chan struct{})
 	close(ready)
 
@@ -54,7 +54,7 @@ func newContext(sampleRate int, channelCount int, format mux.Format) (*context, 
 		mux: mux.New(sampleRate, channelCount, format),
 	}
 	theContext = c
-	C.oto_OpenProxy(C.int(sampleRate), C.int(channelCount))
+	C.oto_OpenProxy(C.int(sampleRate), C.int(channelCount), C.int(bufferSizeInBytes))
 
 	return c, ready, nil
 }

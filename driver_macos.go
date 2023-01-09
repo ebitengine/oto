@@ -23,7 +23,7 @@ import (
 	"github.com/ebitengine/purego/objc"
 )
 
-const bufferSizeInBytes = 2048
+const defaultBufferSizeInBytes = 2048
 
 var appkit = purego.Dlopen("/System/Library/Frameworks/AppKit.framework/Versions/Current/AppKit", purego.RTLD_GLOBAL)
 

@@ -106,7 +106,7 @@ func deviceCandidates() []string {
 	return devices
 }
 
-func newContext(sampleRate int, channelCount int, format mux.Format) (*context, chan struct{}, error) {
+func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeInBytes int) (*context, chan struct{}, error) {
 	c := &context{
 		channelCount: channelCount,
 		cond:         sync.NewCond(&sync.Mutex{}),
@@ -148,8 +148,15 @@ func newContext(sampleRate int, channelCount int, format mux.Format) (*context, 
 			return
 		}
 
-		periodSize := C.snd_pcm_uframes_t(1024)
-		bufferSize := periodSize * 2
+		// TODO: Should snd_pcm_hw_params_set_periods be called explicitly?
+		const periods = 2
+		var periodSize C.snd_pcm_uframes_t
+		if bufferSizeInBytes != 0 {
+			periodSize = C.snd_pcm_uframes_t(bufferSizeInBytes / (channelCount * 4 * periods))
+		} else {
+			periodSize = C.snd_pcm_uframes_t(1024)
+		}
+		bufferSize := periodSize * periods
 		if err := c.alsaPcmHwParams(sampleRate, channelCount, &bufferSize, &periodSize); err != nil {
 			c.err.TryStore(err)
 			return

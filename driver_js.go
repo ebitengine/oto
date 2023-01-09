@@ -33,7 +33,7 @@ type context struct {
 	mux *mux.Mux
 }
 
-func newContext(sampleRate int, channelCount int, format mux.Format) (*context, chan struct{}, error) {
+func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeInBytes int) (*context, chan struct{}, error) {
 	ready := make(chan struct{})
 
 	class := js.Global().Get("AudioContext")
@@ -51,8 +51,10 @@ func newContext(sampleRate int, channelCount int, format mux.Format) (*context, 
 		mux:          mux.New(sampleRate, channelCount, format),
 	}
 
-	// 4096 was not great at least on Safari 15.
-	bufferSizeInBytes := 8192 * channelCount
+	if bufferSizeInBytes == 0 {
+		// 4096 was not great at least on Safari 15.
+		bufferSizeInBytes = 8192 * channelCount
+	}
 
 	buf32 := make([]float32, bufferSizeInBytes/4)
 	chBuf32 := make([][]float32, channelCount)

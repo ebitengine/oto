@@ -34,7 +34,7 @@ public:
   // AAudio and OpenSL (#1656, #1660).
   static Stream &GetInstance();
 
-  const char *Play(int sample_rate, int channel_num);
+  const char *Play(int sample_rate, int channel_num, int buffer_size_in_bytes);
   const char *Pause();
   const char *Resume();
   const char *Close();
@@ -66,21 +66,25 @@ Stream &Stream::GetInstance() {
   return *stream;
 }
 
-const char *Stream::Play(int sample_rate, int channel_num) {
+const char *Stream::Play(int sample_rate, int channel_num,
+                         int buffer_size_in_bytes) {
   sample_rate_ = sample_rate;
   channel_num_ = channel_num;
 
   if (!stream_) {
     oboe::AudioStreamBuilder builder;
-    oboe::Result result =
-        builder.setDirection(oboe::Direction::Output)
-            ->setPerformanceMode(oboe::PerformanceMode::LowLatency)
-            ->setSharingMode(oboe::SharingMode::Shared)
-            ->setFormat(oboe::AudioFormat::Float)
-            ->setChannelCount(channel_num_)
-            ->setSampleRate(sample_rate_)
-            ->setDataCallback(this)
-            ->openStream(stream_);
+    builder.setDirection(oboe::Direction::Output)
+        ->setPerformanceMode(oboe::PerformanceMode::LowLatency)
+        ->setSharingMode(oboe::SharingMode::Shared)
+        ->setFormat(oboe::AudioFormat::Float)
+        ->setChannelCount(channel_num_)
+        ->setSampleRate(sample_rate_)
+        ->setDataCallback(this);
+    if (buffer_size_in_bytes) {
+      int buffer_size_in_frames = buffer_size_in_bytes / channel_num / 4;
+      builder.setBufferCapacityInFrames(buffer_size_in_frames);
+    }
+    oboe::Result result = builder.openStream(stream_);
     if (result != oboe::Result::OK) {
       return oboe::convertToText(result);
     }
@@ -174,8 +178,10 @@ void Stream::Loop(int num_frames) {
 
 extern "C" {
 
-const char *oto_oboe_Play(int sample_rate, int channel_num) {
-  return Stream::GetInstance().Play(sample_rate, channel_num);
+const char *oto_oboe_Play(int sample_rate, int channel_num,
+                          int buffer_size_in_bytes) {
+  return Stream::GetInstance().Play(sample_rate, channel_num,
+                                    buffer_size_in_bytes);
 }
 
 const char *oto_oboe_Suspend() { return Stream::GetInstance().Pause(); }

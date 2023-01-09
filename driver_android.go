@@ -23,14 +23,14 @@ type context struct {
 	mux *mux.Mux
 }
 
-func newContext(sampleRate int, channelCount int, format mux.Format) (*context, chan struct{}, error) {
+func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeInBytes int) (*context, chan struct{}, error) {
 	ready := make(chan struct{})
 	close(ready)
 
 	c := &context{
 		mux: mux.New(sampleRate, channelCount, format),
 	}
-	if err := oboe.Play(sampleRate, channelCount, c.mux.ReadFloat32s); err != nil {
+	if err := oboe.Play(sampleRate, channelCount, c.mux.ReadFloat32s, bufferSizeInBytes); err != nil {
 		return nil, nil, err
 	}
 	return c, ready, nil

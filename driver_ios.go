@@ -20,7 +20,7 @@ package oto
 // With 48000[Hz] stereo, the maximum delay is (12288 / 4 / 2 [samples]) / 48000 [Hz] = 0.032 [sec].
 // '4' is float32 size in bytes. '2' is a number of channels for stereo.
 
-const bufferSizeInBytes = 12288
+const defaultBufferSizeInBytes = 12288
 
 func setNotificationHandler() {
 	// AVAudioSessionInterruptionNotification is not reliable on iOS. Rely on

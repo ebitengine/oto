@@ -31,7 +31,7 @@ const (
 	noErr = 0
 )
 
-func newAudioQueue(sampleRate, channelCount int) (_AudioQueueRef, []_AudioQueueBufferRef, error) {
+func newAudioQueue(sampleRate, channelCount, bufferSizeInBytes int) (_AudioQueueRef, []_AudioQueueBufferRef, error) {
 	desc := _AudioStreamBasicDescription{
 		mSampleRate:       float64(sampleRate),
 		mFormatID:         uint32(kAudioFormatLinearPCM),
@@ -58,10 +58,10 @@ func newAudioQueue(sampleRate, channelCount int) (_AudioQueueRef, []_AudioQueueB
 	bufs := make([]_AudioQueueBufferRef, 0, 4)
 	for len(bufs) < cap(bufs) {
 		var buf _AudioQueueBufferRef
-		if osstatus := _AudioQueueAllocateBuffer(audioQueue, bufferSizeInBytes, &buf); osstatus != noErr {
+		if osstatus := _AudioQueueAllocateBuffer(audioQueue, uint32(bufferSizeInBytes), &buf); osstatus != noErr {
 			return 0, nil, fmt.Errorf("oto: AudioQueueAllocateBuffer failed: %d", osstatus)
 		}
-		buf.mAudioDataByteSize = bufferSizeInBytes
+		buf.mAudioDataByteSize = uint32(bufferSizeInBytes)
 		bufs = append(bufs, buf)
 	}
 
@@ -71,6 +71,8 @@ func newAudioQueue(sampleRate, channelCount int) (_AudioQueueRef, []_AudioQueueB
 type context struct {
 	audioQueue      _AudioQueueRef
 	unqueuedBuffers []_AudioQueueBufferRef
+
+	bufferSizeInBytes int
 
 	cond *sync.Cond
 
@@ -83,19 +85,24 @@ type context struct {
 
 var theContext *context
 
-func newContext(sampleRate int, channelCount int, format mux.Format) (*context, chan struct{}, error) {
+func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeInBytes int) (*context, chan struct{}, error) {
+	if bufferSizeInBytes == 0 {
+		bufferSizeInBytes = defaultBufferSizeInBytes
+	}
+
 	ready := make(chan struct{})
 
 	c := &context{
-		cond: sync.NewCond(&sync.Mutex{}),
-		mux:  mux.New(sampleRate, channelCount, format),
+		cond:              sync.NewCond(&sync.Mutex{}),
+		mux:               mux.New(sampleRate, channelCount, format),
+		bufferSizeInBytes: bufferSizeInBytes,
 	}
 	theContext = c
 
 	go func() {
 		defer close(ready)
 
-		q, bs, err := newAudioQueue(sampleRate, channelCount)
+		q, bs, err := newAudioQueue(sampleRate, channelCount, bufferSizeInBytes)
 		if err != nil {
 			c.err.TryStore(err)
 			return
@@ -135,7 +142,7 @@ func (c *context) wait() bool {
 }
 
 func (c *context) loop() {
-	buf32 := make([]float32, bufferSizeInBytes/4)
+	buf32 := make([]float32, c.bufferSizeInBytes/4)
 	for {
 		if !c.wait() {
 			return

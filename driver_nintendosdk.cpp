@@ -13,13 +13,13 @@
 // limitations under the License.
 
 //go:build nintendosdk
-// +build nintendosdk
 
 // The actual implementaiton will be provided by -overlay.
 
 #include <cstddef>
 
-typedef void (*oto_OnReadCallbackType)(float* buf, size_t length);
+typedef void (*oto_OnReadCallbackType)(float *buf, size_t length);
 
-extern "C" void oto_OpenAudio(int sample_rate, int channel_num, oto_OnReadCallbackType on_read_callback) {
-}
+extern "C" void oto_OpenAudio(int sample_rate, int channel_num,
+                              oto_OnReadCallbackType on_read_callback,
+                              int buffer_size_in_bytes) {}

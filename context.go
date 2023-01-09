@@ -57,7 +57,44 @@ const (
 // The format argument specifies the format of sources.
 // This value must be FormatFloat32LE, FormatUnsignedInt8, or FormatSignedInt16LE.
 func NewContext(sampleRate int, channelCount int, format int) (*Context, chan struct{}, error) {
-	ctx, ready, err := newContext(sampleRate, channelCount, mux.Format(format))
+	return NewContextWithOptions(&NewContextOptions{
+		SampleRate:   sampleRate,
+		ChannelCount: channelCount,
+		Format:       format,
+	})
+}
+
+// NewContextOptions represents options for NewContextWithOptions.
+type NewContextOptions struct {
+	// SampleRate specifies the number of samples that should be played during one second.
+	// Usual numbers are 44100 or 48000. One context has only one sample rate. You cannot play multiple audio
+	// sources with different sample rates at the same time.
+	SampleRate int
+
+	// ChannelCount specifies the number of channels. One channel is mono playback. Two
+	// channels are stereo playback. No other values are supported.
+	ChannelCount int
+
+	// Format specifies the format of sources.
+	// This value must be FormatFloat32LE, FormatUnsignedInt8, or FormatSignedInt16LE.
+	Format int
+
+	// BufferSizeInBytes specifies a buffer size in bytes in the underlying device.
+	//
+	// If 0 is specified, the driver's default buffer size is used.
+	// Set BufferSizeInBytes to adjust the buffer size if you want to adjust latency or reduce noises.
+	// Too big buffer size can increase the latency time.
+	// On the other hand, too small buffer size can cause glitch noises due to buffer shortage.
+	BufferSizeInBytes int
+}
+
+// NewContextWithOptions creates a new context with given options.
+// A context creates and holds ready-to-use Player objects.
+// NewContextWithOptions returns a context, a channel that is closed when the context is ready, and an error if it exists.
+//
+// Creating multiple contexts is NOT supported.
+func NewContextWithOptions(options *NewContextOptions) (*Context, chan struct{}, error) {
+	ctx, ready, err := newContext(options.SampleRate, options.ChannelCount, mux.Format(options.Format), options.BufferSizeInBytes)
 	if err != nil {
 		return nil, nil, err
 	}

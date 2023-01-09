@@ -38,7 +38,7 @@ type context struct {
 	err   atomicError
 }
 
-func newContext(sampleRate int, channelCount int, format mux.Format) (*context, chan struct{}, error) {
+func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeInBytes int) (*context, chan struct{}, error) {
 	ctx := &context{
 		sampleRate:   sampleRate,
 		channelCount: channelCount,
@@ -50,13 +50,13 @@ func newContext(sampleRate int, channelCount int, format mux.Format) (*context, 
 	go func() {
 		defer close(ctx.ready)
 
-		xc, err0 := newWASAPIContext(sampleRate, channelCount, ctx.mux)
+		xc, err0 := newWASAPIContext(sampleRate, channelCount, ctx.mux, bufferSizeInBytes)
 		if err0 == nil {
 			ctx.wasapiContext = xc
 			return
 		}
 
-		wc, err1 := newWinMMContext(sampleRate, channelCount, ctx.mux)
+		wc, err1 := newWinMMContext(sampleRate, channelCount, ctx.mux, bufferSizeInBytes)
 		if err1 == nil {
 			ctx.winmmContext = wc
 			return
