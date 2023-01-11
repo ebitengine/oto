@@ -77,9 +77,10 @@ type wasapiContext struct {
 	mux               *mux.Mux
 	bufferSizeInBytes int
 
-	comThread *comThread
-	err       atomicError
-	suspended bool
+	comThread     *comThread
+	err           atomicError
+	suspended     bool
+	suspendedCond *sync.Cond
 
 	sampleReadyEvent windows.Handle
 	client           *_IAudioClient2
@@ -111,6 +112,7 @@ func newWASAPIContext(sampleRate, channelCount int, mux *mux.Mux, bufferSizeInBy
 		mux:               mux,
 		bufferSizeInBytes: bufferSizeInBytes,
 		comThread:         t,
+		suspendedCond:     sync.NewCond(&sync.Mutex{}),
 	}
 
 	ev, err := windows.CreateEventEx(nil, nil, 0, windows.EVENT_ALL_ACCESS)
@@ -178,11 +180,6 @@ func (c *wasapiContext) start() error {
 		if err := c.loop(); err != nil {
 			if !errors.Is(err, _AUDCLNT_E_DEVICE_INVALIDATED) && !errors.Is(err, _AUDCLNT_E_RESOURCES_INVALIDATED) && !errors.Is(err, errDeviceSwitched) {
 				c.err.TryStore(err)
-				return
-			}
-
-			// If the context is suspended, do not resume now.
-			if c.isSuspended() {
 				return
 			}
 
@@ -419,14 +416,21 @@ func (c *wasapiContext) writeOnRenderThread() error {
 }
 
 func (c *wasapiContext) Suspend() error {
+	c.suspendedCond.L.Lock()
+	c.suspended = true
+	c.suspendedCond.L.Unlock()
+	c.suspendedCond.Signal()
+
 	var cerr error
 	c.comThread.Run(func() {
 		c.m.Lock()
 		defer c.m.Unlock()
-		c.suspended = true
 
 		if err := c.client.Stop(); err != nil {
-			cerr = err
+			// The device might not be initialized when restart() doesn't succeed to find a device yet.
+			if !errors.Is(err, _AUDCLNT_E_NOT_INITIALIZED) {
+				cerr = err
+			}
 			return
 		}
 	})
@@ -434,13 +438,22 @@ func (c *wasapiContext) Suspend() error {
 }
 
 func (c *wasapiContext) Resume() error {
+	c.suspendedCond.L.Lock()
+	c.suspended = false
+	c.suspendedCond.L.Unlock()
+	c.suspendedCond.Signal()
+
 	var cerr error
 	c.comThread.Run(func() {
 		c.m.Lock()
 		defer c.m.Unlock()
-		c.suspended = false
 
 		if err := c.client.Start(); err != nil {
+			// The device might not be initialized when restart() doesn't succeed to find a device yet.
+			if errors.Is(err, _AUDCLNT_E_NOT_INITIALIZED) {
+				return
+			}
+
 			if !errors.Is(err, _AUDCLNT_E_DEVICE_INVALIDATED) && !errors.Is(err, _AUDCLNT_E_RESOURCES_INVALIDATED) {
 				cerr = err
 				return
@@ -459,8 +472,8 @@ func (c *wasapiContext) Resume() error {
 }
 
 func (c *wasapiContext) isSuspended() bool {
-	c.m.Lock()
-	defer c.m.Unlock()
+	c.suspendedCond.L.Lock()
+	defer c.suspendedCond.L.Unlock()
 	return c.suspended
 }
 
@@ -471,7 +484,14 @@ func (c *wasapiContext) Err() error {
 func (c *wasapiContext) restart() error {
 	// Probably the driver is missing temporarily e.g. plugging out the headset.
 	// Recreate the device.
+
 retry:
+	c.suspendedCond.L.Lock()
+	for c.suspended {
+		c.suspendedCond.Wait()
+	}
+	c.suspendedCond.L.Unlock()
+
 	if err := c.start(); err != nil {
 		// When a device is switched, the new device might not support the desired format.
 		// Instead of aborting this context, let's wait for the next device switch.
