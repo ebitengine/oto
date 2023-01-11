@@ -94,7 +94,10 @@ type wasapiContext struct {
 	m sync.Mutex
 }
 
-var errDeviceSwitched = errors.New("oto: device switched")
+var (
+	errDeviceSwitched     = errors.New("oto: device switched")
+	errFormatNotSupported = errors.New("oto: the specified format is not supported (there is the closest format instead)")
+)
 
 func newWASAPIContext(sampleRate, channelCount int, mux *mux.Mux, bufferSizeInBytes int) (context *wasapiContext, ferr error) {
 	t, err := newCOMThread()
@@ -183,9 +186,7 @@ func (c *wasapiContext) start() error {
 				return
 			}
 
-			// Probably the driver is missing temporarily e.g. plugging out the headset.
-			// Recreate the device.
-			if err := c.start(); err != nil {
+			if err := c.restart(); err != nil {
 				c.err.TryStore(err)
 				return
 			}
@@ -274,7 +275,7 @@ func (c *wasapiContext) startOnCOMThread() (ferr error) {
 		return err
 	}
 	if closest != nil {
-		return fmt.Errorf("oto: the specified format is not supported (there is the closest format instead)")
+		return errFormatNotSupported
 	}
 	c.mixFormat = f
 
@@ -446,9 +447,7 @@ func (c *wasapiContext) Resume() error {
 			}
 
 			go func() {
-				// Probably the driver is missing temporarily e.g. plugging out the headset.
-				// Recreate the device.
-				if err := c.start(); err != nil {
+				if err := c.restart(); err != nil {
 					c.err.TryStore(err)
 					return
 				}
@@ -467,4 +466,20 @@ func (c *wasapiContext) isSuspended() bool {
 
 func (c *wasapiContext) Err() error {
 	return c.err.Load()
+}
+
+func (c *wasapiContext) restart() error {
+	// Probably the driver is missing temporarily e.g. plugging out the headset.
+	// Recreate the device.
+retry:
+	if err := c.start(); err != nil {
+		// When a device is switched, the new device might not support the desired format.
+		// Instead of aborting this context, let's wait for the next device switch.
+		if errors.Is(err, errFormatNotSupported) {
+			time.Sleep(time.Second)
+			goto retry
+		}
+		return err
+	}
+	return nil
 }
