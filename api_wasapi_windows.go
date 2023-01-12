@@ -298,7 +298,12 @@ func (i *_IAudioClient2) IsFormatSupported(shareMode _AUDCLNT_SHAREMODE, pFormat
 		0, 0)
 	if uint32(r) != uint32(windows.S_OK) {
 		if uint32(r) == uint32(windows.S_FALSE) {
-			return closestMatch, nil
+			var r _WAVEFORMATEXTENSIBLE
+			if closestMatch != nil {
+				r = *closestMatch
+				windows.CoTaskMemFree(unsafe.Pointer(closestMatch))
+			}
+			return &r, nil
 		}
 		if isAudclntErr(uint32(r)) {
 			return nil, fmt.Errorf("oto: IAudioClient2::IsFormatSupported failed: %w", _AUDCLNT_ERR(r))
