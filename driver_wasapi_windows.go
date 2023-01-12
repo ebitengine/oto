@@ -272,6 +272,7 @@ func (c *wasapiContext) startOnCOMThread() (ferr error) {
 		return err
 	}
 	if closest != nil {
+		// TODO: If the differences are only the number of channels, can we use it?
 		return errFormatNotSupported
 	}
 	c.mixFormat = f
