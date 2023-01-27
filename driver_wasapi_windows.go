@@ -72,10 +72,11 @@ func (c *comThread) Run(f func()) {
 }
 
 type wasapiContext struct {
-	sampleRate        int
-	channelCount      int
-	mux               *mux.Mux
-	bufferSizeInBytes int
+	sampleRate         int
+	channelCount       int
+	mux                *mux.Mux
+	bufferSizeInBytes  int
+	actualChannelCount int
 
 	comThread     *comThread
 	err           atomicError
@@ -90,7 +91,8 @@ type wasapiContext struct {
 	currentDeviceID  string
 	enumerator       *_IMMDeviceEnumerator
 
-	buf []float32
+	buf                  []float32
+	bufForActualChannels []float32
 
 	m sync.Mutex
 }
@@ -272,10 +274,15 @@ func (c *wasapiContext) startOnCOMThread() (ferr error) {
 		return err
 	}
 	if closest != nil {
-		// TODO: If the differences are only the number of channels, can we use it?
-		return errFormatNotSupported
+		if f.nSamplesPerSec != closest.nSamplesPerSec {
+			return errFormatNotSupported
+		}
+		c.actualChannelCount = int(closest.nChannels)
+		c.mixFormat = closest
+	} else {
+		c.actualChannelCount = c.channelCount
+		c.mixFormat = f
 	}
-	c.mixFormat = f
 
 	var bufferSizeIn100ns _REFERENCE_TIME
 	if c.bufferSizeInBytes != 0 {
@@ -394,8 +401,7 @@ func (c *wasapiContext) writeOnRenderThread() error {
 	}
 
 	// Calculate the buffer size.
-	buflen := int(frames) * c.channelCount
-	if cap(c.buf) < buflen {
+	if buflen := int(frames) * c.channelCount; cap(c.buf) < buflen {
 		c.buf = make([]float32, buflen)
 	} else {
 		c.buf = c.buf[:buflen]
@@ -404,8 +410,30 @@ func (c *wasapiContext) writeOnRenderThread() error {
 	// Read the buffer from the players.
 	c.mux.ReadFloat32s(c.buf)
 
+	// Add paddings for extra channels if needed.
+	var buf []float32
+	if d := c.actualChannelCount - c.channelCount; d > 0 {
+		if buflen := int(frames) * c.actualChannelCount; cap(c.buf) < buflen {
+			c.bufForActualChannels = make([]float32, buflen)
+		} else {
+			c.bufForActualChannels = c.bufForActualChannels[:buflen]
+		}
+		for i := 0; i < int(frames); i++ {
+			for j := 0; j < c.actualChannelCount; j++ {
+				if j < c.channelCount {
+					c.bufForActualChannels[i*c.actualChannelCount+j] = c.buf[i*c.channelCount]
+				} else {
+					c.bufForActualChannels[i*c.actualChannelCount+j] = 0
+				}
+			}
+		}
+		buf = c.bufForActualChannels
+	} else {
+		buf = c.buf
+	}
+
 	// Copy the read buf to the destination buffer.
-	copy(unsafe.Slice((*float32)(unsafe.Pointer(dstBuf)), buflen), c.buf)
+	copy(unsafe.Slice((*float32)(unsafe.Pointer(dstBuf)), len(buf)), buf)
 
 	// Release the buffer.
 	if err := c.renderClient.ReleaseBuffer(frames, 0); err != nil {
