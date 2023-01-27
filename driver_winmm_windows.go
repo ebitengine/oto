@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -323,6 +324,10 @@ func (c *winmmContext) appendBuffers() {
 			switch {
 			case errors.Is(err, _MMSYSERR_NOMEM):
 				continue
+			case errors.Is(err, _MMSYSERR_NODRIVER):
+				sleep := time.Duration(float64(time.Second) * float64(len(c.buf32)) / float64(c.channelCount) / float64(c.sampleRate))
+				time.Sleep(sleep)
+				return
 			case errors.Is(err, windows.ERROR_NOT_FOUND):
 				// This error can happen when e.g. a new HDMI connection is detected (#51).
 				// TODO: Retry later.
