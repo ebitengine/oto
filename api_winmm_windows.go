@@ -29,10 +29,7 @@ var (
 var (
 	procWaveOutOpen            = winmm.NewProc("waveOutOpen")
 	procWaveOutClose           = winmm.NewProc("waveOutClose")
-	procWaveOutPause           = winmm.NewProc("waveOutPause")
 	procWaveOutPrepareHeader   = winmm.NewProc("waveOutPrepareHeader")
-	procWaveOutReset           = winmm.NewProc("waveOutReset")
-	procWaveOutRestart         = winmm.NewProc("waveOutRestart")
 	procWaveOutUnprepareHeader = winmm.NewProc("waveOutUnprepareHeader")
 	procWaveOutWrite           = winmm.NewProc("waveOutWrite")
 )
@@ -140,17 +137,6 @@ func waveOutClose(hwo uintptr) error {
 	return nil
 }
 
-func waveOutPause(hwo uintptr) error {
-	r, _, e := procWaveOutPause.Call(hwo)
-	if _MMRESULT(r) != _MMSYSERR_NOERROR {
-		if e != nil && e != windows.ERROR_SUCCESS {
-			return fmt.Errorf("oto: waveOutPause failed: %w", e)
-		}
-		return fmt.Errorf("oto: waveOutPause failed: %w", _MMRESULT(r))
-	}
-	return nil
-}
-
 func waveOutPrepareHeader(hwo uintptr, pwh *_WAVEHDR) error {
 	r, _, e := procWaveOutPrepareHeader.Call(hwo, uintptr(unsafe.Pointer(pwh)), unsafe.Sizeof(_WAVEHDR{}))
 	runtime.KeepAlive(pwh)
@@ -159,28 +145,6 @@ func waveOutPrepareHeader(hwo uintptr, pwh *_WAVEHDR) error {
 			return fmt.Errorf("oto: waveOutPrepareHeader failed: %w", e)
 		}
 		return fmt.Errorf("oto: waveOutPrepareHeader failed: %w", _MMRESULT(r))
-	}
-	return nil
-}
-
-func waveOutReset(hwo uintptr) error {
-	r, _, e := procWaveOutReset.Call(hwo)
-	if _MMRESULT(r) != _MMSYSERR_NOERROR {
-		if e != nil && e != windows.ERROR_SUCCESS {
-			return fmt.Errorf("oto: waveOutReset failed: %w", e)
-		}
-		return fmt.Errorf("oto: waveOutReset failed: %w", _MMRESULT(r))
-	}
-	return nil
-}
-
-func waveOutRestart(hwo uintptr) error {
-	r, _, e := procWaveOutRestart.Call(hwo)
-	if _MMRESULT(r) != _MMSYSERR_NOERROR {
-		if e != nil && e != windows.ERROR_SUCCESS {
-			return fmt.Errorf("oto: waveOutRestart failed: %w", e)
-		}
-		return fmt.Errorf("oto: waveOutRestart failed: %w", _MMRESULT(r))
 	}
 	return nil
 }

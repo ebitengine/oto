@@ -83,6 +83,9 @@ type winmmContext struct {
 	loopEndCh chan error
 
 	cond *sync.Cond
+
+	suspended     bool
+	suspendedCond *sync.Cond
 }
 
 var theWinMMContext *winmmContext
@@ -94,6 +97,7 @@ func newWinMMContext(sampleRate, channelCount int, mux *mux.Mux, bufferSizeInByt
 		bufferSizeInBytes: bufferSizeInBytes,
 		mux:               mux,
 		cond:              sync.NewCond(&sync.Mutex{}),
+		suspendedCond:     sync.NewCond(&sync.Mutex{}),
 	}
 	theWinMMContext = c
 
@@ -151,54 +155,20 @@ func (c *winmmContext) start() error {
 }
 
 func (c *winmmContext) Suspend() error {
-	c.cond.L.Lock()
-	defer c.cond.L.Unlock()
+	c.suspendedCond.L.Lock()
+	c.suspended = true
+	c.suspendedCond.L.Unlock()
+	c.suspendedCond.Signal()
 
-	if err := c.err.Load(); err != nil {
-		return err.(error)
-	}
-
-	if err := waveOutPause(c.waveOut); err != nil {
-		return err
-	}
 	return nil
 }
 
 func (c *winmmContext) Resume() (ferr error) {
-	var restart bool
-	defer func() {
-		if ferr != nil {
-			return
-		}
-		if !restart {
-			return
-		}
-		if err := c.stopLoopIfNeeded(); err != nil {
-			ferr = err
-			return
-		}
-		if err := c.start(); err != nil {
-			ferr = err
-			return
-		}
-	}()
+	c.suspendedCond.L.Lock()
+	c.suspended = false
+	c.suspendedCond.L.Unlock()
+	c.suspendedCond.Signal()
 
-	c.cond.L.Lock()
-	defer c.cond.L.Unlock()
-
-	if err := c.err.Load(); err != nil {
-		return err.(error)
-	}
-
-	// TODO: Ensure at least one header is queued?
-
-	if err := waveOutRestart(c.waveOut); err != nil {
-		if errors.Is(err, _MMSYSERR_NODRIVER) {
-			restart = true
-			return nil
-		}
-		return err
-	}
 	return nil
 }
 
@@ -239,29 +209,6 @@ func (c *winmmContext) waitUntilHeaderAvailable() bool {
 	return c.err.Load() == nil && c.loopEndCh == nil
 }
 
-func (c *winmmContext) stopLoopIfNeeded() error {
-	ch := c.stopLoop()
-	if ch == nil {
-		return nil
-	}
-	return <-ch
-}
-
-func (c *winmmContext) stopLoop() chan error {
-	c.cond.L.Lock()
-	defer c.cond.L.Unlock()
-
-	// If the loop is already stopping, do nothing.
-	if c.loopEndCh != nil {
-		return nil
-	}
-
-	ch := make(chan error)
-	c.loopEndCh = ch
-	c.cond.Signal()
-	return ch
-}
-
 func (c *winmmContext) loop() {
 	defer func() {
 		if err := c.closeLoop(); err != nil {
@@ -269,6 +216,12 @@ func (c *winmmContext) loop() {
 		}
 	}()
 	for {
+		c.suspendedCond.L.Lock()
+		for c.suspended {
+			c.suspendedCond.Wait()
+		}
+		c.suspendedCond.L.Unlock()
+
 		if !c.waitUntilHeaderAvailable() {
 			return
 		}
