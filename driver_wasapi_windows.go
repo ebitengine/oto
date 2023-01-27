@@ -82,7 +82,6 @@ type wasapiContext struct {
 	err           atomicError
 	suspended     bool
 	suspendedCond *sync.Cond
-	clientStopped bool
 
 	sampleReadyEvent windows.Handle
 	client           *_IAudioClient2
@@ -336,14 +335,14 @@ func (c *wasapiContext) loop() error {
 
 	// S_FALSE is returned when CoInitializeEx is nested. This is a successful case.
 	if err := windows.CoInitializeEx(0, windows.COINIT_MULTITHREADED); err != nil && !errors.Is(err, syscall.Errno(windows.S_FALSE)) {
-		c.client.Stop()
+		_, _ = c.client.Stop()
 		return err
 	}
 	// CoUninitialize should be called even when CoInitializeEx returns S_FALSE.
 	defer windows.CoUninitialize()
 
 	if err := c.loopOnRenderThread(); err != nil {
-		c.client.Stop()
+		_, _ = c.client.Stop()
 		return err
 	}
 
@@ -353,6 +352,12 @@ func (c *wasapiContext) loop() error {
 func (c *wasapiContext) loopOnRenderThread() error {
 	last := time.Now()
 	for {
+		c.suspendedCond.L.Lock()
+		for c.suspended {
+			c.suspendedCond.Wait()
+		}
+		c.suspendedCond.L.Unlock()
+
 		evt, err := windows.WaitForSingleObject(c.sampleReadyEvent, windows.INFINITE)
 		if err != nil {
 			return err
@@ -450,22 +455,7 @@ func (c *wasapiContext) Suspend() error {
 	c.suspendedCond.L.Unlock()
 	c.suspendedCond.Signal()
 
-	var cerr error
-	c.comThread.Run(func() {
-		c.m.Lock()
-		defer c.m.Unlock()
-
-		ok, err := c.client.Stop()
-		c.clientStopped = ok
-		if err != nil {
-			// The device might not be initialized when restart() doesn't succeed to find a device yet.
-			if !errors.Is(err, _AUDCLNT_E_NOT_INITIALIZED) {
-				cerr = err
-			}
-			return
-		}
-	})
-	return cerr
+	return nil
 }
 
 func (c *wasapiContext) Resume() error {
@@ -474,39 +464,7 @@ func (c *wasapiContext) Resume() error {
 	c.suspendedCond.L.Unlock()
 	c.suspendedCond.Signal()
 
-	var cerr error
-	c.comThread.Run(func() {
-		c.m.Lock()
-		defer c.m.Unlock()
-
-		if !c.clientStopped {
-			return
-		}
-		defer func() {
-			c.clientStopped = false
-		}()
-
-		if err := c.client.Start(); err != nil {
-			// The device might not be initialized when restart() doesn't succeed to find a device yet.
-			if errors.Is(err, _AUDCLNT_E_NOT_INITIALIZED) {
-				return
-			}
-
-			if !errors.Is(err, _AUDCLNT_E_DEVICE_INVALIDATED) && !errors.Is(err, _AUDCLNT_E_RESOURCES_INVALIDATED) {
-				cerr = err
-				return
-			}
-
-			go func() {
-				if err := c.restart(); err != nil {
-					c.err.TryStore(err)
-					return
-				}
-			}()
-			return
-		}
-	})
-	return cerr
+	return nil
 }
 
 func (c *wasapiContext) isSuspended() bool {
