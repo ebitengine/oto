@@ -352,15 +352,15 @@ func (i *_IAudioClient2) Start() error {
 	return nil
 }
 
-func (i *_IAudioClient2) Stop() error {
+func (i *_IAudioClient2) Stop() (bool, error) {
 	r, _, _ := syscall.Syscall(i.vtbl.Stop, 1, uintptr(unsafe.Pointer(i)), 0, 0)
-	if uint32(r) != uint32(windows.S_OK) {
+	if uint32(r) != uint32(windows.S_OK) && uint32(r) != uint32(windows.S_FALSE) {
 		if isAudclntErr(uint32(r)) {
-			return fmt.Errorf("oto: IAudioClient2::Stop failed: %w", _AUDCLNT_ERR(r))
+			return false, fmt.Errorf("oto: IAudioClient2::Stop failed: %w", _AUDCLNT_ERR(r))
 		}
-		return fmt.Errorf("oto: IAudioClient2::Stop failed: HRESULT(%d)", uint32(r))
+		return false, fmt.Errorf("oto: IAudioClient2::Stop failed: HRESULT(%d)", uint32(r))
 	}
-	return nil
+	return uint32(r) == uint32(windows.S_OK), nil
 }
 
 type _IAudioRenderClient struct {

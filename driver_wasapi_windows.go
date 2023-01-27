@@ -82,6 +82,7 @@ type wasapiContext struct {
 	err           atomicError
 	suspended     bool
 	suspendedCond *sync.Cond
+	clientStopped bool
 
 	sampleReadyEvent windows.Handle
 	client           *_IAudioClient2
@@ -189,7 +190,6 @@ func (c *wasapiContext) start() error {
 				c.err.TryStore(err)
 				return
 			}
-			return
 		}
 	}()
 
@@ -455,7 +455,9 @@ func (c *wasapiContext) Suspend() error {
 		c.m.Lock()
 		defer c.m.Unlock()
 
-		if err := c.client.Stop(); err != nil {
+		ok, err := c.client.Stop()
+		c.clientStopped = ok
+		if err != nil {
 			// The device might not be initialized when restart() doesn't succeed to find a device yet.
 			if !errors.Is(err, _AUDCLNT_E_NOT_INITIALIZED) {
 				cerr = err
@@ -476,6 +478,13 @@ func (c *wasapiContext) Resume() error {
 	c.comThread.Run(func() {
 		c.m.Lock()
 		defer c.m.Unlock()
+
+		if !c.clientStopped {
+			return
+		}
+		defer func() {
+			c.clientStopped = false
+		}()
 
 		if err := c.client.Start(); err != nil {
 			// The device might not be initialized when restart() doesn't succeed to find a device yet.
@@ -522,13 +531,19 @@ retry:
 	c.suspendedCond.L.Unlock()
 
 	if err := c.start(); err != nil {
-		// When a device is switched, the new device might not support the desired format.
+		// When a device is switched, the new device might not support the desired format,
+		// or all the audio devices might be disconnected.
 		// Instead of aborting this context, let's wait for the next device switch.
-		if errors.Is(err, errFormatNotSupported) {
-			time.Sleep(time.Second)
-			goto retry
+		if !errors.Is(err, errFormatNotSupported) && !errors.Is(err, errDeviceNotFound) {
+			return err
 		}
-		return err
+
+		// Just read the buffer and discard it. Then, retry to search the device.
+		var buf32 [4096]float32
+		sleep := time.Duration(float64(time.Second) * float64(len(buf32)) / float64(c.channelCount) / float64(c.sampleRate))
+		c.mux.ReadFloat32s(buf32[:])
+		time.Sleep(sleep)
+		goto retry
 	}
 	return nil
 }
