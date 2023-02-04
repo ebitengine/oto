@@ -19,8 +19,8 @@ A low-level library to play sound.
 
 ## Platforms
 
-- Windows (no Cgo!)
-- macOS (no Cgo!)
+- Windows (no Cgo required!)
+- macOS (no Cgo required!)
 - Linux
 - FreeBSD
 - OpenBSD
