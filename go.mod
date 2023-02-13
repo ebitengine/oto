@@ -3,7 +3,7 @@ module github.com/hajimehoshi/oto/v2
 go 1.18
 
 require (
-	github.com/ebitengine/purego v0.2.0-alpha.0.20230107011038-a7c4d8fb43b1
+	github.com/ebitengine/purego v0.2.0-alpha.1.0.20230213042757-086b819e2f9a
 	golang.org/x/sys v0.3.0
 )
 
