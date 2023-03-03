@@ -91,6 +91,11 @@ type winmmContext struct {
 var theWinMMContext *winmmContext
 
 func newWinMMContext(sampleRate, channelCount int, mux *mux.Mux, bufferSizeInBytes int) (*winmmContext, error) {
+	// winmm.dll is not available on Xbox.
+	if err := winmm.Load(); err != nil {
+		return nil, fmt.Errorf("oto: loading winmm.dll failed: %w", err)
+	}
+
 	c := &winmmContext{
 		sampleRate:        sampleRate,
 		channelCount:      channelCount,
