@@ -22,8 +22,9 @@ package oto
 
 const defaultOneBufferSizeInBytes = 12288
 
-func setNotificationHandler() {
+func setNotificationHandler() error {
 	// AVAudioSessionInterruptionNotification is not reliable on iOS. Rely on
 	// applicationWillResignActive and applicationDidBecomeActive instead. See
 	// https://stackoverflow.com/questions/24404463/ios-siri-not-available-does-not-return-avaudiosessioninterruptionoptionshouldre
+	return nil
 }

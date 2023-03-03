@@ -106,6 +106,10 @@ func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeI
 	}
 	theContext = c
 
+	if err := initializeAPI(); err != nil {
+		return nil, nil, err
+	}
+
 	go func() {
 		defer close(ready)
 
@@ -117,7 +121,10 @@ func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeI
 		c.audioQueue = q
 		c.unqueuedBuffers = bs
 
-		setNotificationHandler()
+		if err := setNotificationHandler(); err != nil {
+			c.err.TryStore(err)
+			return
+		}
 
 		var retryCount int
 	try:
