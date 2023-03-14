@@ -426,7 +426,7 @@ func (c *wasapiContext) writeOnRenderThread() error {
 		for i := 0; i < int(frames); i++ {
 			for j := 0; j < c.actualChannelCount; j++ {
 				if j < c.channelCount {
-					c.bufForActualChannels[i*c.actualChannelCount+j] = c.buf[i*c.channelCount]
+					c.bufForActualChannels[i*c.actualChannelCount+j] = c.buf[i*c.channelCount+j]
 				} else {
 					c.bufForActualChannels[i*c.actualChannelCount+j] = 0
 				}
