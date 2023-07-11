@@ -15,11 +15,17 @@
 package oto
 
 import (
+	"fmt"
 	"io"
 	"sync"
 	"time"
 
 	"github.com/hajimehoshi/oto/v2/internal/mux"
+)
+
+var (
+	contextCreated       bool
+	contextCreationMutex sync.Mutex
 )
 
 // Context is the main object in Oto. It interacts with the audio drivers.
@@ -95,6 +101,14 @@ type NewContextOptions struct {
 //
 // Creating multiple contexts is NOT supported.
 func NewContextWithOptions(options *NewContextOptions) (*Context, chan struct{}, error) {
+	contextCreationMutex.Lock()
+	defer contextCreationMutex.Unlock()
+
+	if contextCreated {
+		return nil, nil, fmt.Errorf("oto: context is already created")
+	}
+	contextCreated = true
+
 	var bufferSizeInBytes int
 	if options.BufferSize != 0 {
 		// The underying driver always uses 32bit floats.
