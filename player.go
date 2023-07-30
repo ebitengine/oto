@@ -74,7 +74,7 @@ func (p *Player) SetBufferSize(bufferSize int) {
 // Seek implements io.Seeker.
 //
 // Seek returns an error when the underlying source doesn't implement io.Seeker.
-func (p *Player) Seek(offset int64, whence int) error {
+func (p *Player) Seek(offset int64, whence int) (int64, error) {
 	return p.player.Seek(offset, whence)
 }
 
