@@ -26,7 +26,11 @@ import (
 var theContext *oto.Context
 
 func TestMain(m *testing.M) {
-	ctx, ready, err := oto.NewContext(48000, 2, 2)
+	op := &oto.NewContextOptions{}
+	op.SampleRate = 48000
+	op.ChannelCount = 2
+	op.Format = oto.FormatFloat32LE
+	ctx, ready, err := oto.NewContext(op)
 	if err != nil {
 		panic(err)
 	}
