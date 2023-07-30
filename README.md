@@ -1,4 +1,4 @@
-# Oto (v2)
+# Oto (v3)
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/hajimehoshi/oto/v2.svg)](https://pkg.go.dev/github.com/hajimehoshi/oto/v2)
 
