@@ -23,7 +23,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hajimehoshi/oto/v2"
+	"github.com/ebitengine/oto/v3"
 )
 
 var (

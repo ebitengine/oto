@@ -15,8 +15,8 @@
 package oto
 
 import (
-	"github.com/hajimehoshi/oto/v2/internal/mux"
-	"github.com/hajimehoshi/oto/v2/internal/oboe"
+	"github.com/ebitengine/oto/v3/internal/mux"
+	"github.com/ebitengine/oto/v3/internal/oboe"
 )
 
 type context struct {

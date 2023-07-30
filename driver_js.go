@@ -20,7 +20,7 @@ import (
 	"syscall/js"
 	"unsafe"
 
-	"github.com/hajimehoshi/oto/v2/internal/mux"
+	"github.com/ebitengine/oto/v3/internal/mux"
 )
 
 type context struct {
