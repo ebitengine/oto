@@ -4,7 +4,7 @@
 
 A low-level library to play sound.
 
-- [Oto (v2)](#oto-v2)
+- [Oto (v3)](#oto-v3)
   - [Platforms](#platforms)
   - [Prerequisite](#prerequisite)
     - [macOS](#macos)
@@ -176,7 +176,7 @@ import (
     "time"
 
     "github.com/hajimehoshi/go-mp3"
-    "github.com/hajimehoshi/oto/v2"
+    "github.com/hajimehoshi/oto/v3"
 )
 
 func main() {
