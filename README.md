@@ -1,6 +1,6 @@
 # Oto (v3)
 
-[![Go Reference](https://pkg.go.dev/badge/github.com/hajimehoshi/oto/v2.svg)](https://pkg.go.dev/github.com/hajimehoshi/oto/v2)
+[![Go Reference](https://pkg.go.dev/badge/github.com/ebitengine/oto/v3.svg)](https://pkg.go.dev/github.com/ebitengine/oto/v3)
 
 A low-level library to play sound.
 
@@ -92,8 +92,8 @@ import (
     "time"
     "os"
 
+    "github.com/ebitengine/oto/v3"
     "github.com/hajimehoshi/go-mp3"
-    "github.com/hajimehoshi/oto/v2"
 )
 
 func main() {
