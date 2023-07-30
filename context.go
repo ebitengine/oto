@@ -52,29 +52,7 @@ const (
 	FormatSignedInt16LE
 )
 
-// NewContext creates a new context, that creates and holds ready-to-use Player objects,
-// and returns a context, a channel that is closed when the context is ready, and an error if it exists.
-//
-// Creating multiple contexts is NOT supported.
-//
-// The sampleRate argument specifies the number of samples that should be played during one second.
-// Usual numbers are 44100 or 48000. One context has only one sample rate. You cannot play multiple audio
-// sources with different sample rates at the same time.
-//
-// The channelCount argument specifies the number of channels. One channel is mono playback. Two
-// channels are stereo playback. No other values are supported.
-//
-// The format argument specifies the format of sources.
-// This value must be FormatFloat32LE, FormatUnsignedInt8, or FormatSignedInt16LE.
-func NewContext(sampleRate int, channelCount int, format Format) (*Context, chan struct{}, error) {
-	return NewContextWithOptions(&NewContextOptions{
-		SampleRate:   sampleRate,
-		ChannelCount: channelCount,
-		Format:       format,
-	})
-}
-
-// NewContextOptions represents options for NewContextWithOptions.
+// NewContextOptions represents options for NewContext.
 type NewContextOptions struct {
 	// SampleRate specifies the number of samples that should be played during one second.
 	// Usual numbers are 44100 or 48000. One context has only one sample rate. You cannot play multiple audio
@@ -97,12 +75,12 @@ type NewContextOptions struct {
 	BufferSize time.Duration
 }
 
-// NewContextWithOptions creates a new context with given options.
+// NewContext creates a new context with given options.
 // A context creates and holds ready-to-use Player objects.
-// NewContextWithOptions returns a context, a channel that is closed when the context is ready, and an error if it exists.
+// NewContext returns a context, a channel that is closed when the context is ready, and an error if it exists.
 //
 // Creating multiple contexts is NOT supported.
-func NewContextWithOptions(options *NewContextOptions) (*Context, chan struct{}, error) {
+func NewContext(options *NewContextOptions) (*Context, chan struct{}, error) {
 	contextCreationMutex.Lock()
 	defer contextCreationMutex.Unlock()
 

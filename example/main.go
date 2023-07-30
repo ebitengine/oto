@@ -155,18 +155,21 @@ func run() error {
 		freqG = 784.0
 	)
 
-	var f oto.Format
+	op := &oto.NewContextOptions{}
+	op.SampleRate = *sampleRate
+	op.ChannelCount = *channelCount
+
 	switch *format {
 	case "f32le":
-		f = oto.FormatFloat32LE
+		op.Format = oto.FormatFloat32LE
 	case "u8":
-		f = oto.FormatUnsignedInt8
+		op.Format = oto.FormatUnsignedInt8
 	case "s16le":
-		f = oto.FormatSignedInt16LE
+		op.Format = oto.FormatSignedInt16LE
 	default:
 		return fmt.Errorf("format must be u8, s16le, or f32le but: %s", *format)
 	}
-	c, ready, err := oto.NewContext(*sampleRate, *channelCount, f)
+	c, ready, err := oto.NewContext(op)
 	if err != nil {
 		return err
 	}
@@ -179,7 +182,7 @@ func run() error {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		p := play(c, freqC, 3*time.Second, *channelCount, f)
+		p := play(c, freqC, 3*time.Second, op.ChannelCount, op.Format)
 		m.Lock()
 		players = append(players, p)
 		m.Unlock()
@@ -190,7 +193,7 @@ func run() error {
 	go func() {
 		defer wg.Done()
 		time.Sleep(1 * time.Second)
-		p := play(c, freqE, 3*time.Second, *channelCount, f)
+		p := play(c, freqE, 3*time.Second, op.ChannelCount, op.Format)
 		m.Lock()
 		players = append(players, p)
 		m.Unlock()
@@ -201,7 +204,7 @@ func run() error {
 	go func() {
 		defer wg.Done()
 		time.Sleep(2 * time.Second)
-		p := play(c, freqG, 3*time.Second, *channelCount, f)
+		p := play(c, freqG, 3*time.Second, op.ChannelCount, op.Format)
 		m.Lock()
 		players = append(players, p)
 		m.Unlock()
