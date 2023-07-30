@@ -26,12 +26,13 @@ import (
 	"time"
 )
 
+// Format must sync with oto's Format.
 type Format int
 
 const (
-	FormatFloat32LE     Format = 0
-	FormatUnsignedInt8  Format = 1 // This must be 1 for backward compatibility during v2.
-	FormatSignedInt16LE Format = 2 // This must be 2 for backward compatibility during v2.
+	FormatFloat32LE Format = iota
+	FormatUnsignedInt8
+	FormatSignedInt16LE
 )
 
 func (f Format) ByteLength() int {

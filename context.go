@@ -38,15 +38,18 @@ type Context struct {
 	context *context
 }
 
+// Format is the format of sources.
+type Format int
+
 const (
 	// FormatFloat32LE is the format of 32 bits floats little endian.
-	FormatFloat32LE = 0
+	FormatFloat32LE Format = iota
 
 	// FormatUnsignedInt8 is the format of 8 bits integers.
-	FormatUnsignedInt8 = 1
+	FormatUnsignedInt8
 
 	//FormatSignedInt16LE is the format of 16 bits integers little endian.
-	FormatSignedInt16LE = 2
+	FormatSignedInt16LE
 )
 
 // NewContext creates a new context, that creates and holds ready-to-use Player objects,
@@ -63,7 +66,7 @@ const (
 //
 // The format argument specifies the format of sources.
 // This value must be FormatFloat32LE, FormatUnsignedInt8, or FormatSignedInt16LE.
-func NewContext(sampleRate int, channelCount int, format int) (*Context, chan struct{}, error) {
+func NewContext(sampleRate int, channelCount int, format Format) (*Context, chan struct{}, error) {
 	return NewContextWithOptions(&NewContextOptions{
 		SampleRate:   sampleRate,
 		ChannelCount: channelCount,
@@ -83,8 +86,7 @@ type NewContextOptions struct {
 	ChannelCount int
 
 	// Format specifies the format of sources.
-	// This value must be FormatFloat32LE, FormatUnsignedInt8, or FormatSignedInt16LE.
-	Format int
+	Format Format
 
 	// BufferSize specifies a buffer size in the underlying device.
 	//

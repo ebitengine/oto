@@ -38,12 +38,12 @@ type SineWave struct {
 	pos    int64
 
 	channelCount int
-	format       int
+	format       oto.Format
 
 	remaining []byte
 }
 
-func formatByteLength(format int) int {
+func formatByteLength(format oto.Format) int {
 	switch format {
 	case oto.FormatFloat32LE:
 		return 4
@@ -56,7 +56,7 @@ func formatByteLength(format int) int {
 	}
 }
 
-func NewSineWave(freq float64, duration time.Duration, channelCount int, format int) *SineWave {
+func NewSineWave(freq float64, duration time.Duration, channelCount int, format oto.Format) *SineWave {
 	l := int64(channelCount) * int64(formatByteLength(format)) * int64(*sampleRate) * int64(duration) / int64(time.Second)
 	l = l / 4 * 4
 	return &SineWave{
@@ -142,7 +142,7 @@ func (s *SineWave) Read(buf []byte) (int, error) {
 	return n, nil
 }
 
-func play(context *oto.Context, freq float64, duration time.Duration, channelCount int, format int) *oto.Player {
+func play(context *oto.Context, freq float64, duration time.Duration, channelCount int, format oto.Format) *oto.Player {
 	p := context.NewPlayer(NewSineWave(freq, duration, channelCount, format))
 	p.Play()
 	return p
@@ -155,7 +155,7 @@ func run() error {
 		freqG = 784.0
 	)
 
-	var f int
+	var f oto.Format
 	switch *format {
 	case "f32le":
 		f = oto.FormatFloat32LE
