@@ -405,11 +405,11 @@ func (p *playerImpl) SetVolume(volume float64) {
 	}
 }
 
-func (p *Player) UnplayedBufferSize() int {
-	return p.p.UnplayedBufferSize()
+func (p *Player) BufferedSize() int {
+	return p.p.BufferedSize()
 }
 
-func (p *playerImpl) UnplayedBufferSize() int {
+func (p *playerImpl) BufferedSize() int {
 	p.m.Lock()
 	defer p.m.Unlock()
 	return len(p.buf)

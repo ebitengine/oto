@@ -55,9 +55,9 @@ func (p *Player) SetVolume(volume float64) {
 	p.player.SetVolume(volume)
 }
 
-// UnplayedBufferSize returns the byte size in the underlying buffer that is not played yet.
-func (p *Player) UnplayedBufferSize() int {
-	return p.player.UnplayedBufferSize()
+// BufferedSize returns the byte size of the buffer data that is not sent to the audio hardware yet.
+func (p *Player) BufferedSize() int {
+	return p.player.BufferedSize()
 }
 
 // Err returns an error if this player has an error.
