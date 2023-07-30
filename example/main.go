@@ -142,7 +142,7 @@ func (s *SineWave) Read(buf []byte) (int, error) {
 	return n, nil
 }
 
-func play(context *oto.Context, freq float64, duration time.Duration, channelCount int, format int) oto.Player {
+func play(context *oto.Context, freq float64, duration time.Duration, channelCount int, format int) *oto.Player {
 	p := context.NewPlayer(NewSineWave(freq, duration, channelCount, format))
 	p.Play()
 	return p
@@ -173,7 +173,7 @@ func run() error {
 	<-ready
 
 	var wg sync.WaitGroup
-	var players []oto.Player
+	var players []*oto.Player
 	var m sync.Mutex
 
 	wg.Add(1)

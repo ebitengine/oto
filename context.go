@@ -154,8 +154,10 @@ func NewContextWithOptions(options *NewContextOptions) (*Context, chan struct{},
 // NewPlayer is concurrent-safe.
 //
 // All the functions of a Player returned by NewPlayer are concurrent-safe.
-func (c *Context) NewPlayer(r io.Reader) Player {
-	return c.context.mux.NewPlayer(r)
+func (c *Context) NewPlayer(r io.Reader) *Player {
+	return &Player{
+		player: c.context.mux.NewPlayer(r),
+	}
 }
 
 // Suspend suspends the entire audio play.

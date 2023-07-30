@@ -347,7 +347,7 @@ func (p *playerImpl) Seek(offset int64, whence int) (int64, error) {
 	// Check if the source implements io.Seeker.
 	s, ok := p.src.(io.Seeker)
 	if !ok {
-		return 0, errors.New("oto: the source must implement io.Seeker")
+		return 0, errors.New("mux: the source must implement io.Seeker")
 	}
 	return s.Seek(offset, whence)
 }

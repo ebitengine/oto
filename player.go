@@ -15,47 +15,70 @@
 package oto
 
 import (
-	"io"
+	"github.com/ebitengine/oto/v3/internal/mux"
 )
 
 // Player is a PCM (pulse-code modulation) audio player.
-type Player interface {
-	// Pause pauses its playing.
-	Pause()
-
-	// Play starts its playing if it doesn't play.
-	Play()
-
-	// IsPlaying reports whether this player is playing.
-	IsPlaying() bool
-
-	// Reset clears the underyling buffer and pauses its playing.
-	// Deprecated: use Pause or Seek instead.
-	Reset()
-
-	// Volume returns the current volume in the range of [0, 1].
-	// The default volume is 1.
-	Volume() float64
-
-	// SetVolume sets the current volume in the range of [0, 1].
-	SetVolume(volume float64)
-
-	// UnplayedBufferSize returns the byte size in the underlying buffer that is not played yet.
-	UnplayedBufferSize() int
-
-	// Err returns an error if this player has an error.
-	Err() error
-
-	io.Closer
-
-	// A player returned at NewPlayer also implements BufferSizeSetter and io.Seeker, but
-	// these are not defined in this interface for backward compatibility in v2.
+type Player struct {
+	player *mux.Player
 }
 
-// BufferSizeSetter sets a buffer size.
-// A player created by (*Context).NewPlayer implments both Player and BufferSizeSetter.
-type BufferSizeSetter interface {
-	// SetBufferSize sets the buffer size.
-	// If 0 is specified, the default buffer size is used.
-	SetBufferSize(bufferSize int)
+// Pause pauses its playing.
+func (p *Player) Pause() {
+	p.player.Pause()
+}
+
+// Play starts its playing if it doesn't play.
+func (p *Player) Play() {
+	p.player.Play()
+}
+
+// IsPlaying reports whether this player is playing.
+func (p *Player) IsPlaying() bool {
+	return p.player.IsPlaying()
+}
+
+// Reset clears the underyling buffer and pauses its playing.
+// Deprecated: use Pause or Seek instead.
+func (p *Player) Reset() {
+	p.player.Reset()
+}
+
+// Volume returns the current volume in the range of [0, 1].
+// The default volume is 1.
+func (p *Player) Volume() float64 {
+	return p.player.Volume()
+}
+
+// SetVolume sets the current volume in the range of [0, 1].
+func (p *Player) SetVolume(volume float64) {
+	p.player.SetVolume(volume)
+}
+
+// UnplayedBufferSize returns the byte size in the underlying buffer that is not played yet.
+func (p *Player) UnplayedBufferSize() int {
+	return p.player.UnplayedBufferSize()
+}
+
+// Err returns an error if this player has an error.
+func (p *Player) Err() error {
+	return p.player.Err()
+}
+
+// SetBufferSize sets the buffer size.
+// If 0 is specified, the default buffer size is used.
+func (p *Player) SetBufferSize(bufferSize int) {
+	p.player.SetBufferSize(bufferSize)
+}
+
+// Seek implements io.Seeker.
+//
+// Seek returns an error when the underlying source doesn't implement io.Seeker.
+func (p *Player) Seek(offset int64, whence int) error {
+	return p.player.Seek(offset, whence)
+}
+
+// Close implements io.Closer.
+func (p *Player) Close() error {
+	return p.player.Close()
 }
