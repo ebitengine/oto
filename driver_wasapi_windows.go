@@ -72,11 +72,10 @@ func (c *comThread) Run(f func()) {
 }
 
 type wasapiContext struct {
-	sampleRate         int
-	channelCount       int
-	mux                *mux.Mux
-	bufferSizeInBytes  int
-	actualChannelCount int
+	sampleRate        int
+	channelCount      int
+	mux               *mux.Mux
+	bufferSizeInBytes int
 
 	comThread     *comThread
 	err           atomicError
@@ -85,14 +84,12 @@ type wasapiContext struct {
 
 	sampleReadyEvent windows.Handle
 	client           *_IAudioClient2
-	mixFormat        *_WAVEFORMATEXTENSIBLE
 	bufferFrames     uint32
 	renderClient     *_IAudioRenderClient
 	currentDeviceID  string
 	enumerator       *_IMMDeviceEnumerator
 
-	buf                  []float32
-	bufForActualChannels []float32
+	buf []float32
 
 	m sync.Mutex
 }
@@ -268,20 +265,6 @@ func (c *wasapiContext) startOnCOMThread() (ferr error) {
 		dwChannelMask:   channelMask,
 		SubFormat:       _KSDATAFORMAT_SUBTYPE_IEEE_FLOAT,
 	}
-	closest, err := c.client.IsFormatSupported(_AUDCLNT_SHAREMODE_SHARED, f)
-	if err != nil {
-		return err
-	}
-	if closest != nil {
-		if f.nSamplesPerSec != closest.nSamplesPerSec {
-			return errFormatNotSupported
-		}
-		c.actualChannelCount = int(closest.nChannels)
-		c.mixFormat = closest
-	} else {
-		c.actualChannelCount = c.channelCount
-		c.mixFormat = f
-	}
 
 	var bufferSizeIn100ns _REFERENCE_TIME
 	if c.bufferSizeInBytes != 0 {
@@ -293,9 +276,11 @@ func (c *wasapiContext) startOnCOMThread() (ferr error) {
 		bufferSizeIn100ns = _REFERENCE_TIME(50 * time.Millisecond / 100)
 	}
 
+	// Even if the sample rate and/or the number of channels are not supported by the audio driver,
+	// AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM should convert the sample rate automatically (#215).
 	if err := c.client.Initialize(_AUDCLNT_SHAREMODE_SHARED,
-		_AUDCLNT_STREAMFLAGS_EVENTCALLBACK|_AUDCLNT_STREAMFLAGS_NOPERSIST,
-		bufferSizeIn100ns, 0, c.mixFormat, nil); err != nil {
+		_AUDCLNT_STREAMFLAGS_EVENTCALLBACK|_AUDCLNT_STREAMFLAGS_NOPERSIST|_AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM,
+		bufferSizeIn100ns, 0, f, nil); err != nil {
 		return err
 	}
 
@@ -415,30 +400,8 @@ func (c *wasapiContext) writeOnRenderThread() error {
 	// Read the buffer from the players.
 	c.mux.ReadFloat32s(c.buf)
 
-	// Add paddings for extra channels if needed.
-	var buf []float32
-	if d := c.actualChannelCount - c.channelCount; d > 0 {
-		if buflen := int(frames) * c.actualChannelCount; cap(c.buf) < buflen {
-			c.bufForActualChannels = make([]float32, buflen)
-		} else {
-			c.bufForActualChannels = c.bufForActualChannels[:buflen]
-		}
-		for i := 0; i < int(frames); i++ {
-			for j := 0; j < c.actualChannelCount; j++ {
-				if j < c.channelCount {
-					c.bufForActualChannels[i*c.actualChannelCount+j] = c.buf[i*c.channelCount+j]
-				} else {
-					c.bufForActualChannels[i*c.actualChannelCount+j] = 0
-				}
-			}
-		}
-		buf = c.bufForActualChannels
-	} else {
-		buf = c.buf
-	}
-
 	// Copy the read buf to the destination buffer.
-	copy(unsafe.Slice((*float32)(unsafe.Pointer(dstBuf)), len(buf)), buf)
+	copy(unsafe.Slice((*float32)(unsafe.Pointer(dstBuf)), len(c.buf)), c.buf)
 
 	// Release the buffer.
 	if err := c.renderClient.ReleaseBuffer(frames, 0); err != nil {
