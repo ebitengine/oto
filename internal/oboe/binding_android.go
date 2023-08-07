@@ -16,7 +16,7 @@ package oboe
 
 // Disable AAudio (hajimehoshi/ebiten#1634).
 // AAudio doesn't care about plugging in/out of a headphone.
-// See https://github.com/google/oboe/blob/master/docs/notes/disconnect.md
+// See https://github.com/google/oboe/wiki/TechNote_Disconnect
 
 // #cgo CXXFLAGS: -std=c++17 -DOBOE_ENABLE_AAUDIO=0
 // #cgo LDFLAGS: -llog -lOpenSLES -static-libstdc++
