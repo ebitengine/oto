@@ -39,6 +39,7 @@ func (p *Player) IsPlaying() bool {
 }
 
 // Reset clears the underyling buffer and pauses its playing.
+//
 // Deprecated: use Pause or Seek instead.
 func (p *Player) Reset() {
 	p.player.Reset()
