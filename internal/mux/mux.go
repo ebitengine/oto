@@ -94,6 +94,9 @@ func (m *Mux) loop() {
 		m.wait()
 
 		m.cond.L.Lock()
+		for i := range players {
+			players[i] = nil
+		}
 		players = players[:0]
 		for p := range m.players {
 			players = append(players, p)
