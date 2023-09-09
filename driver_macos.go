@@ -33,10 +33,18 @@ func setNotificationHandler() error {
 	}
 
 	// Create the Observer object
-	class := objc.AllocateClassPair(objc.GetClass("NSObject"), "OtoNotificationObserver", 0)
-	class.AddMethod(objc.RegisterName("receiveSleepNote:"), objc.NewIMP(setGlobalPause), "v@:@")
-	class.AddMethod(objc.RegisterName("receiveWakeNote:"), objc.NewIMP(setGlobalResume), "v@:@")
-	class.Register()
+	var class objc.Class
+	class, err = objc.RegisterClass("OtoNotificationObserver", objc.GetClass("NSObject"), nil, nil,
+		[]objc.MethodDef{
+			{
+				Cmd: objc.RegisterName("receiveSleepNote:"),
+				Fn:  setGlobalPause,
+			},
+			{
+				Cmd: objc.RegisterName("receiveWakeNote:"),
+				Fn:  setGlobalResume,
+			},
+		})
 
 	observer := objc.ID(class).Send(objc.RegisterName("new"))
 
