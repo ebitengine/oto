@@ -29,13 +29,13 @@ jobs:
           go-version: ${{ matrix.go }}
 
       - name: Install dependencies
-        if: ${{ startsWith(matrix.os, 'ubuntu-') }}
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install libasound2-dev
 
       - name: go vet
-        if: ${{ !startsWith(matrix.os, 'windows-') && !startsWith(matrix.os, 'macos-') }}
+        if: runner.os == 'Linux'
         run: |
           go vet -v ./...
 
