@@ -69,6 +69,15 @@ typedef int32_t aaudio_session_id_t;
 #if __NDK_MAJOR__ < 24
 // Defined in SC_V2
 typedef uint32_t aaudio_channel_mask_t;
+typedef int32_t aaudio_spatialization_behavior_t;
+#endif
+
+#ifndef __ANDROID_API_Q__
+#define __ANDROID_API_Q__ 29
+#endif
+
+#ifndef __ANDROID_API_R__
+#define __ANDROID_API_R__ 30
 #endif
 
 #ifndef __ANDROID_API_S__
@@ -77,6 +86,10 @@ typedef uint32_t aaudio_channel_mask_t;
 
 #ifndef __ANDROID_API_S_V2__
 #define __ANDROID_API_S_V2__ 32
+#endif
+
+#ifndef __ANDROID_API_U__
+#define __ANDROID_API_U__ 34
 #endif
 
 namespace oboe {
@@ -100,6 +113,8 @@ class AAudioLoader {
     // C = Const prefix
     // H = cHar
     // U = uint32_t
+    // O = bOol
+
     typedef int32_t  (*signature_I_PPB)(AAudioStreamBuilder **builder);
 
     typedef const char * (*signature_CPH_I)(int32_t);
@@ -115,6 +130,9 @@ class AAudioLoader {
     typedef void    (*signature_V_PBU)(AAudioStreamBuilder *, uint32_t);
 
     typedef void    (*signature_V_PBCPH)(AAudioStreamBuilder *, const char *);
+
+    // AAudioStreamBuilder_setPrivacySensitive
+    typedef void    (*signature_V_PBO)(AAudioStreamBuilder *, bool);
 
     typedef int32_t (*signature_I_PS)(AAudioStream *);  // AAudioStream_getSampleRate()
     typedef int64_t (*signature_L_PS)(AAudioStream *);  // AAudioStream_getFramesRead()
@@ -141,7 +159,7 @@ class AAudioLoader {
 
     typedef int32_t (*signature_I_PSKPLPL)(AAudioStream *, clockid_t, int64_t *, int64_t *);
 
-    typedef bool    (*signature_B_PS)(AAudioStream *);
+    typedef bool    (*signature_O_PS)(AAudioStream *);
 
     typedef uint32_t (*signature_U_PS)(AAudioStream *);
 
@@ -181,8 +199,14 @@ class AAudioLoader {
     signature_V_PBI builder_setInputPreset = nullptr;
     signature_V_PBI builder_setSessionId = nullptr;
 
+    signature_V_PBO builder_setPrivacySensitive = nullptr;
+    signature_V_PBI builder_setAllowedCapturePolicy = nullptr;
+
     signature_V_PBCPH builder_setPackageName = nullptr;
     signature_V_PBCPH builder_setAttributionTag = nullptr;
+
+    signature_V_PBO builder_setIsContentSpatialized = nullptr;
+    signature_V_PBI builder_setSpatializationBehavior = nullptr;
 
     signature_V_PBPDPV  builder_setDataCallback = nullptr;
     signature_V_PBPEPV  builder_setErrorCallback = nullptr;
@@ -198,6 +222,7 @@ class AAudioLoader {
 
     signature_I_PSKPLPL stream_getTimestamp = nullptr;
 
+    signature_I_PS   stream_release = nullptr;
     signature_I_PS   stream_close = nullptr;
 
     signature_I_PS   stream_getChannelCount = nullptr;
@@ -228,7 +253,17 @@ class AAudioLoader {
     signature_I_PS   stream_getInputPreset = nullptr;
     signature_I_PS   stream_getSessionId = nullptr;
 
+    signature_O_PS   stream_isPrivacySensitive = nullptr;
+    signature_I_PS   stream_getAllowedCapturePolicy = nullptr;
+
     signature_U_PS   stream_getChannelMask = nullptr;
+
+    signature_O_PS   stream_isContentSpatialized = nullptr;
+    signature_I_PS   stream_getSpatializationBehavior = nullptr;
+
+    signature_I_PS   stream_getHardwareChannelCount = nullptr;
+    signature_I_PS   stream_getHardwareSampleRate = nullptr;
+    signature_F_PS   stream_getHardwareFormat = nullptr;
 
   private:
     AAudioLoader() {}
@@ -246,7 +281,7 @@ class AAudioLoader {
     signature_I_PS      load_I_PS(const char *name);
     signature_L_PS      load_L_PS(const char *name);
     signature_F_PS      load_F_PS(const char *name);
-    signature_B_PS      load_B_PS(const char *name);
+    signature_O_PS      load_O_PS(const char *name);
     signature_I_PSI     load_I_PSI(const char *name);
     signature_I_PSPVIL  load_I_PSPVIL(const char *name);
     signature_I_PSCPVIL load_I_PSCPVIL(const char *name);
@@ -254,6 +289,7 @@ class AAudioLoader {
     signature_I_PSKPLPL load_I_PSKPLPL(const char *name);
     signature_V_PBU     load_V_PBU(const char *name);
     signature_U_PS      load_U_PS(const char *name);
+    signature_V_PBO     load_V_PBO(const char *name);
 
     void *mLibHandle = nullptr;
 };

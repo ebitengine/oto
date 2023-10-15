@@ -83,6 +83,14 @@ int AAudioLoader::open() {
         builder_setSessionId   = load_V_PBI("AAudioStreamBuilder_setSessionId");
     }
 
+    if (getSdkVersion() >= __ANDROID_API_Q__){
+        builder_setAllowedCapturePolicy = load_V_PBI("AAudioStreamBuilder_setAllowedCapturePolicy");
+    }
+
+    if (getSdkVersion() >= __ANDROID_API_R__){
+        builder_setPrivacySensitive  = load_V_PBO("AAudioStreamBuilder_setPrivacySensitive");
+    }
+
     if (getSdkVersion() >= __ANDROID_API_S__){
         builder_setPackageName       = load_V_PBCPH("AAudioStreamBuilder_setPackageName");
         builder_setAttributionTag    = load_V_PBCPH("AAudioStreamBuilder_setAttributionTag");
@@ -90,6 +98,8 @@ int AAudioLoader::open() {
 
     if (getSdkVersion() >= __ANDROID_API_S_V2__) {
         builder_setChannelMask = load_V_PBU("AAudioStreamBuilder_setChannelMask");
+        builder_setIsContentSpatialized = load_V_PBO("AAudioStreamBuilder_setIsContentSpatialized");
+        builder_setSpatializationBehavior = load_V_PBI("AAudioStreamBuilder_setSpatializationBehavior");
     }
 
     builder_delete             = load_I_PB("AAudioStreamBuilder_delete");
@@ -110,6 +120,10 @@ int AAudioLoader::open() {
     if (stream_getChannelCount == nullptr) {
         // Use old alias if needed.
         stream_getChannelCount    = load_I_PS("AAudioStream_getSamplesPerFrame");
+    }
+
+    if (getSdkVersion() >= __ANDROID_API_R__) {
+        stream_release         = load_I_PS("AAudioStream_release");
     }
 
     stream_close               = load_I_PS("AAudioStream_close");
@@ -143,9 +157,26 @@ int AAudioLoader::open() {
         stream_getSessionId    = load_I_PS("AAudioStream_getSessionId");
     }
 
+    if (getSdkVersion() >= __ANDROID_API_Q__){
+        stream_getAllowedCapturePolicy    = load_I_PS("AAudioStream_getAllowedCapturePolicy");
+    }
+
+    if (getSdkVersion() >= __ANDROID_API_R__){
+        stream_isPrivacySensitive  = load_O_PS("AAudioStream_isPrivacySensitive");
+    }
+
     if (getSdkVersion() >= __ANDROID_API_S_V2__) {
         stream_getChannelMask = load_U_PS("AAudioStream_getChannelMask");
+        stream_isContentSpatialized = load_O_PS("AAudioStream_isContentSpatialized");
+        stream_getSpatializationBehavior = load_I_PS("AAudioStream_getSpatializationBehavior");
     }
+
+    if (getSdkVersion() >= __ANDROID_API_U__) {
+        stream_getHardwareChannelCount = load_I_PS("AAudioStream_getHardwareChannelCount");
+        stream_getHardwareSampleRate = load_I_PS("AAudioStream_getHardwareSampleRate");
+        stream_getHardwareFormat = load_F_PS("AAudioStream_getHardwareFormat");
+    }
+
     return 0;
 }
 
@@ -215,10 +246,10 @@ AAudioLoader::signature_F_PS AAudioLoader::load_F_PS(const char *functionName) {
     return reinterpret_cast<signature_F_PS>(proc);
 }
 
-AAudioLoader::signature_B_PS AAudioLoader::load_B_PS(const char *functionName) {
+AAudioLoader::signature_O_PS AAudioLoader::load_O_PS(const char *functionName) {
     void *proc = dlsym(mLibHandle, functionName);
     AAudioLoader_check(proc, functionName);
-    return reinterpret_cast<signature_B_PS>(proc);
+    return reinterpret_cast<signature_O_PS>(proc);
 }
 
 AAudioLoader::signature_I_PB AAudioLoader::load_I_PB(const char *functionName) {
@@ -267,6 +298,12 @@ AAudioLoader::signature_U_PS AAudioLoader::load_U_PS(const char *functionName) {
     void *proc = dlsym(mLibHandle, functionName);
     AAudioLoader_check(proc, functionName);
     return reinterpret_cast<signature_U_PS>(proc);
+}
+
+AAudioLoader::signature_V_PBO AAudioLoader::load_V_PBO(const char *functionName) {
+    void *proc = dlsym(mLibHandle, functionName);
+    AAudioLoader_check(proc, functionName);
+    return reinterpret_cast<signature_V_PBO>(proc);
 }
 
 // Ensure that all AAudio primitive data types are int32_t
@@ -385,7 +422,20 @@ AAudioLoader::signature_U_PS AAudioLoader::load_U_PS(const char *functionName) {
 
 #endif // __NDK_MAJOR__ >= 17
 
-// The aaudio channel masks were added in NDK 24,
+// aaudio_allowed_capture_policy_t was added in NDK 20,
+// which is the first version to support Android Q (API 29).
+#if __NDK_MAJOR__ >= 20
+
+    ASSERT_INT32(aaudio_allowed_capture_policy_t);
+
+    static_assert((int32_t)AllowedCapturePolicy::Unspecified == AAUDIO_UNSPECIFIED, ERRMSG);
+    static_assert((int32_t)AllowedCapturePolicy::All == AAUDIO_ALLOW_CAPTURE_BY_ALL, ERRMSG);
+    static_assert((int32_t)AllowedCapturePolicy::System == AAUDIO_ALLOW_CAPTURE_BY_SYSTEM, ERRMSG);
+    static_assert((int32_t)AllowedCapturePolicy::None == AAUDIO_ALLOW_CAPTURE_BY_NONE, ERRMSG);
+
+#endif // __NDK_MAJOR__ >= 20
+
+// The aaudio channel masks and spatialization behavior were added in NDK 24,
 // which is the first version to support Android SC_V2 (API 32).
 #if __NDK_MAJOR__ >= 24
 
@@ -442,6 +492,12 @@ AAudioLoader::signature_U_PS AAudioLoader::load_U_PS(const char *functionName) {
     static_assert((uint32_t)ChannelMask::CM9Point1Point4 == AAUDIO_CHANNEL_9POINT1POINT4, ERRMSG);
     static_assert((uint32_t)ChannelMask::CM9Point1Point6 == AAUDIO_CHANNEL_9POINT1POINT6, ERRMSG);
     static_assert((uint32_t)ChannelMask::FrontBack == AAUDIO_CHANNEL_FRONT_BACK, ERRMSG);
+
+    ASSERT_INT32(aaudio_spatialization_behavior_t);
+
+    static_assert((int32_t)SpatializationBehavior::Unspecified == AAUDIO_UNSPECIFIED, ERRMSG);
+    static_assert((int32_t)SpatializationBehavior::Auto == AAUDIO_SPATIALIZATION_BEHAVIOR_AUTO, ERRMSG);
+    static_assert((int32_t)SpatializationBehavior::Never == AAUDIO_SPATIALIZATION_BEHAVIOR_NEVER, ERRMSG);
 
 #endif
 

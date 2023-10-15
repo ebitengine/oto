@@ -35,5 +35,6 @@
 #include "oboe_oboe_StabilizedCallback_android.h"
 #include "oboe_oboe_FifoBuffer_android.h"
 #include "oboe_oboe_OboeExtensions_android.h"
+#include "oboe_oboe_FullDuplexStream_android.h"
 
 #endif //OBOE_OBOE_H

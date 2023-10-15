@@ -108,6 +108,13 @@ Result AudioStreamOpenSLES::open() {
 
 
 SLresult AudioStreamOpenSLES::finishCommonOpen(SLAndroidConfigurationItf configItf) {
+    // Setting privacy sensitive mode and allowed capture policy are not supported for OpenSL ES.
+    mPrivacySensitiveMode = PrivacySensitiveMode::Unspecified;
+    mAllowedCapturePolicy = AllowedCapturePolicy::Unspecified;
+
+    // Spatialization Behavior is not supported for OpenSL ES.
+    mSpatializationBehavior = SpatializationBehavior::Never;
+
     SLresult result = registerBufferQueueCallback();
     if (SL_RESULT_SUCCESS != result) {
         return result;
@@ -285,6 +292,24 @@ void AudioStreamOpenSLES::logUnsupportedAttributes() {
         LOGW("SessionId [AudioStreamBuilder::setSessionId()] "
              "is not supported on OpenSLES streams.");
     }
+
+    // Privacy Sensitive Mode
+    if (mPrivacySensitiveMode != PrivacySensitiveMode::Unspecified) {
+        LOGW("PrivacySensitiveMode [AudioStreamBuilder::setPrivacySensitiveMode()] "
+             "is not supported on OpenSLES streams.");
+    }
+
+    // Spatialization Behavior
+    if (mSpatializationBehavior != SpatializationBehavior::Unspecified) {
+        LOGW("SpatializationBehavior [AudioStreamBuilder::setSpatializationBehavior()] "
+             "is not supported on OpenSLES streams.");
+    }
+
+    // Allowed Capture Policy
+    if (mAllowedCapturePolicy != AllowedCapturePolicy::Unspecified) {
+        LOGW("AllowedCapturePolicy [AudioStreamBuilder::setAllowedCapturePolicy()] "
+             "is not supported on OpenSLES streams.");
+    }
 }
 
 SLresult AudioStreamOpenSLES::configurePerformanceMode(SLAndroidConfigurationItf configItf) {
@@ -358,6 +383,7 @@ Result AudioStreamOpenSLES::close_l() {
     EngineOpenSLES::getInstance().close();
 
     setState(StreamState::Closed);
+
     return Result::OK;
 }
 
