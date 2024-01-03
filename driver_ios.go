@@ -16,12 +16,6 @@
 
 package oto
 
-// 12288 seems necessary at least on iPod touch (7th).
-// With 48000[Hz] stereo, the maximum delay is (12288*4[buffers] / 4 / 2)[samples] / 48000 [Hz] = 100[ms].
-// '4' is float32 size in bytes. '2' is a number of channels for stereo.
-
-const defaultOneBufferSizeInBytes = 12288
-
 func setNotificationHandler() error {
 	// AVAudioSessionInterruptionNotification is not reliable on iOS. Rely on
 	// applicationWillResignActive and applicationDidBecomeActive instead. See
