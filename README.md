@@ -90,6 +90,7 @@ The following is an example of loading and playing an MP3 file:
 package main
 
 import (
+    "bytes"
     "time"
     "os"
 
@@ -174,12 +175,11 @@ In such cases you might want to stream the file. Luckily this is very simple, ju
 package main
 
 import (
-    "bytes"
     "os"
     "time"
 
+    "github.com/ebitengine/oto/v3"
     "github.com/hajimehoshi/go-mp3"
-    "github.com/hajimehoshi/oto/v3"
 )
 
 func main() {
