@@ -18,10 +18,8 @@
 #define AUDIO_INPUT_STREAM_OPENSL_ES_H_
 
 
-#include <SLES/OpenSLES.h>
-#include <SLES/OpenSLES_Android.h>
-
 #include "oboe_oboe_Oboe_android.h"
+#include "oboe_opensles_EngineOpenSLES_android.h"
 #include "oboe_opensles_AudioStreamOpenSLES_android.h"
 
 namespace oboe {
