@@ -67,6 +67,7 @@ class OtoWorkletProcessor extends AudioWorkletProcessor {
 		this.bufferSize_ = %[1]d;
 		this.channelCount_ = %[2]d;
 		this.buf_ = new Float32Array();
+		this.waitRecv_ = false;
 
 		// Receive data from the main thread.
 		this.port.onmessage = (event) => {
@@ -75,14 +76,19 @@ class OtoWorkletProcessor extends AudioWorkletProcessor {
 			newBuf.set(this.buf_);
 			newBuf.set(buf, this.buf_.length);
 			this.buf_ = newBuf;
+			this.waitRecv_ = false;
 		}
 	}
+
 	process(inputs, outputs, parameters) {
 		const output = outputs[0];
 
 		// If the buffer is too short, request more data and return silence.
 		if (this.buf_.length < output[0].length*this.channelCount_) {
-			this.port.postMessage(null);
+			if (!this.waitRecv_) {
+				this.waitRecv_ = true;
+				this.port.postMessage(null);
+			}
 			for (let i = 0; i < output.length; i++) {
 				output[i].fill(0);
 			}
@@ -90,7 +96,8 @@ class OtoWorkletProcessor extends AudioWorkletProcessor {
 		}
 
 		// If the buffer is short, request more data.
-		if (this.buf_.length < this.bufferSize_*this.channelCount_) {
+		if (this.buf_.length < this.bufferSize_*this.channelCount_ && !this.waitRecv_) {
+			this.waitRecv_ = true;
 			this.port.postMessage(null);
 		}
 
