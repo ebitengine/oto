@@ -96,7 +96,7 @@ class OtoWorkletProcessor extends AudioWorkletProcessor {
 		}
 
 		// If the buffer is short, request more data.
-		if (this.buf_.length < this.bufferSize_*this.channelCount_ && !this.waitRecv_) {
+		if (this.buf_.length < this.bufferSize_*this.channelCount_ / 2 && !this.waitRecv_) {
 			this.waitRecv_ = true;
 			this.port.postMessage(null);
 		}
