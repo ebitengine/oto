@@ -16,6 +16,7 @@ package oto
 
 import (
 	"errors"
+	"fmt"
 	"runtime"
 	"syscall/js"
 	"unsafe"
@@ -57,39 +58,105 @@ func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeI
 	}
 
 	buf32 := make([]float32, bufferSizeInBytes/4)
-	chBuf32 := make([][]float32, channelCount)
-	for i := range chBuf32 {
-		chBuf32[i] = make([]float32, len(buf32)/channelCount)
+
+	if w := d.audioContext.Get("audioWorklet"); w.Truthy() {
+		script := fmt.Sprintf(`
+class OtoWorkletProcessor extends AudioWorkletProcessor {
+	constructor() {
+		super();
+		this.bufferSize_ = %[1]d;
+		this.channelCount_ = %[2]d;
+		this.buf_ = new Float32Array();
+
+		// Receive data from the main thread.
+		this.port.onmessage = (event) => {
+			const buf = event.data;
+			const newBuf = new Float32Array(this.buf_.length + buf.length);
+			newBuf.set(this.buf_);
+			newBuf.set(buf, this.buf_.length);
+			this.buf_ = newBuf;
+		}
 	}
+	process(inputs, outputs, parameters) {
+		const output = outputs[0];
 
-	// TODO: Use AudioWorklet if available.
-	sp := d.audioContext.Call("createScriptProcessor", bufferSizeInBytes/4/channelCount, 0, channelCount)
-	f := js.FuncOf(func(this js.Value, arguments []js.Value) any {
-		d.mux.ReadFloat32s(buf32)
-		for i := 0; i < channelCount; i++ {
-			for j := range chBuf32[i] {
-				chBuf32[i][j] = buf32[j*channelCount+i]
+		// If the buffer is too short, request more data and return silence.
+		if (this.buf_.length < output[0].length*this.channelCount_) {
+			this.port.postMessage(null);
+			for (let i = 0; i < output.length; i++) {
+				output[i].fill(0);
 			}
+			return true;
 		}
 
-		buf := arguments[0].Get("outputBuffer")
-		if buf.Get("copyToChannel").Truthy() {
-			for i := 0; i < channelCount; i++ {
-				buf.Call("copyToChannel", float32SliceToTypedArray(chBuf32[i]), i, 0)
-			}
-		} else {
-			// copyToChannel is not defined on Safari 11.
-			for i := 0; i < channelCount; i++ {
-				buf.Call("getChannelData", i).Call("set", float32SliceToTypedArray(chBuf32[i]))
+		// If the buffer is short, request more data.
+		if (this.buf_.length < this.bufferSize_*this.channelCount_) {
+			this.port.postMessage(null);
+		}
+
+		for (let i = 0; i < this.channelCount_; i++) {
+			for (let j = 0; j < output[i].length; j++) {
+				output[i][j] = this.buf_[j*this.channelCount_+i];
 			}
 		}
-		return nil
-	})
-	sp.Call("addEventListener", "audioprocess", f)
-	d.scriptProcessor = sp
-	d.scriptProcessorCallback = f
+		this.buf_ = this.buf_.slice(output[0].length*this.channelCount_);
+		return true;
+	}
+}
+registerProcessor('oto-worklet-processor', OtoWorkletProcessor);
+`, bufferSizeInBytes/4/channelCount, channelCount)
+		d.audioContext.Get("audioWorklet").Call("addModule", newScriptURL(script)).Call("then", js.FuncOf(func(this js.Value, arguments []js.Value) any {
+			node := js.Global().Get("AudioWorkletNode").New(d.audioContext, "oto-worklet-processor", map[string]any{
+				"outputChannelCount": []any{channelCount},
+			})
+			port := node.Get("port")
+			// When the worklet processor requests more data, send the request to the worklet.
+			port.Set("onmessage", js.FuncOf(func(this js.Value, arguments []js.Value) any {
+				d.mux.ReadFloat32s(buf32)
+				buf := float32SliceToTypedArray(buf32)
+				port.Call("postMessage", buf, map[string]any{
+					"transfer": []any{buf.Get("buffer")},
+				})
+				return nil
+			}))
+			node.Call("connect", d.audioContext.Get("destination"))
+			return nil
+		}))
+	} else {
+		// Use ScriptProcessorNode if AudioWorklet is not available.
 
-	sp.Call("connect", d.audioContext.Get("destination"))
+		chBuf32 := make([][]float32, channelCount)
+		for i := range chBuf32 {
+			chBuf32[i] = make([]float32, len(buf32)/channelCount)
+		}
+
+		sp := d.audioContext.Call("createScriptProcessor", bufferSizeInBytes/4/channelCount, 0, channelCount)
+		f := js.FuncOf(func(this js.Value, arguments []js.Value) any {
+			d.mux.ReadFloat32s(buf32)
+			for i := 0; i < channelCount; i++ {
+				for j := range chBuf32[i] {
+					chBuf32[i][j] = buf32[j*channelCount+i]
+				}
+			}
+
+			buf := arguments[0].Get("outputBuffer")
+			if buf.Get("copyToChannel").Truthy() {
+				for i := 0; i < channelCount; i++ {
+					buf.Call("copyToChannel", float32SliceToTypedArray(chBuf32[i]), i, 0)
+				}
+			} else {
+				// copyToChannel is not defined on Safari 11.
+				for i := 0; i < channelCount; i++ {
+					buf.Call("getChannelData", i).Call("set", float32SliceToTypedArray(chBuf32[i]))
+				}
+			}
+			return nil
+		})
+		sp.Call("addEventListener", "audioprocess", f)
+		d.scriptProcessor = sp
+		d.scriptProcessorCallback = f
+		sp.Call("connect", d.audioContext.Get("destination"))
+	}
 
 	setCallback := func(event string) js.Func {
 		var f js.Func
@@ -138,4 +205,9 @@ func float32SliceToTypedArray(s []float32) js.Value {
 	runtime.KeepAlive(s)
 	buf := a.Get("buffer")
 	return js.Global().Get("Float32Array").New(buf, a.Get("byteOffset"), a.Get("byteLength").Int()/4)
+}
+
+func newScriptURL(script string) js.Value {
+	blob := js.Global().Get("Blob").New([]any{script}, map[string]any{"type": "text/javascript"})
+	return js.Global().Get("URL").Call("createObjectURL", blob)
 }
