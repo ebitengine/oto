@@ -105,7 +105,7 @@ class OtoWorkletProcessor extends AudioWorkletProcessor {
 }
 registerProcessor('oto-worklet-processor', OtoWorkletProcessor);
 `, bufferSizeInBytes/4/channelCount, channelCount)
-		d.audioContext.Get("audioWorklet").Call("addModule", newScriptURL(script)).Call("then", js.FuncOf(func(this js.Value, arguments []js.Value) any {
+		w.Call("addModule", newScriptURL(script)).Call("then", js.FuncOf(func(this js.Value, arguments []js.Value) any {
 			node := js.Global().Get("AudioWorkletNode").New(d.audioContext, "oto-worklet-processor", map[string]any{
 				"outputChannelCount": []any{channelCount},
 			})
