@@ -125,6 +125,12 @@ func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeI
 		runtime.LockOSThread()
 		defer runtime.UnlockOSThread()
 
+		defer func() {
+			if ready != nil {
+				close(ready)
+			}
+		}()
+
 		q, bs, err := newAudioQueue(sampleRate, channelCount, oneBufferSizeInBytes)
 		if err != nil {
 			c.err.TryStore(err)
@@ -152,6 +158,7 @@ func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeI
 		}
 
 		close(ready)
+		ready = nil
 
 		c.loop()
 	}()
