@@ -29,7 +29,6 @@ type context struct {
 	scriptProcessor         js.Value
 	scriptProcessorCallback js.Func
 	ready                   bool
-	callbacks               map[string]js.Func
 
 	mux *mux.Mux
 }
@@ -165,28 +164,32 @@ registerProcessor('oto-worklet-processor', OtoWorkletProcessor);
 		sp.Call("connect", d.audioContext.Get("destination"))
 	}
 
-	setCallback := func(event string) js.Func {
-		var f js.Func
-		f = js.FuncOf(func(this js.Value, arguments []js.Value) any {
-			if !d.ready {
-				d.audioContext.Call("resume")
-				d.ready = true
-				close(ready)
-			}
-			js.Global().Get("document").Call("removeEventListener", event, f)
-			return nil
-		})
-		js.Global().Get("document").Call("addEventListener", event, f)
-		d.callbacks[event] = f
-		return f
-	}
-
 	// Browsers require user interaction to start the audio.
 	// https://developers.google.com/web/updates/2017/09/autoplay-policy-changes#webaudio
-	d.callbacks = map[string]js.Func{}
-	setCallback("touchend")
-	setCallback("keyup")
-	setCallback("mouseup")
+
+	events := []string{"touchend", "keyup", "mouseup"}
+
+	var onEventFired js.Func
+	var onResumeSuccess js.Func
+	onResumeSuccess = js.FuncOf(func(this js.Value, arguments []js.Value) any {
+		d.ready = true
+		close(ready)
+		for _, event := range events {
+			js.Global().Get("document").Call("removeEventListener", event, onEventFired)
+		}
+		onEventFired.Release()
+		onResumeSuccess.Release()
+		return nil
+	})
+	onEventFired = js.FuncOf(func(this js.Value, arguments []js.Value) any {
+		if !d.ready {
+			d.audioContext.Call("resume").Call("then", onResumeSuccess)
+		}
+		return nil
+	})
+	for _, event := range events {
+		js.Global().Get("document").Call("addEventListener", event, onEventFired)
+	}
 
 	return d, ready, nil
 }
