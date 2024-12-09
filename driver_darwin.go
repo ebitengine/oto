@@ -125,8 +125,9 @@ func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeI
 		runtime.LockOSThread()
 		defer runtime.UnlockOSThread()
 
+		var readyClosed bool
 		defer func() {
-			if ready != nil {
+			if !readyClosed {
 				close(ready)
 			}
 		}()
@@ -158,7 +159,7 @@ func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeI
 		}
 
 		close(ready)
-		ready = nil
+		readyClosed = true
 
 		c.loop()
 	}()
