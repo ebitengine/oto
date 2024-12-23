@@ -175,7 +175,7 @@ type playerImpl struct {
 	volume     float64
 	err        error
 	state      playerState
-	tmpbuf     []byte
+	bufPool    *sync.Pool
 	buf        []byte
 	eof        bool
 	bufferSize int
@@ -246,15 +246,32 @@ func (p *playerImpl) setBufferSize(bufferSize int) {
 		p.bufferSize = p.mux.defaultBufferSize()
 	}
 	if orig != p.bufferSize {
-		p.tmpbuf = nil
+		p.bufPool = &sync.Pool{
+			New: func() interface{} {
+				buf := make([]byte, p.bufferSize)
+				return &buf
+			},
+		}
 	}
 }
 
-func (p *playerImpl) ensureTmpBuf() []byte {
-	if p.tmpbuf == nil {
-		p.tmpbuf = make([]byte, p.bufferSize)
+func (p *playerImpl) getTmpBuf() ([]byte, func()) {
+	// The returned buffer could be accessed regardless of the mutex m (#254).
+	// In order to oavoid races, use a sync.Pool.
+	// On the other hand, the calls of getTmpBuf itself should be protected by the mutex m,
+	// then accessing p.bufPool doesn't cause races.
+	if p.bufPool == nil {
+		p.bufPool = &sync.Pool{
+			New: func() interface{} {
+				buf := make([]byte, p.bufferSize)
+				return &buf
+			},
+		}
 	}
-	return p.tmpbuf
+	buf := p.bufPool.Get().(*[]byte)
+	return *buf, func() {
+		p.bufPool.Put(buf)
+	}
 }
 
 // read reads the source to buf.
@@ -296,7 +313,8 @@ func (p *playerImpl) playImpl() {
 	p.state = playerPlay
 
 	if !p.eof {
-		buf := p.ensureTmpBuf()
+		buf, free := p.getTmpBuf()
+		defer free()
 		for len(p.buf) < p.bufferSize {
 			n, err := p.read(buf)
 			if err != nil && err != io.EOF {
@@ -525,7 +543,8 @@ func (p *playerImpl) readSourceToBuffer() int {
 		return 0
 	}
 
-	buf := p.ensureTmpBuf()
+	buf, free := p.getTmpBuf()
+	defer free()
 	n, err := p.read(buf)
 
 	if err != nil && err != io.EOF {
