@@ -246,12 +246,7 @@ func (p *playerImpl) setBufferSize(bufferSize int) {
 		p.bufferSize = p.mux.defaultBufferSize()
 	}
 	if orig != p.bufferSize {
-		p.bufPool = &sync.Pool{
-			New: func() interface{} {
-				buf := make([]byte, p.bufferSize)
-				return &buf
-			},
-		}
+		p.bufPool = nil
 	}
 }
 
