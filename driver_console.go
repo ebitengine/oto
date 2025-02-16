@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build nintendosdk
+//go:build nintendosdk || playstation5
 
 package oto
 
@@ -24,7 +24,7 @@ package oto
 // void oto_OpenAudio(int sample_rate, int channel_num, oto_OnReadCallbackType on_read_callback, int buffer_size_in_bytes);
 //
 // void oto_OnReadCallback(float* buf, size_t length);
-// static void oto_OpenProxy(int sample_rate, int channel_num, int buffer_size_in_bytes) {
+// static void oto_OpenAudioProxy(int sample_rate, int channel_num, int buffer_size_in_bytes) {
 //   oto_OpenAudio(sample_rate, channel_num, oto_OnReadCallback, buffer_size_in_bytes);
 // }
 import "C"
@@ -54,7 +54,7 @@ func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeI
 		mux: mux.New(sampleRate, channelCount, format),
 	}
 	theContext = c
-	C.oto_OpenProxy(C.int(sampleRate), C.int(channelCount), C.int(bufferSizeInBytes))
+	C.oto_OpenAudioProxy(C.int(sampleRate), C.int(channelCount), C.int(bufferSizeInBytes))
 
 	return c, ready, nil
 }
