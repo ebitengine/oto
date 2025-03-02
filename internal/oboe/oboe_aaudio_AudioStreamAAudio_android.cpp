@@ -20,8 +20,8 @@
 
 #include "oboe_aaudio_AAudioLoader_android.h"
 #include "oboe_aaudio_AudioStreamAAudio_android.h"
-#include "oboe_common_AudioClock_android.h"
 #include "oboe_common_OboeDebug_android.h"
+#include "oboe_oboe_AudioClock_android.h"
 #include "oboe_oboe_Utilities_android.h"
 #include "oboe_aaudio_AAudioExtensions_android.h"
 

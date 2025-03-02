@@ -14,9 +14,9 @@
  * limitations under the License.
  */
 
-#include "oboe_oboe_StabilizedCallback_android.h"
-#include "oboe_common_AudioClock_android.h"
 #include "oboe_common_Trace_android.h"
+#include "oboe_oboe_AudioClock_android.h"
+#include "oboe_oboe_StabilizedCallback_android.h"
 
 constexpr int32_t kLoadGenerationStepSizeNanos = 20000;
 constexpr float kPercentageOfCallbackToUse = 0.8;

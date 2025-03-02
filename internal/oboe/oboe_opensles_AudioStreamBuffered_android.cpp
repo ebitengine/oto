@@ -19,8 +19,8 @@
 #include "oboe_oboe_Oboe_android.h"
 
 #include "oboe_common_OboeDebug_android.h"
+#include "oboe_oboe_AudioClock_android.h"
 #include "oboe_opensles_AudioStreamBuffered_android.h"
-#include "oboe_common_AudioClock_android.h"
 
 namespace oboe {
 

@@ -18,8 +18,8 @@
 #include <stdint.h>
 #include <sys/types.h>
 
+#include "oboe_oboe_AudioClock_android.h"
 #include "oboe_common_AdpfWrapper_android.h"
-#include "oboe_common_AudioClock_android.h"
 #include "oboe_common_OboeDebug_android.h"
 
 typedef APerformanceHintManager* (*APH_getManager)();
@@ -120,5 +120,22 @@ void AdpfWrapper::onEndCallback(double durationScaler) {
         int64_t actualDurationNanos = endCallbackNanos - mBeginCallbackNanos;
         int64_t scaledDurationNanos = static_cast<int64_t>(actualDurationNanos * durationScaler);
         reportActualDuration(scaledDurationNanos);
+        // When the workload is non-zero, update the conversion factor from workload
+        // units to nanoseconds duration.
+        if (mPreviousWorkload > 0) {
+            mNanosPerWorkloadUnit = ((double) scaledDurationNanos) / mPreviousWorkload;
+        }
+    }
+}
+
+void AdpfWrapper::reportWorkload(int32_t appWorkload) {
+    if (isOpen()) {
+        // Compare with previous workload. If we think we will need more
+        // time to render the callback then warn ADPF as soon as possible.
+        if (appWorkload > mPreviousWorkload && mNanosPerWorkloadUnit > 0.0) {
+            int64_t predictedDuration = (int64_t) (appWorkload * mNanosPerWorkloadUnit);
+            reportActualDuration(predictedDuration);
+        }
+        mPreviousWorkload = appWorkload;
     }
 }

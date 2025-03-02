@@ -18,10 +18,10 @@
 #include <pthread.h>
 #include <thread>
 
+#include "oboe_oboe_AudioClock_android.h"
 #include "oboe_oboe_AudioStream_android.h"
-#include "oboe_common_OboeDebug_android.h"
-#include "oboe_common_AudioClock_android.h"
 #include "oboe_oboe_Utilities_android.h"
+#include "oboe_common_OboeDebug_android.h"
 
 namespace oboe {
 

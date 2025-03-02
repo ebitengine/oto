@@ -16,9 +16,8 @@
 
 #include <cassert>
 
-#include "oboe_common_AudioClock_android.h"
-
 #include "oboe_common_OboeDebug_android.h"
+#include "oboe_oboe_AudioClock_android.h"
 #include "oboe_oboe_AudioStreamBuilder_android.h"
 #include "oboe_opensles_AudioOutputStreamOpenSLES_android.h"
 #include "oboe_opensles_AudioStreamOpenSLES_android.h"
@@ -147,7 +146,7 @@ Result AudioOutputStreamOpenSLES::open() {
             SL_DATAFORMAT_PCM,       // formatType
             static_cast<SLuint32>(mChannelCount),           // numChannels
             static_cast<SLuint32>(mSampleRate * kMillisPerSecond),    // milliSamplesPerSec
-            bitsPerSample,                      // bitsPerSample
+            bitsPerSample,                      // mBitsPerSample
             bitsPerSample,                      // containerSize;
             channelCountToChannelMask(mChannelCount), // channelMask
             getDefaultByteOrder(),
@@ -235,7 +234,7 @@ Result AudioOutputStreamOpenSLES::close() {
     LOGD("AudioOutputStreamOpenSLES::%s()", __func__);
     std::lock_guard<std::mutex> lock(mLock);
     Result result = Result::OK;
-    if (getState() == StreamState::Closed){
+    if (getState() == StreamState::Closed) {
         result = Result::ErrorClosed;
     } else {
         (void) requestPause_l();
@@ -250,8 +249,7 @@ Result AudioOutputStreamOpenSLES::close() {
 }
 
 Result AudioOutputStreamOpenSLES::setPlayState_l(SLuint32 newState) {
-
-    LOGD("AudioOutputStreamOpenSLES(): %s() called", __func__);
+    LOGD("AudioOutputStreamOpenSLES::%s(%d) called", __func__, newState);
     Result result = Result::OK;
 
     if (mPlayInterface == nullptr){
@@ -268,7 +266,7 @@ Result AudioOutputStreamOpenSLES::setPlayState_l(SLuint32 newState) {
 }
 
 Result AudioOutputStreamOpenSLES::requestStart() {
-    LOGD("AudioOutputStreamOpenSLES(): %s() called", __func__);
+    LOGD("AudioOutputStreamOpenSLES::%s() called", __func__);
 
     mLock.lock();
     StreamState initialState = getState();
@@ -318,7 +316,7 @@ Result AudioOutputStreamOpenSLES::requestStart() {
 }
 
 Result AudioOutputStreamOpenSLES::requestPause() {
-    LOGD("AudioOutputStreamOpenSLES(): %s() called", __func__);
+    LOGD("AudioOutputStreamOpenSLES::%s() called", __func__);
     std::lock_guard<std::mutex> lock(mLock);
     return requestPause_l();
 }
@@ -361,7 +359,7 @@ Result AudioOutputStreamOpenSLES::requestFlush() {
 }
 
 Result AudioOutputStreamOpenSLES::requestFlush_l() {
-    LOGD("AudioOutputStreamOpenSLES(): %s() called", __func__);
+    LOGD("AudioOutputStreamOpenSLES::%s() called", __func__);
     if (getState() == StreamState::Closed) {
         return Result::ErrorClosed;
     }
@@ -385,9 +383,8 @@ Result AudioOutputStreamOpenSLES::requestStop() {
 }
 
 Result AudioOutputStreamOpenSLES::requestStop_l() {
-    LOGD("AudioOutputStreamOpenSLES(): %s() called", __func__);
-
     StreamState initialState = getState();
+    LOGD("AudioOutputStreamOpenSLES::%s() called, initialState = %d", __func__, initialState);
     switch (initialState) {
         case StreamState::Stopping:
         case StreamState::Stopped:
