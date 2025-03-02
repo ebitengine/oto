@@ -13,7 +13,7 @@
 // limitations under the License.
 
 // Package mux offers APIs for a low-level multiplexer of audio players.
-// Usually you don't have to use this.
+// Usually you don't have to use this package directly.
 package mux
 
 import (
