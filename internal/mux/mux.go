@@ -54,7 +54,6 @@ type Mux struct {
 	format       Format
 
 	players map[*playerImpl]struct{}
-	buf     []float32
 	cond    *sync.Cond
 }
 
