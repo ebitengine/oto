@@ -15,6 +15,8 @@
 package oto
 
 import (
+	"fmt"
+
 	"github.com/ebitengine/oto/v3/internal/mux"
 )
 
@@ -63,7 +65,7 @@ func (p *Player) BufferedSize() int {
 
 // Err returns an error if this player has an error.
 func (p *Player) Err() error {
-	return p.player.Err()
+	return fmt.Errorf("oto: audio error: %w", p.player.Err())
 }
 
 // SetBufferSize sets the buffer size.
