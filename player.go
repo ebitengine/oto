@@ -65,7 +65,10 @@ func (p *Player) BufferedSize() int {
 
 // Err returns an error if this player has an error.
 func (p *Player) Err() error {
-	return fmt.Errorf("oto: audio error: %w", p.player.Err())
+	if err := p.player.Err(); err != nil {
+		return fmt.Errorf("oto: audio error: %w", err)
+	}
+	return nil
 }
 
 // SetBufferSize sets the buffer size.
