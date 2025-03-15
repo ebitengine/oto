@@ -14,7 +14,7 @@
 
 //go:build playstation5
 
-// The actual implementaiton will be provided by -overlay.
+// The actual implementaiton will be provided by github.com/hajimehoshi/uwagaki.
 
 #include <cstddef>
 
