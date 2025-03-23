@@ -252,7 +252,7 @@ func (p *playerImpl) setBufferSize(bufferSize int) {
 
 func (p *playerImpl) getTmpBuf() ([]byte, func()) {
 	// The returned buffer could be accessed regardless of the mutex m (#254).
-	// In order to oavoid races, use a sync.Pool.
+	// In order to avoid races, use a sync.Pool.
 	// On the other hand, the calls of getTmpBuf itself should be protected by the mutex m,
 	// then accessing p.bufPool doesn't cause races.
 	if p.bufPool == nil {
@@ -265,6 +265,11 @@ func (p *playerImpl) getTmpBuf() ([]byte, func()) {
 	}
 	buf := p.bufPool.Get().(*[]byte)
 	return *buf, func() {
+		// p.bufPool could be nil when setBufferSize is called (#258).
+		// buf doesn't have to (or cannot) be put back to the pool, as the size of the buffer could be changed.
+		if p.bufPool == nil {
+			return
+		}
 		p.bufPool.Put(buf)
 	}
 }
