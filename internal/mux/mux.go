@@ -270,6 +270,9 @@ func (p *playerImpl) getTmpBuf() ([]byte, func()) {
 		if p.bufPool == nil {
 			return
 		}
+		if len(*buf) != p.bufferSize {
+			return
+		}
 		p.bufPool.Put(buf)
 	}
 }
