@@ -47,3 +47,16 @@ func TestEmptyPlayer(t *testing.T) {
 		time.Sleep(time.Millisecond)
 	}
 }
+
+// Issue #258
+func TestSetBufferSize(t *testing.T) {
+	for i := 0; i < 10; i++ {
+		bs := bytes.NewReader(make([]byte, 512))
+		p := theContext.NewPlayer(bs)
+		p.Play()
+		p.SetBufferSize(256)
+		for p.IsPlaying() {
+			time.Sleep(time.Millisecond)
+		}
+	}
+}
