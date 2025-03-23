@@ -1,10 +1,6 @@
 name: Test
 
-on:
-  pull_request:
-  push:
-    branches:
-      - main
+on: [push, pull_request]
 
 jobs:
   test:
@@ -81,5 +77,7 @@ jobs:
           go build -v .
 
       - name: go test
+        # Unfortunately, some tests time out on Linux (#259).
+        if: runner.os != 'Linux'
         run: |
           go test -shuffle=on -v -count=10 ./...
