@@ -85,6 +85,11 @@ func (p *Player) Seek(offset int64, whence int) (int64, error) {
 }
 
 // Close implements io.Closer.
+//
+// Close does nothing and always returns nil.
+//
+// Deprecated: as of v3.4. you don't have to call Close.
 func (p *Player) Close() error {
-	return p.player.Close()
+	// (*mux.Player).Close() is called by the finalizer. Let's rely on it.
+	return nil
 }
