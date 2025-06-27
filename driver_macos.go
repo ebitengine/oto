@@ -43,6 +43,9 @@ func setNotificationHandler() error {
 				Fn:  setGlobalResume,
 			},
 		})
+	if err != nil {
+		return err
+	}
 
 	observer := objc.ID(class).Send(objc.RegisterName("new"))
 
