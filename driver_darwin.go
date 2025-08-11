@@ -21,8 +21,6 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/ebitengine/purego/objc"
-
 	"github.com/ebitengine/oto/v3/internal/mux"
 )
 
@@ -139,11 +137,6 @@ func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeI
 		}
 		c.audioQueue = q
 		c.unqueuedBuffers = bs
-
-		if err := setNotificationHandler(); err != nil {
-			c.err.TryStore(err)
-			return
-		}
 
 		var retryCount int
 	try:
@@ -290,14 +283,6 @@ func render(inUserData unsafe.Pointer, inAQ _AudioQueueRef, inBuffer _AudioQueue
 	defer theContext.cond.L.Unlock()
 	theContext.unqueuedBuffers = append(theContext.unqueuedBuffers, inBuffer)
 	theContext.cond.Signal()
-}
-
-func setGlobalPause(self objc.ID, _cmd objc.SEL, notification objc.ID) {
-	theContext.Suspend()
-}
-
-func setGlobalResume(self objc.ID, _cmd objc.SEL, notification objc.ID) {
-	theContext.Resume()
 }
 
 func sleepTime(count int) time.Duration {
