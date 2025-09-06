@@ -91,7 +91,7 @@ func NewContext(options *NewContextOptions) (*Context, chan struct{}, error) {
 
 	var bufferSizeInBytes int
 	if options.BufferSize != 0 {
-		// The underying driver always uses 32bit floats.
+		// The underlying driver always uses 32bit floats.
 		bytesPerSample := options.ChannelCount * 4
 		bytesPerSecond := options.SampleRate * bytesPerSample
 		bufferSizeInBytes = int(int64(options.BufferSize) * int64(bytesPerSecond) / int64(time.Second))

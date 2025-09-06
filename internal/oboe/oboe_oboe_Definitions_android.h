@@ -20,7 +20,7 @@
 #include <cstdint>
 #include <type_traits>
 
-// Oboe needs to be able to build on old NDKs so we use hard coded constants.
+// Oboe needs to be able to build on old ANDKs so we use hard coded constants.
 // The correctness of these constants is verified in "aaudio/AAudioLoader.cpp".
 
 namespace oboe {
@@ -336,7 +336,7 @@ namespace oboe {
 
         /**
          * Use this for notifying the user when a message has arrived or some
-         * other background event has occured.
+         * other background event has occurred.
          */
         Notification = 5, // AAUDIO_USAGE_NOTIFICATION
 
