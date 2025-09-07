@@ -1,3 +1,4 @@
+// Deprecated: use github.com/hajimehoshi/oto/v2 instead.
 module github.com/hajimehoshi/oto
 
 go 1.13
