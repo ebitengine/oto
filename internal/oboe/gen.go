@@ -29,7 +29,7 @@ import (
 	"strings"
 )
 
-const oboeVersion = "1.9.3"
+const oboeVersion = "1.10.0"
 
 func main() {
 	if err := run(); err != nil {
