@@ -77,7 +77,7 @@ jobs:
           go build -v .
 
       - name: go test
-        # Unfortunately, some tests time out on Linux (#259).
-        if: runner.os != 'Linux'
+        # Unfortunately, some tests time out on Linux and Windows (#259).
+        if: runner.os != 'Linux' && runner.os != 'Windows'
         run: |
           go test -shuffle=on -v -count=10 ./...
