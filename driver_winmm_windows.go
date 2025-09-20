@@ -124,7 +124,7 @@ func (c *winmmContext) start() error {
 		wBitsPerSample:  bitsPerSample,
 	}
 
-	// TOOD: What about using an event instead of a callback? PortAudio and other libraries do that.
+	// TODO: What about using an event instead of a callback? PortAudio and other libraries do that.
 	w, err := waveOutOpen(f, waveOutOpenCallback)
 	if errors.Is(err, windows.ERROR_NOT_FOUND) {
 		// This can happen when no device is found (#77).
@@ -195,7 +195,7 @@ func (c *winmmContext) isHeaderAvailable() bool {
 
 var waveOutOpenCallback = windows.NewCallback(func(hwo, uMsg, dwInstance, dwParam1, dwParam2 uintptr) uintptr {
 	// Queuing a header in this callback might not work especially when a headset is connected or disconnected.
-	// Just signal the condition vairable and don't do other things.
+	// Just signal the condition variable and don't do other things.
 	const womDone = 0x3bd
 	if uMsg != womDone {
 		return 0

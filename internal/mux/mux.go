@@ -211,7 +211,7 @@ func (p *Player) Play() {
 }
 
 func (p *playerImpl) Play() {
-	// Goroutines don't work effiently on Windows. Avoid using them (hajimehoshi/ebiten#1768).
+	// Goroutines don't work efficiently on Windows. Avoid using them (hajimehoshi/ebiten#1768).
 	if runtime.GOOS == "windows" {
 		p.m.Lock()
 		defer p.m.Unlock()
