@@ -156,7 +156,8 @@ func (m *Mux) ReadFloat32s(buf []float32) {
 }
 
 type Player struct {
-	p *playerImpl
+	p       *playerImpl
+	cleanup runtime.Cleanup
 }
 
 type playerState int
@@ -191,7 +192,9 @@ func (m *Mux) NewPlayer(src io.Reader) *Player {
 			bufferSize: m.defaultBufferSize(),
 		},
 	}
-	runtime.SetFinalizer(pl, (*Player).Close)
+	pl.cleanup = runtime.AddCleanup(pl, func(p *playerImpl) {
+		_ = p.Close()
+	}, pl.p)
 	return pl
 }
 
@@ -432,7 +435,7 @@ func (p *playerImpl) BufferedSize() int {
 }
 
 func (p *Player) Close() error {
-	runtime.SetFinalizer(p, nil)
+	p.cleanup.Stop()
 	return p.p.Close()
 }
 
