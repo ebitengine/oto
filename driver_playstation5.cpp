@@ -14,7 +14,7 @@
 
 //go:build playstation5
 
-// The actual implementaiton will be provided by github.com/hajimehoshi/uwagaki.
+// The actual implementation will be provided by github.com/hajimehoshi/uwagaki.
 
 #include <cstddef>
 
