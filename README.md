@@ -155,12 +155,6 @@ func main() {
     // }
     // println("Player is now at position:", newPos)
     // player.Play()
-
-    // If you don't want the player/sound anymore simply close
-    err = player.Close()
-    if err != nil {
-        panic("player.Close failed: " + err.Error())
-    }
 }
 ```
 
