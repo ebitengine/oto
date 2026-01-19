@@ -278,8 +278,11 @@ func (c *wasapiContext) startOnCOMThread() (ferr error) {
 
 	// Even if the sample rate and/or the number of channels are not supported by the audio driver,
 	// AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM should convert the sample rate automatically (#215).
+	// AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY used together with
+	// AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM tells WASAPI to use a high-quality
+	// resampler. Without it, 44100 source played on a 48000 device sounds bad.
 	if err := c.client.Initialize(_AUDCLNT_SHAREMODE_SHARED,
-		_AUDCLNT_STREAMFLAGS_EVENTCALLBACK|_AUDCLNT_STREAMFLAGS_NOPERSIST|_AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM,
+		_AUDCLNT_STREAMFLAGS_EVENTCALLBACK|_AUDCLNT_STREAMFLAGS_NOPERSIST|_AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM|_AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY,
 		bufferSizeIn100ns, 0, f, nil); err != nil {
 		return err
 	}
