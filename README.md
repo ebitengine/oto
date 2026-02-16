@@ -210,7 +210,7 @@ doesn't mean they were all played from the audio device.
 
 Data is moved from io.Reader->internal buffer->audio device, and when the internal buffer moves data to the audio device
 is not guaranteed, so there might be a small delay. The amount of data in the buffer can be retrieved
-using `Player.UnplayedBufferSize()`.
+using `Player.BufferedSize()`.
 
 The size of the underlying buffer of a player can also be set by type-asserting the player object:
 
