@@ -20,9 +20,9 @@ A low-level library to play sound.
 
 ## Platforms
 
-- Windows (no Cgo required!)
-- macOS (no Cgo required!)
-- Linux (ALSA by default with Cgo, PulseAudio with `CGO_ENABLED=0`)
+- Windows (no Cgo required; PulseAudio fallback available)
+- macOS (no Cgo required; PulseAudio fallback available)
+- Linux (PulseAudio)
 - FreeBSD
 - OpenBSD
 - Android
@@ -37,7 +37,7 @@ On some platforms you will need a C/C++ compiler in your path that Go can use.
 
 - iOS: On newer macOS versions type `clang` on your terminal and a dialog with installation instructions will appear if you don't have it
   - If you get an error with clang use xcode instead `xcode-select --install`
-- Linux and other Unix systems with Cgo enabled: Should be installed by default, but if not try [GCC](https://gcc.gnu.org/) or [Clang](https://releases.llvm.org/download.html)
+- BSD and console targets may still need a working C/C++ toolchain; if not installed, try [GCC](https://gcc.gnu.org/) or [Clang](https://releases.llvm.org/download.html)
 
 ### macOS
 
@@ -54,30 +54,18 @@ Add them to "Linked Frameworks and Libraries" on your Xcode project.
 
 ### Linux
 
-Oto uses ALSA by default on Linux when built with Cgo enabled.
-It falls back to PulseAudio via the pure-Go package `github.com/jfreymuth/pulse` if ALSA initialization fails.
-The PulseAudio backend does not require Cgo or PulseAudio development headers.
-
-If you build with `CGO_ENABLED=0`, Oto uses the PulseAudio backend only.
-If you build with Cgo enabled, Oto tries ALSA first and then falls back to PulseAudio.
-
-For Cgo-enabled builds, ALSA development headers are required. On Ubuntu or Debian, run this command:
-
-```sh
-apt install libasound2-dev
-```
-
-On RedHat-based linux distributions, run:
-
-```sh
-dnf install alsa-lib-devel
-```
-
-In most cases this command must be run by root user or through `sudo` command.
+Oto uses PulseAudio on Linux via the pure-Go package `github.com/jfreymuth/pulse`.
+This backend does not require Cgo or PulseAudio development headers, but it does require
+access to a PulseAudio-compatible server.
 
 ### FreeBSD, OpenBSD
 
-BSD systems are not tested well. If ALSA works, Oto should work.
+BSD systems are not tested well. Oto uses the same PulseAudio backend there. If the server
+is not discoverable automatically, set `PULSE_SERVER`.
+
+On macOS and Windows, Oto still prefers the native backend first and falls back to PulseAudio
+if native initialization fails. On Windows, set `PULSE_SERVER` when you want to target a
+PulseAudio server explicitly.
 
 ## Usage
 

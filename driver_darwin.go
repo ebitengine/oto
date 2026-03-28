@@ -80,16 +80,18 @@ type context struct {
 	toPause  bool
 	toResume bool
 
-	mux *mux.Mux
-	err atomicError
+	mux               *mux.Mux
+	pulseAudioContext *pulseAudioContext
+	err               atomicError
 }
 
 // TODO: Convert the error code correctly.
 // See https://stackoverflow.com/questions/2196869/how-do-you-convert-an-iphone-osstatus-code-to-something-useful
 
 var theContext *context
+var newPulseAudioContextFunc pulseAudioContextFactory = newPulseAudioContext
 
-func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeInBytes int, _ string) (*context, chan struct{}, error) {
+func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeInBytes int, clientApplicationName string) (*context, chan struct{}, error) {
 	// defaultOneBufferSizeInBytes is the default buffer size in bytes.
 	//
 	// 12288 seems necessary at least on iPod touch (7th) and MacBook Pro 2020.
@@ -115,49 +117,56 @@ func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeI
 	}
 	theContext = c
 
-	if err := initializeAPI(); err != nil {
-		return nil, nil, err
-	}
-
 	go func() {
-		runtime.LockOSThread()
-		defer runtime.UnlockOSThread()
-
-		var readyClosed bool
-		defer func() {
-			if !readyClosed {
-				close(ready)
-			}
-		}()
-
-		q, bs, err := newAudioQueue(sampleRate, channelCount, oneBufferSizeInBytes)
-		if err != nil {
-			c.err.TryStore(err)
-			return
-		}
-		c.audioQueue = q
-		c.unqueuedBuffers = bs
-
-		var retryCount int
-	try:
-		if osstatus := _AudioQueueStart(c.audioQueue, nil); osstatus != noErr {
-			if osstatus == avAudioSessionErrorCodeCannotStartPlaying && retryCount < 100 {
-				// TODO: use sleepTime() after investigating when this error happens.
-				time.Sleep(10 * time.Millisecond)
-				retryCount++
-				goto try
-			}
-			c.err.TryStore(fmt.Errorf("oto: AudioQueueStart failed at newContext: %d", osstatus))
+		started, err := c.startAudioQueueContext(sampleRate, channelCount, oneBufferSizeInBytes, ready)
+		if started {
 			return
 		}
 
+		pc, pulseErr := newPulseAudioContextFunc(sampleRate, channelCount, c.mux, bufferSizeInBytes, clientApplicationName)
+		if pulseErr == nil {
+			c.pulseAudioContext = pc
+			close(ready)
+			return
+		}
+
+		c.err.TryStore(fmt.Errorf("oto: initialization failed: AudioQueue: %v, PulseAudio: %v", err, pulseErr))
 		close(ready)
-		readyClosed = true
-
-		c.loop()
 	}()
 
 	return c, ready, nil
+}
+
+func (c *context) startAudioQueueContext(sampleRate, channelCount, oneBufferSizeInBytes int, ready chan struct{}) (bool, error) {
+	if err := initializeAPI(); err != nil {
+		return false, err
+	}
+
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
+	q, bs, err := newAudioQueue(sampleRate, channelCount, oneBufferSizeInBytes)
+	if err != nil {
+		return false, err
+	}
+	c.audioQueue = q
+	c.unqueuedBuffers = bs
+
+	var retryCount int
+try:
+	if osstatus := _AudioQueueStart(c.audioQueue, nil); osstatus != noErr {
+		if osstatus == avAudioSessionErrorCodeCannotStartPlaying && retryCount < 100 {
+			// TODO: use sleepTime() after investigating when this error happens.
+			time.Sleep(10 * time.Millisecond)
+			retryCount++
+			goto try
+		}
+		return false, fmt.Errorf("oto: AudioQueueStart failed at newContext: %d", osstatus)
+	}
+
+	close(ready)
+	c.loop()
+	return true, nil
 }
 
 func (c *context) wait() bool {
@@ -217,6 +226,10 @@ func (c *context) appendBuffer(buf32 []float32) {
 }
 
 func (c *context) Suspend() error {
+	if c.pulseAudioContext != nil {
+		return c.pulseAudioContext.Suspend()
+	}
+
 	c.cond.L.Lock()
 	defer c.cond.L.Unlock()
 
@@ -230,6 +243,10 @@ func (c *context) Suspend() error {
 }
 
 func (c *context) Resume() error {
+	if c.pulseAudioContext != nil {
+		return c.pulseAudioContext.Resume()
+	}
+
 	c.cond.L.Lock()
 	defer c.cond.L.Unlock()
 
@@ -274,6 +291,9 @@ try:
 func (c *context) Err() error {
 	if err := c.err.Load(); err != nil {
 		return err.(error)
+	}
+	if c.pulseAudioContext != nil {
+		return c.pulseAudioContext.Err()
 	}
 	return nil
 }

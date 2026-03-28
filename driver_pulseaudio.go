@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build linux && !android
+//go:build (linux && !android) || darwin || windows || (!android && !darwin && !js && !linux && !windows && !nintendosdk && !playstation5)
 
 package oto
 
@@ -23,6 +23,8 @@ import (
 	"github.com/ebitengine/oto/v3/internal/mux"
 	"github.com/jfreymuth/pulse"
 )
+
+type pulseAudioContextFactory func(sampleRate int, channelCount int, mux *mux.Mux, bufferSizeInBytes int, clientApplicationName string) (*pulseAudioContext, error)
 
 type pulseAudioContext struct {
 	client *pulse.Client
@@ -136,6 +138,68 @@ func (c *pulseAudioContext) Err() error {
 	}
 	if err := c.stream.Error(); err != nil {
 		return fmt.Errorf("oto: PulseAudio error: %w", err)
+	}
+	return nil
+}
+
+type pulseOnlyContext struct {
+	pulseAudioContext *pulseAudioContext
+
+	ready chan struct{}
+	err   atomicError
+
+	mux *mux.Mux
+}
+
+func newPulseOnlyContext(factory pulseAudioContextFactory, sampleRate int, channelCount int, format mux.Format, bufferSizeInBytes int, clientApplicationName string) (*pulseOnlyContext, chan struct{}, error) {
+	ctx := &pulseOnlyContext{
+		ready: make(chan struct{}),
+		mux:   mux.New(sampleRate, channelCount, format),
+	}
+
+	go func() {
+		defer close(ctx.ready)
+
+		pc, err := factory(sampleRate, channelCount, ctx.mux, bufferSizeInBytes, clientApplicationName)
+		if err != nil {
+			ctx.err.TryStore(err)
+			return
+		}
+		ctx.pulseAudioContext = pc
+	}()
+
+	return ctx, ctx.ready, nil
+}
+
+func (c *pulseOnlyContext) Suspend() error {
+	<-c.ready
+	if c.pulseAudioContext != nil {
+		return c.pulseAudioContext.Suspend()
+	}
+	return nil
+}
+
+func (c *pulseOnlyContext) Resume() error {
+	<-c.ready
+	if c.pulseAudioContext != nil {
+		return c.pulseAudioContext.Resume()
+	}
+	return nil
+}
+
+func (c *pulseOnlyContext) Err() error {
+	if err := c.err.Load(); err != nil {
+		return err
+	}
+
+	select {
+	case <-c.ready:
+	default:
+		return nil
+	}
+
+	if c.pulseAudioContext != nil {
+		return c.pulseAudioContext.Err()
 	}
 	return nil
 }
