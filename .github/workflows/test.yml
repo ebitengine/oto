@@ -42,6 +42,7 @@ jobs:
       - name: go build
         run: |
           go build -v ./...
+          env CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -v ./...
           # Compile without optimization to check potential stack overflow.
           # The option '-gcflags=all=-N -l' is often used at Visual Studio Code.
           # See also https://go.googlesource.com/vscode-go/+/HEAD/docs/debugging.md#launch and the issue hajimehoshi/ebiten#2120.
