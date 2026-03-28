@@ -24,18 +24,15 @@ import (
 
 var errDeviceNotFound = errors.New("oto: device not found")
 
-var newPulseAudioContextFunc pulseAudioContextFactory = newPulseAudioContext
-
 type context struct {
 	sampleRate   int
 	channelCount int
 
 	mux *mux.Mux
 
-	wasapiContext     *wasapiContext
-	winmmContext      *winmmContext
-	pulseAudioContext *pulseAudioContext
-	nullContext       *nullContext
+	wasapiContext *wasapiContext
+	winmmContext  *winmmContext
+	nullContext   *nullContext
 
 	ready chan struct{}
 	err   atomicError
@@ -65,18 +62,12 @@ func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeI
 			return
 		}
 
-		pc, err2 := newPulseAudioContextFunc(sampleRate, channelCount, ctx.mux, bufferSizeInBytes, clientApplicationName)
-		if err2 == nil {
-			ctx.pulseAudioContext = pc
-			return
-		}
-
 		if errors.Is(err0, errDeviceNotFound) && errors.Is(err1, errDeviceNotFound) {
 			ctx.nullContext = newNullContext(sampleRate, channelCount, ctx.mux)
 			return
 		}
 
-		ctx.err.TryStore(fmt.Errorf("oto: initialization failed: WASAPI: %v, WinMM: %v, PulseAudio: %v", err0, err1, err2))
+		ctx.err.TryStore(fmt.Errorf("oto: initialization failed: WASAPI: %v, WinMM: %v", err0, err1))
 	}()
 
 	return ctx, ctx.ready, nil
@@ -89,9 +80,6 @@ func (c *context) Suspend() error {
 	}
 	if c.winmmContext != nil {
 		return c.winmmContext.Suspend()
-	}
-	if c.pulseAudioContext != nil {
-		return c.pulseAudioContext.Suspend()
 	}
 	if c.nullContext != nil {
 		return c.nullContext.Suspend()
@@ -106,9 +94,6 @@ func (c *context) Resume() error {
 	}
 	if c.winmmContext != nil {
 		return c.winmmContext.Resume()
-	}
-	if c.pulseAudioContext != nil {
-		return c.pulseAudioContext.Resume()
 	}
 	if c.nullContext != nil {
 		return c.nullContext.Resume()
@@ -132,9 +117,6 @@ func (c *context) Err() error {
 	}
 	if c.winmmContext != nil {
 		return c.winmmContext.Err()
-	}
-	if c.pulseAudioContext != nil {
-		return c.pulseAudioContext.Err()
 	}
 	if c.nullContext != nil {
 		return c.nullContext.Err()

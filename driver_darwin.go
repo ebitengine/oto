@@ -80,16 +80,14 @@ type context struct {
 	toPause  bool
 	toResume bool
 
-	mux               *mux.Mux
-	pulseAudioContext *pulseAudioContext
-	err               atomicError
+	mux *mux.Mux
+	err atomicError
 }
 
 // TODO: Convert the error code correctly.
 // See https://stackoverflow.com/questions/2196869/how-do-you-convert-an-iphone-osstatus-code-to-something-useful
 
 var theContext *context
-var newPulseAudioContextFunc pulseAudioContextFactory = newPulseAudioContext
 
 func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeInBytes int, clientApplicationName string) (*context, chan struct{}, error) {
 	// defaultOneBufferSizeInBytes is the default buffer size in bytes.
@@ -123,14 +121,7 @@ func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeI
 			return
 		}
 
-		pc, pulseErr := newPulseAudioContextFunc(sampleRate, channelCount, c.mux, bufferSizeInBytes, clientApplicationName)
-		if pulseErr == nil {
-			c.pulseAudioContext = pc
-			close(ready)
-			return
-		}
-
-		c.err.TryStore(fmt.Errorf("oto: initialization failed: AudioQueue: %v, PulseAudio: %v", err, pulseErr))
+		c.err.TryStore(fmt.Errorf("oto: initialization failed: AudioQueue: %v", err))
 		close(ready)
 	}()
 
@@ -226,10 +217,6 @@ func (c *context) appendBuffer(buf32 []float32) {
 }
 
 func (c *context) Suspend() error {
-	if c.pulseAudioContext != nil {
-		return c.pulseAudioContext.Suspend()
-	}
-
 	c.cond.L.Lock()
 	defer c.cond.L.Unlock()
 
@@ -243,10 +230,6 @@ func (c *context) Suspend() error {
 }
 
 func (c *context) Resume() error {
-	if c.pulseAudioContext != nil {
-		return c.pulseAudioContext.Resume()
-	}
-
 	c.cond.L.Lock()
 	defer c.cond.L.Unlock()
 
@@ -291,9 +274,6 @@ try:
 func (c *context) Err() error {
 	if err := c.err.Load(); err != nil {
 		return err.(error)
-	}
-	if c.pulseAudioContext != nil {
-		return c.pulseAudioContext.Err()
 	}
 	return nil
 }

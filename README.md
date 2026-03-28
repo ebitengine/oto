@@ -20,9 +20,9 @@ A low-level library to play sound.
 
 ## Platforms
 
-- Windows (no Cgo required; PulseAudio fallback available)
-- macOS (no Cgo required; PulseAudio fallback available)
-- Linux (PulseAudio)
+- Windows (no Cgo required)
+- macOS (no Cgo required)
+- Linux (no Cgo required - PulseAudio)
 - FreeBSD
 - OpenBSD
 - Android
