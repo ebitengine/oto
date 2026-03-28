@@ -35,20 +35,24 @@ type pulseAudioContext struct {
 	err atomicError
 }
 
-func newPulseAudioContext(sampleRate int, channelCount int, mux *mux.Mux, bufferSizeInBytes int) (*pulseAudioContext, error) {
+func newPulseAudioContext(sampleRate int, channelCount int, mux *mux.Mux, bufferSizeInBytes int, clientApplicationName string) (*pulseAudioContext, error) {
 	c := &pulseAudioContext{
 		cond: sync.NewCond(&sync.Mutex{}),
 		mux:  mux,
 	}
 
-	client, err := pulse.NewClient(pulse.ClientApplicationName("Oto"))
+	if clientApplicationName == "" {
+		clientApplicationName = "Oto"
+	}
+
+	client, err := pulse.NewClient(pulse.ClientApplicationName(clientApplicationName))
 	if err != nil {
 		return nil, fmt.Errorf("oto: PulseAudio client initialization failed: %w", err)
 	}
 	c.client = client
 
 	options := []pulse.PlaybackOption{
-		pulse.PlaybackMediaName("Oto"),
+		pulse.PlaybackMediaName(clientApplicationName),
 	}
 	switch channelCount {
 	case 1:

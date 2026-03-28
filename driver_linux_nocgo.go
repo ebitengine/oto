@@ -18,6 +18,8 @@ package oto
 
 import "github.com/ebitengine/oto/v3/internal/mux"
 
+var newPulseAudioContextFunc = newPulseAudioContext
+
 type context struct {
 	pulseAudioContext *pulseAudioContext
 
@@ -27,7 +29,7 @@ type context struct {
 	mux *mux.Mux
 }
 
-func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeInBytes int) (*context, chan struct{}, error) {
+func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeInBytes int, clientApplicationName string) (*context, chan struct{}, error) {
 	ctx := &context{
 		ready: make(chan struct{}),
 		mux:   mux.New(sampleRate, channelCount, format),
@@ -36,7 +38,7 @@ func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeI
 	go func() {
 		defer close(ctx.ready)
 
-		pc, err := newPulseAudioContext(sampleRate, channelCount, ctx.mux, bufferSizeInBytes)
+		pc, err := newPulseAudioContextFunc(sampleRate, channelCount, ctx.mux, bufferSizeInBytes, clientApplicationName)
 		if err != nil {
 			ctx.err.TryStore(err)
 			return

@@ -22,7 +22,7 @@ A low-level library to play sound.
 
 - Windows (no Cgo required!)
 - macOS (no Cgo required!)
-- Linux (PulseAudio, no Cgo required with `CGO_ENABLED=0`)
+- Linux (ALSA by default with Cgo, PulseAudio with `CGO_ENABLED=0`)
 - FreeBSD
 - OpenBSD
 - Android
@@ -54,11 +54,12 @@ Add them to "Linked Frameworks and Libraries" on your Xcode project.
 
 ### Linux
 
-Oto prefers PulseAudio on Linux via the pure-Go package `github.com/jfreymuth/pulse`.
-This backend does not require Cgo or PulseAudio development headers.
+Oto uses ALSA by default on Linux when built with Cgo enabled.
+It falls back to PulseAudio via the pure-Go package `github.com/jfreymuth/pulse` if ALSA initialization fails.
+The PulseAudio backend does not require Cgo or PulseAudio development headers.
 
 If you build with `CGO_ENABLED=0`, Oto uses the PulseAudio backend only.
-If you build with Cgo enabled, Oto also compiles an ALSA fallback backend.
+If you build with Cgo enabled, Oto tries ALSA first and then falls back to PulseAudio.
 
 For Cgo-enabled builds, ALSA development headers are required. On Ubuntu or Debian, run this command:
 

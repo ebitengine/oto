@@ -22,6 +22,11 @@ import (
 	"github.com/ebitengine/oto/v3/internal/mux"
 )
 
+var (
+	newPulseAudioContextFunc = newPulseAudioContext
+	newALSAContextFunc       = newALSAContext
+)
+
 type context struct {
 	pulseAudioContext *pulseAudioContext
 	alsaContext       *alsaContext
@@ -32,7 +37,7 @@ type context struct {
 	mux *mux.Mux
 }
 
-func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeInBytes int) (*context, chan struct{}, error) {
+func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeInBytes int, clientApplicationName string) (*context, chan struct{}, error) {
 	ctx := &context{
 		ready: make(chan struct{}),
 		mux:   mux.New(sampleRate, channelCount, format),
@@ -41,19 +46,19 @@ func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeI
 	go func() {
 		defer close(ctx.ready)
 
-		pc, err0 := newPulseAudioContext(sampleRate, channelCount, ctx.mux, bufferSizeInBytes)
+		ac, err0 := newALSAContextFunc(sampleRate, channelCount, ctx.mux, bufferSizeInBytes)
 		if err0 == nil {
-			ctx.pulseAudioContext = pc
-			return
-		}
-
-		ac, err1 := newALSAContext(sampleRate, channelCount, ctx.mux, bufferSizeInBytes)
-		if err1 == nil {
 			ctx.alsaContext = ac
 			return
 		}
 
-		ctx.err.TryStore(fmt.Errorf("oto: initialization failed: PulseAudio: %v, ALSA: %v", err0, err1))
+		pc, err1 := newPulseAudioContextFunc(sampleRate, channelCount, ctx.mux, bufferSizeInBytes, clientApplicationName)
+		if err1 == nil {
+			ctx.pulseAudioContext = pc
+			return
+		}
+
+		ctx.err.TryStore(fmt.Errorf("oto: initialization failed: ALSA: %v, PulseAudio: %v", err0, err1))
 	}()
 
 	return ctx, ctx.ready, nil
