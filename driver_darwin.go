@@ -89,7 +89,7 @@ type context struct {
 
 var theContext *context
 
-func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeInBytes int, clientApplicationName string) (*context, chan struct{}, error) {
+func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeInBytes int, _ string) (*context, chan struct{}, error) {
 	// defaultOneBufferSizeInBytes is the default buffer size in bytes.
 	//
 	// 12288 seems necessary at least on iPod touch (7th) and MacBook Pro 2020.
@@ -115,49 +115,49 @@ func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeI
 	}
 	theContext = c
 
+	if err := initializeAPI(); err != nil {
+		return nil, nil, err
+	}
+
 	go func() {
-		started, err := c.startAudioQueueContext(sampleRate, channelCount, oneBufferSizeInBytes, ready)
-		if started {
+		runtime.LockOSThread()
+		defer runtime.UnlockOSThread()
+
+		var readyClosed bool
+		defer func() {
+			if !readyClosed {
+				close(ready)
+			}
+		}()
+
+		q, bs, err := newAudioQueue(sampleRate, channelCount, oneBufferSizeInBytes)
+		if err != nil {
+			c.err.TryStore(err)
+			return
+		}
+		c.audioQueue = q
+		c.unqueuedBuffers = bs
+
+		var retryCount int
+	try:
+		if osstatus := _AudioQueueStart(c.audioQueue, nil); osstatus != noErr {
+			if osstatus == avAudioSessionErrorCodeCannotStartPlaying && retryCount < 100 {
+				// TODO: use sleepTime() after investigating when this error happens.
+				time.Sleep(10 * time.Millisecond)
+				retryCount++
+				goto try
+			}
+			c.err.TryStore(fmt.Errorf("oto: AudioQueueStart failed at newContext: %d", osstatus))
 			return
 		}
 
-		c.err.TryStore(fmt.Errorf("oto: initialization failed: AudioQueue: %v", err))
 		close(ready)
+		readyClosed = true
+
+		c.loop()
 	}()
 
 	return c, ready, nil
-}
-
-func (c *context) startAudioQueueContext(sampleRate, channelCount, oneBufferSizeInBytes int, ready chan struct{}) (bool, error) {
-	if err := initializeAPI(); err != nil {
-		return false, err
-	}
-
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
-
-	q, bs, err := newAudioQueue(sampleRate, channelCount, oneBufferSizeInBytes)
-	if err != nil {
-		return false, err
-	}
-	c.audioQueue = q
-	c.unqueuedBuffers = bs
-
-	var retryCount int
-try:
-	if osstatus := _AudioQueueStart(c.audioQueue, nil); osstatus != noErr {
-		if osstatus == avAudioSessionErrorCodeCannotStartPlaying && retryCount < 100 {
-			// TODO: use sleepTime() after investigating when this error happens.
-			time.Sleep(10 * time.Millisecond)
-			retryCount++
-			goto try
-		}
-		return false, fmt.Errorf("oto: AudioQueueStart failed at newContext: %d", osstatus)
-	}
-
-	close(ready)
-	c.loop()
-	return true, nil
 }
 
 func (c *context) wait() bool {

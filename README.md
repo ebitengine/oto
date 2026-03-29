@@ -37,7 +37,7 @@ On some platforms you will need a C/C++ compiler in your path that Go can use.
 
 - iOS: On newer macOS versions type `clang` on your terminal and a dialog with installation instructions will appear if you don't have it
   - If you get an error with clang use xcode instead `xcode-select --install`
-- BSD and console targets may still need a working C/C++ toolchain; if not installed, try [GCC](https://gcc.gnu.org/) or [Clang](https://releases.llvm.org/download.html)
+- Console targets may still need a working C/C++ toolchain; if not installed, try [GCC](https://gcc.gnu.org/) or [Clang](https://releases.llvm.org/download.html)
 
 ### macOS
 
@@ -213,7 +213,8 @@ This works because players implement a `Player` interface and a `BufferSizeSette
 
 ## Crosscompiling
 
-Crosscompiling to macOS or Windows is as easy as setting `GOOS=darwin` or `GOOS=windows`, respectively.
+Crosscompiling to macOS, Windows, Linux or BSD is as easy as setting `GOOS=darwin`, `GOOS=windows`,
+`GOOS=linux` or `GOOS=freebsd` (or your particular BSD flavor) respectively.
 
 To crosscompile for other platforms, make sure the libraries for the target architecture are installed, and set 
 `CGO_ENABLED=1` as Go disables [Cgo](https://golang.org/cmd/cgo/#hdr-Using_cgo_with_the_go_command) on crosscompiles by default.
