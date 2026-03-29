@@ -73,6 +73,11 @@ func newPulseAudioContext(sampleRate int, channelCount int, mux *mux.Mux, buffer
 		return nil, fmt.Errorf("oto: PulseAudio client initialization failed: %w", err)
 	}
 	c.client = client
+	defer func() {
+		if client != nil && err != nil {
+			client.Close()
+		}
+	}()
 
 	options := []pulse.PlaybackOption{
 		pulse.PlaybackMediaName(applicationName),
@@ -83,7 +88,6 @@ func newPulseAudioContext(sampleRate int, channelCount int, mux *mux.Mux, buffer
 	case 2:
 		options = append(options, pulse.PlaybackStereo)
 	default:
-		client.Close()
 		return nil, fmt.Errorf("oto: PulseAudio backend supports only mono or stereo output: %d", channelCount)
 	}
 	options = append(options, pulse.PlaybackSampleRate(sampleRate))
@@ -94,12 +98,10 @@ func newPulseAudioContext(sampleRate int, channelCount int, mux *mux.Mux, buffer
 		}
 	}
 
-	stream, err := client.NewPlayback(pulse.Float32Reader(c.read), options...)
+	c.stream, err = client.NewPlayback(pulse.Float32Reader(c.read), options...)
 	if err != nil {
-		client.Close()
 		return nil, fmt.Errorf("oto: PulseAudio playback initialization failed: %w", err)
 	}
-	c.stream = stream
 	c.stream.Start()
 
 	return c, nil

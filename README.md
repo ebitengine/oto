@@ -10,8 +10,7 @@ A low-level library to play sound.
   - [Prerequisite](#prerequisite)
     - [macOS](#macos)
     - [iOS](#ios)
-    - [Linux](#linux)
-    - [FreeBSD, OpenBSD](#freebsd-openbsd)
+    - [Linux, FreeBSD, OpenBSD](#linux-freebsd-openbsd)
   - [Usage](#usage)
     - [Playing sounds from memory](#playing-sounds-from-memory)
     - [Playing sounds by file streaming](#playing-sounds-by-file-streaming)
@@ -52,16 +51,12 @@ Oto requires these frameworks:
 
 Add them to "Linked Frameworks and Libraries" on your Xcode project.
 
-### Linux
+### Linux, FreeBSD, OpenBSD
 
-Oto uses PulseAudio on Linux via the pure-Go package `github.com/jfreymuth/pulse`.
-This backend does not require Cgo or PulseAudio development headers, but it does require
-access to a PulseAudio-compatible server.
+Oto uses PulseAudio on Linux and BSD systems via the pure-Go package `github.com/jfreymuth/pulse`,
+though BSD systems are not tested well.
 
-### FreeBSD, OpenBSD
-
-BSD systems are not tested well. Oto uses the same PulseAudio backend there. If the server
-is not discoverable automatically, set `PULSE_SERVER`.
+If the PulseAudio server is not discoverable automatically, set `PULSE_SERVER`.
 
 ## Usage
 
