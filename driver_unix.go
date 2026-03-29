@@ -1,4 +1,4 @@
-// Copyright 2026 The Oto Authors
+// Copyright 2021 The Oto Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -18,10 +18,13 @@ package oto
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"sync"
 
-	"github.com/ebitengine/oto/v3/internal/mux"
 	"github.com/jfreymuth/pulse"
+
+	"github.com/ebitengine/oto/v3/internal/mux"
 )
 
 var newPulseAudioContextFunc pulseAudioContextFactory = newPulseAudioContext
@@ -58,7 +61,11 @@ func newPulseAudioContext(sampleRate int, channelCount int, mux *mux.Mux, buffer
 	}
 
 	if clientApplicationName == "" {
-		clientApplicationName = "Oto"
+		if name, _ := os.Executable(); name != "" {
+			clientApplicationName = filepath.Base(name)
+		} else {
+			clientApplicationName = "Oto"
+		}
 	}
 
 	client, err := pulse.NewClient(pulse.ClientApplicationName(clientApplicationName))

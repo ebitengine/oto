@@ -42,12 +42,11 @@ jobs:
       - name: go build
         run: |
           go build -v ./...
-
           # Compile without optimization to check potential stack overflow.
           # The option '-gcflags=all=-N -l' is often used at Visual Studio Code.
           # See also https://go.googlesource.com/vscode-go/+/HEAD/docs/debugging.md#launch and the issue hajimehoshi/ebiten#2120.
           go build "-gcflags=all=-N -l" -v ./...
-          
+
           # Check cross-compiling WebAssembly.
           # Unfortunately it is difficult to test Oto on browsers since this requires user interactions.
           env GOOS=js GOARCH=wasm go build -v ./...

@@ -22,9 +22,9 @@ A low-level library to play sound.
 
 - Windows (no Cgo required)
 - macOS (no Cgo required)
-- Linux (no Cgo required - PulseAudio)
-- FreeBSD
-- OpenBSD
+- Linux (no Cgo required)
+- FreeBSD (no Cgo required)
+- OpenBSD (no Cgo required)
 - Android
 - iOS
 - WebAssembly
@@ -62,10 +62,6 @@ access to a PulseAudio-compatible server.
 
 BSD systems are not tested well. Oto uses the same PulseAudio backend there. If the server
 is not discoverable automatically, set `PULSE_SERVER`.
-
-On macOS and Windows, Oto still prefers the native backend first and falls back to PulseAudio
-if native initialization fails. On Windows, set `PULSE_SERVER` when you want to target a
-PulseAudio server explicitly.
 
 ## Usage
 

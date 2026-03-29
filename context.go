@@ -74,9 +74,9 @@ type NewContextOptions struct {
 	// On the other hand, too small buffer size can cause glitch noises due to buffer shortage.
 	BufferSize time.Duration
 
-	// ClientApplicationName specifies the name of the client application.
+	// ApplicationName specifies the name of the client application.
 	// It is used for PulseAudio's volume control UI and so on.
-	ClientApplicationName string
+	ApplicationName string
 }
 
 // NewContext creates a new context with given options.
@@ -101,7 +101,7 @@ func NewContext(options *NewContextOptions) (*Context, chan struct{}, error) {
 		bufferSizeInBytes = int(int64(options.BufferSize) * int64(bytesPerSecond) / int64(time.Second))
 		bufferSizeInBytes = bufferSizeInBytes / bytesPerSample * bytesPerSample
 	}
-	ctx, ready, err := newContext(options.SampleRate, options.ChannelCount, mux.Format(options.Format), bufferSizeInBytes, options.ClientApplicationName)
+	ctx, ready, err := newContext(options.SampleRate, options.ChannelCount, mux.Format(options.Format), bufferSizeInBytes, options.ApplicationName)
 	if err != nil {
 		return nil, nil, err
 	}
