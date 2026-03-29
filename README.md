@@ -26,7 +26,7 @@ A low-level library to play sound.
 - OpenBSD (no Cgo required)
 - Android
 - iOS
-- WebAssembly
+- WebAssembly (no Cgo required)
 - Nintendo Switch
 - Xbox
 

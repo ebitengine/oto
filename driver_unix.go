@@ -54,11 +54,16 @@ type pulseAudioContext struct {
 	err atomicError
 }
 
-func newPulseAudioContext(sampleRate int, channelCount int, mux *mux.Mux, bufferSizeInBytes int, applicationName string) (*pulseAudioContext, error) {
-	c := &pulseAudioContext{
+func newPulseAudioContext(sampleRate int, channelCount int, mux *mux.Mux, bufferSizeInBytes int, applicationName string) (c *pulseAudioContext, err error) {
+	c = &pulseAudioContext{
 		cond: sync.NewCond(&sync.Mutex{}),
 		mux:  mux,
 	}
+	defer func() {
+		if c.client != nil && err != nil {
+			c.client.Close()
+		}
+	}()
 
 	if applicationName == "" {
 		if name, _ := os.Executable(); name != "" {
@@ -68,16 +73,10 @@ func newPulseAudioContext(sampleRate int, channelCount int, mux *mux.Mux, buffer
 		}
 	}
 
-	client, err := pulse.NewClient(pulse.ClientApplicationName(applicationName))
+	c.client, err = pulse.NewClient(pulse.ClientApplicationName(applicationName))
 	if err != nil {
 		return nil, fmt.Errorf("oto: PulseAudio client initialization failed: %w", err)
 	}
-	c.client = client
-	defer func() {
-		if client != nil && err != nil {
-			client.Close()
-		}
-	}()
 
 	options := []pulse.PlaybackOption{
 		pulse.PlaybackMediaName(applicationName),
@@ -98,7 +97,7 @@ func newPulseAudioContext(sampleRate int, channelCount int, mux *mux.Mux, buffer
 		}
 	}
 
-	c.stream, err = client.NewPlayback(pulse.Float32Reader(c.read), options...)
+	c.stream, err = c.client.NewPlayback(pulse.Float32Reader(c.read), options...)
 	if err != nil {
 		return nil, fmt.Errorf("oto: PulseAudio playback initialization failed: %w", err)
 	}
