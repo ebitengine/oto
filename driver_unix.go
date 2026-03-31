@@ -27,40 +27,30 @@ import (
 	"github.com/ebitengine/oto/v3/internal/mux"
 )
 
-var newPulseAudioContextFunc pulseAudioContextFactory = newPulseAudioContext
-
 type context struct {
-	*pulseOnlyContext
-}
-
-func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeInBytes int, clientApplicationName string) (*context, chan struct{}, error) {
-	ctx, ready, err := newPulseOnlyContext(newPulseAudioContextFunc, sampleRate, channelCount, format, bufferSizeInBytes, clientApplicationName)
-	if err != nil {
-		return nil, nil, err
-	}
-	return &context{pulseOnlyContext: ctx}, ready, nil
-}
-
-type pulseAudioContextFactory func(sampleRate int, channelCount int, mux *mux.Mux, bufferSizeInBytes int, clientApplicationName string) (*pulseAudioContext, error)
-
-type pulseAudioContext struct {
 	client *pulse.Client
 	stream *pulse.PlaybackStream
 
 	suspended bool
 	cond      *sync.Cond
 
-	mux *mux.Mux
-	err atomicError
+	mux   *mux.Mux
+	ready chan struct{}
+	err   atomicError
 }
 
-func newPulseAudioContext(sampleRate int, channelCount int, mux *mux.Mux, bufferSizeInBytes int, applicationName string) (client *pulseAudioContext, err error) {
-	client = &pulseAudioContext{
-		cond: sync.NewCond(&sync.Mutex{}),
-		mux:  mux,
+func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeInBytes int, applicationName string) (client *context, ready chan struct{}, err error) {
+	client = &context{
+		cond:  sync.NewCond(&sync.Mutex{}),
+		ready: make(chan struct{}),
+		mux:   mux.New(sampleRate, channelCount, format),
 	}
 	defer func() {
-		if client.client != nil && err != nil {
+		if client.client == nil {
+			return
+		}
+		close(client.ready)
+		if err != nil {
 			client.client.Close()
 		}
 	}()
@@ -75,7 +65,7 @@ func newPulseAudioContext(sampleRate int, channelCount int, mux *mux.Mux, buffer
 
 	client.client, err = pulse.NewClient(pulse.ClientApplicationName(applicationName))
 	if err != nil {
-		return nil, fmt.Errorf("oto: PulseAudio client initialization failed: %w", err)
+		return nil, client.ready, fmt.Errorf("oto: PulseAudio client initialization failed: %w", err)
 	}
 
 	options := []pulse.PlaybackOption{
@@ -87,7 +77,7 @@ func newPulseAudioContext(sampleRate int, channelCount int, mux *mux.Mux, buffer
 	case 2:
 		options = append(options, pulse.PlaybackStereo)
 	default:
-		return nil, fmt.Errorf("oto: PulseAudio backend supports only mono or stereo output: %d", channelCount)
+		return nil, client.ready, fmt.Errorf("oto: PulseAudio backend supports only mono or stereo output: %d", channelCount)
 	}
 	options = append(options, pulse.PlaybackSampleRate(sampleRate))
 	if bufferSizeInBytes != 0 {
@@ -99,14 +89,14 @@ func newPulseAudioContext(sampleRate int, channelCount int, mux *mux.Mux, buffer
 
 	client.stream, err = client.client.NewPlayback(pulse.Float32Reader(client.read), options...)
 	if err != nil {
-		return nil, fmt.Errorf("oto: PulseAudio playback initialization failed: %w", err)
+		return nil, client.ready, fmt.Errorf("oto: PulseAudio playback initialization failed: %w", err)
 	}
 	client.stream.Start()
 
-	return client, nil
+	return client, client.ready, nil
 }
 
-func (c *pulseAudioContext) read(buf []float32) (int, error) {
+func (c *context) read(buf []float32) (int, error) {
 	c.cond.L.Lock()
 	defer c.cond.L.Unlock()
 
@@ -121,7 +111,7 @@ func (c *pulseAudioContext) read(buf []float32) (int, error) {
 	return len(buf), nil
 }
 
-func (c *pulseAudioContext) Suspend() error {
+func (c *context) Suspend() error {
 	c.cond.L.Lock()
 	defer c.cond.L.Unlock()
 
@@ -137,7 +127,7 @@ func (c *pulseAudioContext) Suspend() error {
 	return nil
 }
 
-func (c *pulseAudioContext) Resume() error {
+func (c *context) Resume() error {
 	c.cond.L.Lock()
 	defer c.cond.L.Unlock()
 
@@ -154,74 +144,12 @@ func (c *pulseAudioContext) Resume() error {
 	return nil
 }
 
-func (c *pulseAudioContext) Err() error {
+func (c *context) Err() error {
 	if err := c.err.Load(); err != nil {
 		return err
 	}
 	if err := c.stream.Error(); err != nil {
 		return fmt.Errorf("oto: PulseAudio error: %w", err)
-	}
-	return nil
-}
-
-type pulseOnlyContext struct {
-	pulseAudioContext *pulseAudioContext
-
-	ready chan struct{}
-	err   atomicError
-
-	mux *mux.Mux
-}
-
-func newPulseOnlyContext(factory pulseAudioContextFactory, sampleRate int, channelCount int, format mux.Format, bufferSizeInBytes int, clientApplicationName string) (*pulseOnlyContext, chan struct{}, error) {
-	ctx := &pulseOnlyContext{
-		ready: make(chan struct{}),
-		mux:   mux.New(sampleRate, channelCount, format),
-	}
-
-	go func() {
-		defer close(ctx.ready)
-
-		pc, err := factory(sampleRate, channelCount, ctx.mux, bufferSizeInBytes, clientApplicationName)
-		if err != nil {
-			ctx.err.TryStore(err)
-			return
-		}
-		ctx.pulseAudioContext = pc
-	}()
-
-	return ctx, ctx.ready, nil
-}
-
-func (c *pulseOnlyContext) Suspend() error {
-	<-c.ready
-	if c.pulseAudioContext != nil {
-		return c.pulseAudioContext.Suspend()
-	}
-	return nil
-}
-
-func (c *pulseOnlyContext) Resume() error {
-	<-c.ready
-	if c.pulseAudioContext != nil {
-		return c.pulseAudioContext.Resume()
-	}
-	return nil
-}
-
-func (c *pulseOnlyContext) Err() error {
-	if err := c.err.Load(); err != nil {
-		return err
-	}
-
-	select {
-	case <-c.ready:
-	default:
-		return nil
-	}
-
-	if c.pulseAudioContext != nil {
-		return c.pulseAudioContext.Err()
 	}
 	return nil
 }
