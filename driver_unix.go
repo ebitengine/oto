@@ -34,23 +34,19 @@ type context struct {
 	suspended bool
 	cond      *sync.Cond
 
-	mux   *mux.Mux
-	ready chan struct{}
-	err   atomicError
+	mux *mux.Mux
+	err atomicError
 }
 
 func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeInBytes int, applicationName string) (client *context, ready chan struct{}, err error) {
 	client = &context{
-		cond:  sync.NewCond(&sync.Mutex{}),
-		ready: make(chan struct{}),
-		mux:   mux.New(sampleRate, channelCount, format),
+		cond: sync.NewCond(&sync.Mutex{}),
+		mux:  mux.New(sampleRate, channelCount, format),
 	}
+	ready = make(chan struct{})
+	close(ready)
 	defer func() {
-		if client.client == nil {
-			return
-		}
-		close(client.ready)
-		if err != nil {
+		if client.client != nil && err != nil {
 			client.client.Close()
 		}
 	}()
@@ -65,7 +61,7 @@ func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeI
 
 	client.client, err = pulse.NewClient(pulse.ClientApplicationName(applicationName))
 	if err != nil {
-		return nil, client.ready, fmt.Errorf("oto: PulseAudio client initialization failed: %w", err)
+		return nil, ready, fmt.Errorf("oto: PulseAudio client initialization failed: %w", err)
 	}
 
 	options := []pulse.PlaybackOption{
@@ -77,7 +73,7 @@ func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeI
 	case 2:
 		options = append(options, pulse.PlaybackStereo)
 	default:
-		return nil, client.ready, fmt.Errorf("oto: PulseAudio backend supports only mono or stereo output: %d", channelCount)
+		return nil, ready, fmt.Errorf("oto: PulseAudio backend supports only mono or stereo output: %d", channelCount)
 	}
 	options = append(options, pulse.PlaybackSampleRate(sampleRate))
 	if bufferSizeInBytes != 0 {
@@ -89,11 +85,11 @@ func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeI
 
 	client.stream, err = client.client.NewPlayback(pulse.Float32Reader(client.read), options...)
 	if err != nil {
-		return nil, client.ready, fmt.Errorf("oto: PulseAudio playback initialization failed: %w", err)
+		return nil, ready, fmt.Errorf("oto: PulseAudio playback initialization failed: %w", err)
 	}
 	client.stream.Start()
 
-	return client, client.ready, nil
+	return client, ready, nil
 }
 
 func (c *context) read(buf []float32) (int, error) {
@@ -140,7 +136,7 @@ func (c *context) Resume() error {
 
 	c.suspended = false
 	c.stream.Resume()
-	c.cond.Broadcast()
+	c.cond.Signal()
 	return nil
 }
 
