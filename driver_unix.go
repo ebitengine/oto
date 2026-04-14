@@ -46,7 +46,7 @@ func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeI
 	ready = make(chan struct{})
 	close(ready)
 	defer func() {
-		if client.client != nil && err != nil {
+		if client != nil && client.client != nil && err != nil {
 			client.client.Close()
 		}
 	}()
