@@ -76,11 +76,15 @@ func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeI
 		return nil, ready, fmt.Errorf("oto: PulseAudio backend supports only mono or stereo output: %d", channelCount)
 	}
 	options = append(options, pulse.PlaybackSampleRate(sampleRate))
-	if bufferSizeInBytes != 0 {
+	{
 		latency := float64(bufferSizeInBytes) / float64(sampleRate*channelCount*4)
-		if latency > 0 {
-			options = append(options, pulse.PlaybackLatency(latency))
+		if latency <= 0 {
+			// If no buffer size is specified, default to a 100ms latency.
+			// Without this, PulseAudio uses its own large default buffer (~2s),
+			// which causes a noticeable delay before audio starts playing.
+			latency = 0.1
 		}
+		options = append(options, pulse.PlaybackLatency(latency))
 	}
 
 	client.stream, err = client.client.NewPlayback(pulse.Float32Reader(client.read), options...)
