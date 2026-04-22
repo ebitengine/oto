@@ -177,7 +177,7 @@ func (c *wasapiContext) start() error {
 
 	go func() {
 		if err := c.loop(); err != nil {
-			if !errors.Is(err, _AUDCLNT_E_DEVICE_INVALIDATED) && !errors.Is(err, _AUDCLNT_E_RESOURCES_INVALIDATED) && !errors.Is(err, errDeviceSwitched) {
+			if !errors.Is(err, _AUDCLNT_E_DEVICE_INVALIDATED) && !errors.Is(err, _AUDCLNT_E_RESOURCES_INVALIDATED) && !errors.Is(err, errDeviceSwitched) && !errors.Is(err, _RPC_E_DISCONNECTED) {
 				c.err.TryStore(err)
 				return
 			}
@@ -193,19 +193,25 @@ func (c *wasapiContext) start() error {
 }
 
 func (c *wasapiContext) startOnCOMThread() (ferr error) {
-	if c.enumerator == nil {
-		e, err := _CoCreateInstance(&uuidMMDeviceEnumerator, nil, uint32(_CLSCTX_ALL), &uuidIMMDeviceEnumerator)
-		if err != nil {
-			return err
-		}
-		c.enumerator = (*_IMMDeviceEnumerator)(e)
-		defer func() {
-			if ferr != nil {
-				c.enumerator.Release()
-				c.enumerator = nil
-			}
-		}()
+	// Always release and re-create the enumerator on (re)start. A cached
+	// enumerator can become disconnected (RPC_E_DISCONNECTED) across
+	// Xbox/UWP suspend/resume or when the audio service is restarted, and
+	// any subsequent call on it will keep failing.
+	if c.enumerator != nil {
+		c.enumerator.Release()
+		c.enumerator = nil
 	}
+	e, err := _CoCreateInstance(&uuidMMDeviceEnumerator, nil, uint32(_CLSCTX_ALL), &uuidIMMDeviceEnumerator)
+	if err != nil {
+		return err
+	}
+	c.enumerator = (*_IMMDeviceEnumerator)(e)
+	defer func() {
+		if ferr != nil {
+			c.enumerator.Release()
+			c.enumerator = nil
+		}
+	}()
 
 	device, err := c.enumerator.GetDefaultAudioEndPoint(eRender, eConsole)
 	if err != nil {

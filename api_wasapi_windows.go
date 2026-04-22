@@ -156,6 +156,25 @@ func (e _WIN32_ERR) Error() string {
 	}
 }
 
+type _RPC_ERR uint32
+
+const (
+	_RPC_E_DISCONNECTED _RPC_ERR = 0x80010108
+)
+
+func isRPCErr(hresult uint32) bool {
+	return hresult&0xffff0000 == (1<<31)|(windows.FACILITY_RPC<<16)
+}
+
+func (e _RPC_ERR) Error() string {
+	switch e {
+	case _RPC_E_DISCONNECTED:
+		return "RPC_E_DISCONNECTED"
+	default:
+		return fmt.Sprintf("RPC_ERR(0x%08x)", uint32(e))
+	}
+}
+
 type _AudioClientProperties struct {
 	cbSize     uint32
 	bIsOffload int32
@@ -469,6 +488,9 @@ func (i *_IMMDeviceEnumerator) GetDefaultAudioEndPoint(dataFlow _EDataFlow, role
 	if uint32(r) != uint32(windows.S_OK) {
 		if isWin32Err(uint32(r)) {
 			return nil, fmt.Errorf("oto: IMMDeviceEnumerator::GetDefaultAudioEndPoint failed: %w", _E_NOTFOUND)
+		}
+		if isRPCErr(uint32(r)) {
+			return nil, fmt.Errorf("oto: IMMDeviceEnumerator::GetDefaultAudioEndPoint failed: %w", _RPC_ERR(r))
 		}
 		return nil, fmt.Errorf("oto: IMMDeviceEnumerator::GetDefaultAudioEndPoint failed: HRESULT(%d)", uint32(r))
 	}
