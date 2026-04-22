@@ -50,7 +50,7 @@ func TestEmptyPlayer(t *testing.T) {
 
 // Issue #258
 func TestSetBufferSize(t *testing.T) {
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		bs := bytes.NewReader(make([]byte, 512))
 		p := theContext.NewPlayer(bs)
 		p.Play()

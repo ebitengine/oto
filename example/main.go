@@ -179,37 +179,31 @@ func run() error {
 	var players []*oto.Player
 	var m sync.Mutex
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		p := play(c, freqC, 3*time.Second, op.ChannelCount, op.Format)
 		m.Lock()
 		players = append(players, p)
 		m.Unlock()
 		time.Sleep(3 * time.Second)
-	}()
+	})
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		time.Sleep(1 * time.Second)
 		p := play(c, freqE, 3*time.Second, op.ChannelCount, op.Format)
 		m.Lock()
 		players = append(players, p)
 		m.Unlock()
 		time.Sleep(3 * time.Second)
-	}()
+	})
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		time.Sleep(2 * time.Second)
 		p := play(c, freqG, 3*time.Second, op.ChannelCount, op.Format)
 		m.Lock()
 		players = append(players, p)
 		m.Unlock()
 		time.Sleep(3 * time.Second)
-	}()
+	})
 
 	wg.Wait()
 

@@ -248,7 +248,7 @@ func (p *playerImpl) setBufferSize(bufferSize int) {
 }
 
 var theBufPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		var buf []byte
 		return &buf
 	},
@@ -467,10 +467,7 @@ func (p *playerImpl) readBufferAndAdd(buf []float32) int {
 
 	format := p.mux.format
 	bitDepthInBytes := format.ByteLength()
-	n := len(p.buf) / bitDepthInBytes
-	if n > len(buf) {
-		n = len(buf)
-	}
+	n := min(len(p.buf)/bitDepthInBytes, len(buf))
 
 	prevVolume := float32(p.prevVolume)
 	volume := float32(p.volume)
@@ -480,7 +477,7 @@ func (p *playerImpl) readBufferAndAdd(buf []float32) int {
 
 	src := p.buf[:n*bitDepthInBytes]
 
-	for i := 0; i < n; i++ {
+	for i := range n {
 		var v float32
 		switch format {
 		case FormatFloat32LE:
