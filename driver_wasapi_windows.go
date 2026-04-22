@@ -88,6 +88,7 @@ type wasapiContext struct {
 	renderClient     *_IAudioRenderClient
 	currentDeviceID  string
 	enumerator       *_IMMDeviceEnumerator
+	oomRetryCount    int
 
 	buf []float32
 
@@ -98,6 +99,8 @@ var (
 	errDeviceSwitched     = errors.New("oto: device switched")
 	errFormatNotSupported = errors.New("oto: the specified format is not supported (there is the closest format instead)")
 )
+
+const wasapiOOMRetryLimit = 3
 
 func newWASAPIContext(sampleRate, channelCount int, mux *mux.Mux, bufferSizeInBytes int) (context *wasapiContext, ferr error) {
 	t, err := newCOMThread()
@@ -177,7 +180,19 @@ func (c *wasapiContext) start() error {
 
 	go func() {
 		if err := c.loop(); err != nil {
-			if !errors.Is(err, _AUDCLNT_E_DEVICE_INVALIDATED) && !errors.Is(err, _AUDCLNT_E_RESOURCES_INVALIDATED) && !errors.Is(err, errDeviceSwitched) && !errors.Is(err, _RPC_E_DISCONNECTED) {
+			// E_OUTOFMEMORY from IAudioRenderClient::GetBuffer has been observed on Xbox.
+			// The cause is not confirmed, but it appears to be rare and recoverable, so
+			// try restarting the client. The counter is reset after any successful buffer
+			// write (see writeOnRenderThread), so this cap applies to consecutive failures
+			// without intervening progress, ensuring a stuck device surfaces instead of
+			// looping forever.
+			if errors.Is(err, _E_OUTOFMEMORY) {
+				if c.oomRetryCount >= wasapiOOMRetryLimit {
+					c.err.TryStore(err)
+					return
+				}
+				c.oomRetryCount++
+			} else if !errors.Is(err, _AUDCLNT_E_DEVICE_INVALIDATED) && !errors.Is(err, _AUDCLNT_E_RESOURCES_INVALIDATED) && !errors.Is(err, errDeviceSwitched) && !errors.Is(err, _RPC_E_DISCONNECTED) {
 				c.err.TryStore(err)
 				return
 			}
@@ -418,6 +433,7 @@ func (c *wasapiContext) writeOnRenderThread() error {
 	}
 
 	c.buf = c.buf[:0]
+	c.oomRetryCount = 0
 	return nil
 }
 

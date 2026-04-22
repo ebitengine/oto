@@ -140,7 +140,8 @@ const (
 type _WIN32_ERR uint32
 
 const (
-	_E_NOTFOUND _WIN32_ERR = 0x80070490
+	_E_NOTFOUND    _WIN32_ERR = 0x80070490
+	_E_OUTOFMEMORY _WIN32_ERR = 0x8007000e
 )
 
 func isWin32Err(hresult uint32) bool {
@@ -151,6 +152,8 @@ func (e _WIN32_ERR) Error() string {
 	switch e {
 	case _E_NOTFOUND:
 		return "E_NOTFOUND"
+	case _E_OUTOFMEMORY:
+		return "E_OUTOFMEMORY"
 	default:
 		return fmt.Sprintf("HRESULT(%d)", e)
 	}
