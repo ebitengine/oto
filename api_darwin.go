@@ -24,6 +24,7 @@ const (
 	avAudioSessionErrorCodeCannotStartPlaying    = 0x21706c61 // '!pla'
 	avAudioSessionErrorCodeCannotInterruptOthers = 0x21696e74 // '!int'
 	avAudioSessionErrorCodeSiriIsRecording       = 0x73697269 // 'siri'
+	avAudioSessionErrorCodeUnspecified           = 0x77686174 // 'what'
 )
 
 const (

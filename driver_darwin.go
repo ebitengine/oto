@@ -141,7 +141,9 @@ func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeI
 		var retryCount int
 	try:
 		if osstatus := _AudioQueueStart(c.audioQueue, nil); osstatus != noErr {
-			if osstatus == avAudioSessionErrorCodeCannotStartPlaying && retryCount < 100 {
+			if (osstatus == avAudioSessionErrorCodeCannotStartPlaying ||
+				osstatus == avAudioSessionErrorCodeUnspecified) &&
+				retryCount < 100 {
 				// TODO: use sleepTime() after investigating when this error happens.
 				time.Sleep(10 * time.Millisecond)
 				retryCount++
@@ -254,7 +256,8 @@ func (c *context) resume() error {
 try:
 	if osstatus := _AudioQueueStart(c.audioQueue, nil); osstatus != noErr {
 		if (osstatus == avAudioSessionErrorCodeCannotStartPlaying ||
-			osstatus == avAudioSessionErrorCodeCannotInterruptOthers) &&
+			osstatus == avAudioSessionErrorCodeCannotInterruptOthers ||
+			osstatus == avAudioSessionErrorCodeUnspecified) &&
 			retryCount < 30 {
 			// It is uncertain that this error is temporary or not. Then let's use exponential-time sleeping.
 			time.Sleep(sleepTime(retryCount))
