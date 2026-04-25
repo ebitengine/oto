@@ -15,6 +15,8 @@
 package oto
 
 import (
+	"sync"
+
 	"github.com/ebitengine/oto/v3/internal/mux"
 	"github.com/ebitengine/oto/v3/internal/oboe"
 )
@@ -23,6 +25,8 @@ type context struct {
 	mux *mux.Mux
 
 	err atomicError
+
+	m sync.Mutex
 }
 
 func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeInBytes int, _ string) (*context, chan struct{}, error) {
@@ -32,6 +36,9 @@ func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeI
 		mux: mux.New(sampleRate, channelCount, format),
 	}
 	go func() {
+		c.m.Lock()
+		defer c.m.Unlock()
+
 		if err := oboe.Play(sampleRate, channelCount, c.mux.ReadFloat32s, bufferSizeInBytes); err != nil {
 			c.err.TryStore(err)
 			return
@@ -42,10 +49,14 @@ func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeI
 }
 
 func (c *context) Suspend() error {
+	c.m.Lock()
+	defer c.m.Unlock()
 	return oboe.Suspend()
 }
 
 func (c *context) Resume() error {
+	c.m.Lock()
+	defer c.m.Unlock()
 	return oboe.Resume()
 }
 
