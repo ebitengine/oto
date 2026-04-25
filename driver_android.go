@@ -21,18 +21,23 @@ import (
 
 type context struct {
 	mux *mux.Mux
+
+	err atomicError
 }
 
 func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeInBytes int, _ string) (*context, chan struct{}, error) {
 	ready := make(chan struct{})
-	close(ready)
 
 	c := &context{
 		mux: mux.New(sampleRate, channelCount, format),
 	}
-	if err := oboe.Play(sampleRate, channelCount, c.mux.ReadFloat32s, bufferSizeInBytes); err != nil {
-		return nil, nil, err
-	}
+	go func() {
+		if err := oboe.Play(sampleRate, channelCount, c.mux.ReadFloat32s, bufferSizeInBytes); err != nil {
+			c.err.TryStore(err)
+			return
+		}
+		close(ready)
+	}()
 	return c, ready, nil
 }
 
@@ -45,5 +50,5 @@ func (c *context) Resume() error {
 }
 
 func (c *context) Err() error {
-	return nil
+	return c.err.Load()
 }
