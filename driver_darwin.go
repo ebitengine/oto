@@ -275,10 +275,7 @@ try:
 }
 
 func (c *context) Err() error {
-	if err := c.err.Load(); err != nil {
-		return err.(error)
-	}
-	return nil
+	return c.err.Load()
 }
 
 func render(inUserData unsafe.Pointer, inAQ _AudioQueueRef, inBuffer _AudioQueueBufferRef) {
