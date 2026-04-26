@@ -30,6 +30,11 @@ const (
 	bufferCount = 4
 
 	noErr = 0
+
+	// maxAudioQueueRebuildCount caps how many times we will rebuild the AudioQueue in
+	// response to kAudioQueueErr_QueueInvalidated before giving up. A handful is
+	// enough: a transient mediaserverd reset only invalidates the queue once.
+	maxAudioQueueRebuildCount = 5
 )
 
 func newAudioQueue(sampleRate, channelCount int, oneBufferSizeInBytes int) (_AudioQueueRef, []_AudioQueueBufferRef, error) {
@@ -73,6 +78,8 @@ type context struct {
 	audioQueue      _AudioQueueRef
 	unqueuedBuffers []_AudioQueueBufferRef
 
+	sampleRate           int
+	channelCount         int
 	oneBufferSizeInBytes int
 
 	cond *sync.Cond
@@ -111,6 +118,8 @@ func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeI
 	c := &context{
 		cond:                 sync.NewCond(&sync.Mutex{}),
 		mux:                  mux.New(sampleRate, channelCount, format),
+		sampleRate:           sampleRate,
+		channelCount:         channelCount,
 		oneBufferSizeInBytes: oneBufferSizeInBytes,
 	}
 	theContext = c
@@ -130,7 +139,7 @@ func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeI
 			}
 		}()
 
-		q, bs, err := newAudioQueue(sampleRate, channelCount, oneBufferSizeInBytes)
+		q, bs, err := newAudioQueue(c.sampleRate, c.channelCount, c.oneBufferSizeInBytes)
 		if err != nil {
 			c.err.TryStore(err)
 			return
@@ -139,8 +148,18 @@ func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeI
 		c.unqueuedBuffers = bs
 
 		var retryCount int
+		var rebuildCount int
 	try:
 		if osstatus := _AudioQueueStart(c.audioQueue, nil); osstatus != noErr {
+			if osstatus == kAudioQueueErr_QueueInvalidated && rebuildCount < maxAudioQueueRebuildCount {
+				if err := c.rebuildAudioQueue(); err != nil {
+					c.err.TryStore(err)
+					return
+				}
+				rebuildCount++
+				retryCount = 0
+				goto try
+			}
 			maxRetry := 0
 			switch osstatus {
 			case avAudioSessionErrorCodeCannotStartPlaying:
@@ -218,6 +237,19 @@ func (c *context) appendBuffer(buf32 []float32) {
 	copy(unsafe.Slice((*float32)(unsafe.Pointer(buf.mAudioData)), buf.mAudioDataByteSize/float32SizeInBytes), buf32)
 
 	if osstatus := _AudioQueueEnqueueBuffer(c.audioQueue, buf, 0, nil); osstatus != noErr {
+		if osstatus == kAudioQueueErr_QueueInvalidated {
+			// The queue was invalidated under us (typically a mediaserverd reset).
+			// Rebuild a fresh queue and start it. The audio we just rendered into
+			// `buf` is dropped — at most one buffer of glitch.
+			if err := c.rebuildAudioQueue(); err != nil {
+				c.err.TryStore(err)
+				return
+			}
+			if err := c.resume(); err != nil {
+				c.err.TryStore(err)
+			}
+			return
+		}
 		c.err.TryStore(fmt.Errorf("oto: AudioQueueEnqueueBuffer failed: %d", osstatus))
 	}
 }
@@ -250,6 +282,10 @@ func (c *context) Resume() error {
 
 func (c *context) pause() error {
 	if osstatus := _AudioQueuePause(c.audioQueue); osstatus != noErr {
+		if osstatus == kAudioQueueErr_QueueInvalidated {
+			// Rebuild a fresh stopped queue so a subsequent Resume can start it.
+			return c.rebuildAudioQueue()
+		}
 		return fmt.Errorf("oto: AudioQueuePause failed: %d", osstatus)
 	}
 	return nil
@@ -257,8 +293,17 @@ func (c *context) pause() error {
 
 func (c *context) resume() error {
 	var retryCount int
+	var rebuildCount int
 try:
 	if osstatus := _AudioQueueStart(c.audioQueue, nil); osstatus != noErr {
+		if osstatus == kAudioQueueErr_QueueInvalidated && rebuildCount < maxAudioQueueRebuildCount {
+			if err := c.rebuildAudioQueue(); err != nil {
+				return err
+			}
+			rebuildCount++
+			retryCount = 0
+			goto try
+		}
 		maxRetry := 0
 		switch osstatus {
 		case avAudioSessionErrorCodeCannotStartPlaying:
@@ -283,6 +328,34 @@ try:
 	return nil
 }
 
+// rebuildAudioQueue disposes the current AudioQueue (which may already be invalid)
+// and creates a fresh queue with new buffers. The new queue is left in the stopped
+// state — the caller is responsible for any subsequent _AudioQueueStart.
+//
+// The caller must serialize access to c.audioQueue and c.unqueuedBuffers (i.e. hold
+// c.cond.L, or be the newContext goroutine before `ready` has been closed).
+func (c *context) rebuildAudioQueue() error {
+	if c.audioQueue != 0 {
+		// kAudioQueueErr_QueueInvalidated is expected here — that's the very case
+		// we're recovering from. Anything else is unexpected and worth surfacing.
+		osstatus := _AudioQueueDispose(c.audioQueue, true)
+		c.audioQueue = 0
+		if osstatus != noErr && osstatus != kAudioQueueErr_QueueInvalidated {
+			c.unqueuedBuffers = nil
+			return fmt.Errorf("oto: AudioQueueDispose failed during rebuild: %d", osstatus)
+		}
+	}
+	c.unqueuedBuffers = nil
+
+	q, bs, err := newAudioQueue(c.sampleRate, c.channelCount, c.oneBufferSizeInBytes)
+	if err != nil {
+		return fmt.Errorf("oto: rebuilding AudioQueue failed: %w", err)
+	}
+	c.audioQueue = q
+	c.unqueuedBuffers = bs
+	return nil
+}
+
 func (c *context) Err() error {
 	return c.err.Load()
 }
@@ -290,6 +363,12 @@ func (c *context) Err() error {
 func render(inUserData unsafe.Pointer, inAQ _AudioQueueRef, inBuffer _AudioQueueBufferRef) {
 	theContext.cond.L.Lock()
 	defer theContext.cond.L.Unlock()
+	// Drop callbacks from a previously-disposed queue: after rebuildAudioQueue,
+	// late-delivered callbacks for the old queue would otherwise inject stale
+	// buffer pointers into c.unqueuedBuffers.
+	if inAQ != theContext.audioQueue {
+		return
+	}
 	theContext.unqueuedBuffers = append(theContext.unqueuedBuffers, inBuffer)
 	theContext.cond.Signal()
 }

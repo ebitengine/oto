@@ -28,6 +28,10 @@ const (
 )
 
 const (
+	kAudioQueueErr_QueueInvalidated = 0xfffefb91
+)
+
+const (
 	kAudioFormatLinearPCM = 0x6C70636D //'lpcm'
 )
 
@@ -82,6 +86,7 @@ func initializeAPI() error {
 	purego.RegisterLibFunc(&_AudioQueueEnqueueBuffer, toolbox, "AudioQueueEnqueueBuffer")
 	purego.RegisterLibFunc(&_AudioQueueStart, toolbox, "AudioQueueStart")
 	purego.RegisterLibFunc(&_AudioQueuePause, toolbox, "AudioQueuePause")
+	purego.RegisterLibFunc(&_AudioQueueDispose, toolbox, "AudioQueueDispose")
 	return nil
 }
 
@@ -94,3 +99,5 @@ var _AudioQueueEnqueueBuffer func(inAQ _AudioQueueRef, inBuffer _AudioQueueBuffe
 var _AudioQueueStart func(inAQ _AudioQueueRef, inStartTime *_AudioTimeStamp) uintptr
 
 var _AudioQueuePause func(inAQ _AudioQueueRef) uintptr
+
+var _AudioQueueDispose func(inAQ _AudioQueueRef, inImmediate bool) uintptr
