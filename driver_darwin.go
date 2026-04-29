@@ -254,30 +254,36 @@ func (c *context) appendBuffer(buf32 []float32) {
 	}
 }
 
+// Suspend returns immediately. The actual AudioQueuePause runs on a
+// background goroutine so the calling thread (typically the platform UI
+// thread) is never blocked on cond.L — which can be held for several seconds
+// while resume() retries transient AVAudioSession errors. Errors from the
+// asynchronous transition surface via Err.
 func (c *context) Suspend() error {
-	c.cond.L.Lock()
-	defer c.cond.L.Unlock()
-
-	if err := c.err.Load(); err != nil {
-		return err.(error)
-	}
-	c.toPause = true
-	c.toResume = false
-	c.cond.Signal()
-	return nil
+	err := c.err.Load()
+	go func() {
+		c.cond.L.Lock()
+		defer c.cond.L.Unlock()
+		c.toPause = true
+		c.toResume = false
+		c.cond.Signal()
+	}()
+	return err
 }
 
+// Resume returns immediately. See Suspend for the rationale; AudioQueueStart
+// (with retries on transient AVAudioSession errors on iOS) runs on a
+// background goroutine.
 func (c *context) Resume() error {
-	c.cond.L.Lock()
-	defer c.cond.L.Unlock()
-
-	if err := c.err.Load(); err != nil {
-		return err.(error)
-	}
-	c.toPause = false
-	c.toResume = true
-	c.cond.Signal()
-	return nil
+	err := c.err.Load()
+	go func() {
+		c.cond.L.Lock()
+		defer c.cond.L.Unlock()
+		c.toPause = false
+		c.toResume = true
+		c.cond.Signal()
+	}()
+	return err
 }
 
 func (c *context) pause() error {
