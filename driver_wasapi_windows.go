@@ -465,6 +465,16 @@ func (c *wasapiContext) Err() error {
 	return c.err.Load()
 }
 
+// isWASAPIDeviceTransientError reports whether err from (re)starting the client
+// indicates a temporarily unusable device rather than a permanent failure.
+func isWASAPIDeviceTransientError(err error) bool {
+	return errors.Is(err, errFormatNotSupported) ||
+		errors.Is(err, errDeviceNotFound) ||
+		errors.Is(err, _AUDCLNT_E_DEVICE_INVALIDATED) ||
+		errors.Is(err, _AUDCLNT_E_RESOURCES_INVALIDATED) ||
+		errors.Is(err, _RPC_E_DISCONNECTED)
+}
+
 func (c *wasapiContext) restart() error {
 	// Probably the driver is missing temporarily e.g. plugging out the headset.
 	// Recreate the device.
@@ -477,10 +487,9 @@ retry:
 	c.suspendedCond.L.Unlock()
 
 	if err := c.start(); err != nil {
-		// When a device is switched, the new device might not support the desired format,
-		// or all the audio devices might be disconnected.
-		// Instead of aborting this context, let's wait for the next device switch.
-		if !errors.Is(err, errFormatNotSupported) && !errors.Is(err, errDeviceNotFound) {
+		// A device can be temporarily unusable, e.g. on resume from sleep.
+		// Wait and retry instead of aborting this context.
+		if !isWASAPIDeviceTransientError(err) {
 			return err
 		}
 
