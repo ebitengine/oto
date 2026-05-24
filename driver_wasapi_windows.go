@@ -100,7 +100,20 @@ var (
 	errFormatNotSupported = errors.New("oto: the specified format is not supported (there is the closest format instead)")
 )
 
-const wasapiOOMRetryLimit = 3
+const (
+	wasapiOOMRetryLimit = 3
+
+	// wasapiRestartRetryLimit caps the transient-error re-acquisition attempts
+	// before the error is surfaced. With the backoff intervals below, this is
+	// roughly ten seconds of continuous outage.
+	wasapiRestartRetryLimit = 24
+
+	// wasapiReacquireMinInterval and wasapiReacquireMaxInterval bound the backoff
+	// between device re-acquisition attempts, each a full COM round trip. Mux
+	// draining continues at real time regardless.
+	wasapiReacquireMinInterval = 50 * time.Millisecond
+	wasapiReacquireMaxInterval = 500 * time.Millisecond
+)
 
 func newWASAPIContext(sampleRate, channelCount int, mux *mux.Mux, bufferSizeInBytes int) (context *wasapiContext, ferr error) {
 	t, err := newCOMThread()
@@ -476,29 +489,55 @@ func isWASAPIDeviceTransientError(err error) bool {
 }
 
 func (c *wasapiContext) restart() error {
-	// Probably the driver is missing temporarily e.g. plugging out the headset.
-	// Recreate the device.
+	// The device is temporarily unusable, e.g. a headset was unplugged or the
+	// machine is resuming from sleep. Recreate it, retrying transient failures a
+	// bounded number of times.
+	//
+	// The mux is drained at ~real time so recovery resumes near the current
+	// position instead of replaying a backlog, while the re-acquisition itself
+	// backs off so a longer outage does not hammer the audio service.
+	var buf [4096]float32
+	framesPerRead := len(buf) / c.channelCount
+	perRead := time.Duration(float64(time.Second) * float64(framesPerRead) / float64(c.sampleRate))
 
-retry:
-	c.suspendedCond.L.Lock()
-	for c.suspended {
-		c.suspendedCond.Wait()
-	}
-	c.suspendedCond.L.Unlock()
+	reacquireInterval := wasapiReacquireMinInterval
+	var nextReacquire time.Time // zero value: attempt immediately
+	var retryCount int
 
-	if err := c.start(); err != nil {
-		// A device can be temporarily unusable, e.g. on resume from sleep.
-		// Wait and retry instead of aborting this context.
-		if !isWASAPIDeviceTransientError(err) {
-			return err
+	for {
+		// Pause retrying entirely while suspended, and reset the retry count on
+		// resume: a long suspend must not make the next resume give up
+		// immediately.
+		c.suspendedCond.L.Lock()
+		var wasSuspended bool
+		for c.suspended {
+			wasSuspended = true
+			c.suspendedCond.Wait()
+		}
+		c.suspendedCond.L.Unlock()
+		if wasSuspended {
+			reacquireInterval = wasapiReacquireMinInterval
+			nextReacquire = time.Time{}
+			retryCount = 0
 		}
 
-		// Just read the buffer and discard it. Then, retry to search the device.
-		var buf32 [4096]float32
-		sleep := time.Duration(float64(time.Second) * float64(len(buf32)) / float64(c.channelCount) / float64(c.sampleRate))
-		c.mux.ReadFloat32s(buf32[:])
-		time.Sleep(sleep)
-		goto retry
+		if now := time.Now(); !now.Before(nextReacquire) {
+			err := c.start()
+			if err == nil {
+				return nil
+			}
+			if !isWASAPIDeviceTransientError(err) {
+				return err
+			}
+			retryCount++
+			if retryCount >= wasapiRestartRetryLimit {
+				return err
+			}
+			nextReacquire = time.Now().Add(reacquireInterval)
+			reacquireInterval = min(reacquireInterval*2, wasapiReacquireMaxInterval)
+		}
+
+		c.mux.ReadFloat32s(buf[:framesPerRead*c.channelCount])
+		time.Sleep(perRead)
 	}
-	return nil
 }
