@@ -18,129 +18,77 @@ package oto
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
-	"sync"
-
-	"github.com/jfreymuth/pulse"
 
 	"github.com/ebitengine/oto/v3/internal/mux"
 )
 
-type context struct {
-	client *pulse.Client
-	stream *pulse.PlaybackStream
-
-	suspended bool
-	cond      *sync.Cond
-
-	mux *mux.Mux
-	err atomicError
+// unixBackend is the part of a context that talks to the actual audio device.
+type unixBackend interface {
+	Suspend() error
+	Resume() error
+	Err() error
 }
 
-func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeInBytes int, applicationName string) (client *context, ready chan struct{}, err error) {
-	client = &context{
-		cond: sync.NewCond(&sync.Mutex{}),
-		mux:  mux.New(sampleRate, channelCount, format),
+// newALSAContext creates the ALSA fallback backend. driver_alsa_unix.go's init sets it on the
+// platforms where that file is built; it is nil elsewhere (e.g. OpenBSD), in which case only the
+// PulseAudio backend is attempted.
+var newALSAContext func(sampleRate, channelCount int, mux *mux.Mux, bufferSizeInBytes int) (unixBackend, error)
+
+type context struct {
+	mux     *mux.Mux
+	backend unixBackend
+
+	ready chan struct{}
+	err   atomicError
+}
+
+func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeInBytes int, applicationName string) (*context, chan struct{}, error) {
+	ctx := &context{
+		mux:   mux.New(sampleRate, channelCount, format),
+		ready: make(chan struct{}),
 	}
-	ready = make(chan struct{})
-	close(ready)
-	defer func() {
-		if client != nil && client.client != nil && err != nil {
-			client.client.Close()
+
+	// Initializing a driver might take some time, so do it asynchronously.
+	// PulseAudio is the default; if no server is reachable, fall back to ALSA.
+	go func() {
+		defer close(ctx.ready)
+
+		pc, err0 := newPulseContext(sampleRate, channelCount, ctx.mux, bufferSizeInBytes, applicationName)
+		if err0 == nil {
+			ctx.backend = pc
+			return
 		}
+
+		if newALSAContext == nil {
+			ctx.err.TryStore(err0)
+			return
+		}
+
+		ac, err1 := newALSAContext(sampleRate, channelCount, ctx.mux, bufferSizeInBytes)
+		if err1 == nil {
+			ctx.backend = ac
+			return
+		}
+
+		ctx.err.TryStore(fmt.Errorf("oto: initialization failed: PulseAudio: %w; ALSA: %w", err0, err1))
 	}()
 
-	if applicationName == "" {
-		if name, _ := os.Executable(); name != "" {
-			applicationName = filepath.Base(name)
-		} else {
-			applicationName = "Oto"
-		}
-	}
-
-	client.client, err = pulse.NewClient(pulse.ClientApplicationName(applicationName))
-	if err != nil {
-		return nil, ready, fmt.Errorf("oto: PulseAudio client initialization failed: %w", err)
-	}
-
-	options := []pulse.PlaybackOption{
-		pulse.PlaybackMediaName(applicationName),
-	}
-	switch channelCount {
-	case 1:
-		options = append(options, pulse.PlaybackMono)
-	case 2:
-		options = append(options, pulse.PlaybackStereo)
-	default:
-		return nil, ready, fmt.Errorf("oto: PulseAudio backend supports only mono or stereo output: %d", channelCount)
-	}
-	options = append(options, pulse.PlaybackSampleRate(sampleRate))
-	{
-		latency := float64(bufferSizeInBytes) / float64(sampleRate*channelCount*4)
-		if latency <= 0 {
-			// If no buffer size is specified, default to a 100ms latency.
-			// Without this, PulseAudio uses its own large default buffer (~2s),
-			// which causes a noticeable delay before audio starts playing.
-			latency = 0.1
-		}
-		options = append(options, pulse.PlaybackLatency(latency))
-	}
-
-	client.stream, err = client.client.NewPlayback(pulse.Float32Reader(client.read), options...)
-	if err != nil {
-		return nil, ready, fmt.Errorf("oto: PulseAudio playback initialization failed: %w", err)
-	}
-	client.stream.Start()
-
-	return client, ready, nil
-}
-
-func (c *context) read(buf []float32) (int, error) {
-	c.cond.L.Lock()
-	defer c.cond.L.Unlock()
-
-	for c.suspended && c.err.Load() == nil {
-		c.cond.Wait()
-	}
-	if err := c.err.Load(); err != nil {
-		return 0, err
-	}
-
-	c.mux.ReadFloat32s(buf)
-	return len(buf), nil
+	return ctx, ctx.ready, nil
 }
 
 func (c *context) Suspend() error {
-	c.cond.L.Lock()
-	defer c.cond.L.Unlock()
-
-	if err := c.err.Load(); err != nil {
-		return err
+	<-c.ready
+	if c.backend != nil {
+		return c.backend.Suspend()
 	}
-	if err := c.stream.Error(); err != nil {
-		return fmt.Errorf("oto: PulseAudio error: %w", err)
-	}
-
-	c.suspended = true
-	c.stream.Pause()
 	return nil
 }
 
 func (c *context) Resume() error {
-	c.cond.L.Lock()
-	defer c.cond.L.Unlock()
-
-	if err := c.err.Load(); err != nil {
-		return err
+	<-c.ready
+	if c.backend != nil {
+		return c.backend.Resume()
 	}
-	if err := c.stream.Error(); err != nil {
-		return fmt.Errorf("oto: PulseAudio error: %w", err)
-	}
-
-	c.suspended = false
-	c.stream.Resume()
-	c.cond.Signal()
 	return nil
 }
 
@@ -148,8 +96,15 @@ func (c *context) Err() error {
 	if err := c.err.Load(); err != nil {
 		return err
 	}
-	if err := c.stream.Error(); err != nil {
-		return fmt.Errorf("oto: PulseAudio error: %w", err)
+
+	select {
+	case <-c.ready:
+	default:
+		return nil
+	}
+
+	if c.backend != nil {
+		return c.backend.Err()
 	}
 	return nil
 }
