@@ -28,12 +28,6 @@ jobs:
         with:
           go-version: ${{ matrix.go }}
 
-      - name: Install dependencies
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install libasound2-dev
-
       - name: go vet
         if: runner.os == 'Linux'
         run: |
