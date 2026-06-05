@@ -58,6 +58,14 @@ though BSD systems are not tested well.
 
 If the PulseAudio server is not discoverable automatically, set `PULSE_SERVER`.
 
+When no PulseAudio server is reachable, Oto falls back to ALSA. This fallback also requires no Cgo:
+`libasound.so.2` is loaded dynamically at runtime, so no ALSA development headers are needed to
+build, though `libasound.so.2` itself must be present at runtime.
+
+On FreeBSD, building with `CGO_ENABLED=0` (for example when cross-compiling) additionally requires
+`-gcflags="github.com/ebitengine/purego/internal/fakecgo=-std"`; native FreeBSD builds, where Cgo
+is enabled by default, need nothing extra.
+
 ## Usage
 
 The two main components of Oto are a `Context` and `Players`. The context handles interactions with
