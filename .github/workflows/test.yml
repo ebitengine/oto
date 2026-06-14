@@ -57,6 +57,7 @@ jobs:
           # Check cross-compiling Linux binaries.
           env GOOS=linux GOARCH=amd64 go build -v ./...
           env GOOS=linux GOARCH=arm64 go build -v ./...
+
       - name: go mod vendor
         run: |
           mkdir /tmp/vendoring
