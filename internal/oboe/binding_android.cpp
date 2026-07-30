@@ -17,9 +17,10 @@
 #include "_cgo_export.h"
 #include "oboe_oboe_Oboe_android.h"
 
-#include <condition_variable>
+#include <algorithm>
+#include <chrono>
+#include <cstdint>
 #include <memory>
-#include <mutex>
 #include <thread>
 #include <vector>
 
@@ -46,18 +47,25 @@ public:
 
 private:
   Stream();
-  void Loop(int num_frames);
+  void Loop();
 
   int sample_rate_ = 0;
   int channel_num_ = 0;
 
   std::shared_ptr<oboe::AudioStream> stream_;
 
+  // fifo_ hands samples from the thread to onAudioReady. It is lock-free, so
+  // that onAudioReady never blocks on the thread.
+  //
+  // read_frames_ is the number of frames read from Go at once, and tmp_ is the
+  // buffer for one such read.
+  //
   // All the member variables other than the thread must be initialized before
   // the thread.
-  std::vector<float> buf_;
-  std::mutex mutex_;
-  std::condition_variable cond_;
+  std::unique_ptr<oboe::FifoBuffer> fifo_;
+  std::vector<float> tmp_;
+  int read_frames_ = 0;
+  std::chrono::microseconds min_wait_{0};
   std::unique_ptr<std::thread> thread_;
 };
 
@@ -94,8 +102,19 @@ const char *Stream::Play(int sample_rate, int channel_num,
   }
 
   int num_frames = stream_->getBufferSizeInFrames();
-  thread_ =
-      std::make_unique<std::thread>([this, num_frames]() { Loop(num_frames); });
+  // The multiplier is an empirical margin for low-end devices
+  // (hajimehoshi/ebiten@4276e296).
+  read_frames_ = num_frames * 3;
+  tmp_.resize(read_frames_ * channel_num_);
+  // The fifo frees space only when onAudioReady runs, so waiting for less than
+  // one callback cannot make more space available.
+  min_wait_ = std::chrono::microseconds(std::max<int64_t>(
+      static_cast<int64_t>(num_frames) * 1000000 / sample_rate_, 1000));
+  // The capacity leaves room for one whole read on top of one whole read that
+  // is still queued.
+  fifo_ = std::make_unique<oboe::FifoBuffer>(channel_num_ * sizeof(float),
+                                             read_frames_ * 2);
+  thread_ = std::make_unique<std::thread>([this]() { Loop(); });
 
   // What if the buffer size is not enough?
   if (oboe::Result result = stream_->start(); result != oboe::Result::OK) {
@@ -142,35 +161,31 @@ const char *Stream::Close() {
 oboe::DataCallbackResult Stream::onAudioReady(oboe::AudioStream *oboe_stream,
                                               void *audio_data,
                                               int32_t num_frames) {
-  size_t num = num_frames * channel_num_;
-  // TODO: Do not use a lock in onAudioReady.
+  // This runs on a real-time thread, where locking, allocating or blocking can
+  // glitch the audio or time the stream out. readNow fills the remainder with
+  // silence when the thread has not kept up.
   // https://google.github.io/oboe/reference/classoboe_1_1_audio_stream_data_callback.html#ad8a3a9f609df5fd3a5d885cbe1b2204d
-  {
-    std::unique_lock<std::mutex> lock{mutex_};
-    cond_.wait(lock, [this, num] { return buf_.size() >= num; });
-    std::copy(buf_.begin(), buf_.begin() + num,
-              reinterpret_cast<float *>(audio_data));
-    buf_.erase(buf_.begin(), buf_.begin() + num);
-    cond_.notify_one();
-  }
+  fifo_->readNow(audio_data, num_frames);
   return oboe::DataCallbackResult::Continue;
 }
 
 Stream::Stream() = default;
 
-void Stream::Loop(int num_frames) {
-  std::vector<float> tmp(num_frames * channel_num_ * 3);
+void Stream::Loop() {
   for (;;) {
-    {
-      std::unique_lock<std::mutex> lock{mutex_};
-      cond_.wait(lock, [this, &tmp] { return buf_.size() < tmp.size(); });
+    int empty_frames = static_cast<int>(fifo_->getBufferCapacityInFrames() -
+                                        fifo_->getFullFramesAvailable());
+    if (empty_frames < read_frames_) {
+      // Wait for onAudioReady to consume enough frames for one whole read.
+      // Sleeping here is fine: only onAudioReady must avoid blocking.
+      std::chrono::microseconds wait{
+          static_cast<int64_t>(read_frames_ - empty_frames) * 1000000 /
+          sample_rate_};
+      std::this_thread::sleep_for(std::max(wait, min_wait_));
+      continue;
     }
-    oto_oboe_read(&tmp[0], tmp.size());
-    {
-      std::lock_guard<std::mutex> lock{mutex_};
-      buf_.insert(buf_.end(), tmp.begin(), tmp.end());
-      cond_.notify_one();
-    }
+    oto_oboe_read(&tmp_[0], tmp_.size());
+    fifo_->write(&tmp_[0], read_frames_);
   }
 }
 
