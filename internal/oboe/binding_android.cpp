@@ -17,6 +17,8 @@
 #include "_cgo_export.h"
 #include "oboe_oboe_Oboe_android.h"
 
+#include <android/api-level.h>
+
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
@@ -57,6 +59,18 @@ bool Retryable(oboe::Result result) {
 
 Status StatusFromResult(oboe::Result result) {
   return Status{oboe::convertToText(result), Retryable(result)};
+}
+
+// AudioApiForSdk returns the API to play with.
+oboe::AudioApi AudioApiForSdk() {
+  // AAudio binds a stream to one device and disconnects it when the routing
+  // changes, which onErrorAfterClose recovers from. Before Android R the
+  // disconnection was not always reported (google/oboe#893), leaving no way to
+  // notice, so OpenSL ES, which follows the routing on its own, is used there.
+  if (oboe::getSdkVersion() < __ANDROID_API_R__) {
+    return oboe::AudioApi::OpenSLES;
+  }
+  return oboe::AudioApi::Unspecified;
 }
 
 class Stream : public oboe::AudioStreamDataCallback,
@@ -134,6 +148,7 @@ Status Stream::OpenLocked() {
 
   oboe::AudioStreamBuilder builder;
   builder.setDirection(oboe::Direction::Output)
+      ->setAudioApi(AudioApiForSdk())
       ->setPerformanceMode(oboe::PerformanceMode::LowLatency)
       ->setSharingMode(oboe::SharingMode::Shared)
       ->setFormat(oboe::AudioFormat::Float)
