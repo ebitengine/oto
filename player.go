@@ -31,6 +31,8 @@ func (p *Player) Pause() {
 }
 
 // Play starts its playing if it doesn't play.
+//
+// Play returns immediately without reading the source.
 func (p *Player) Play() {
 	p.player.Play()
 }

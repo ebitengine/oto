@@ -214,23 +214,10 @@ func (p *Player) Play() {
 }
 
 func (p *playerImpl) Play() {
-	// Goroutines don't work efficiently on Windows. Avoid using them (hajimehoshi/ebiten#1768).
-	if runtime.GOOS == "windows" {
-		p.m.Lock()
-		defer p.m.Unlock()
+	p.m.Lock()
+	defer p.m.Unlock()
 
-		p.playImpl()
-	} else {
-		ch := make(chan struct{})
-		go func() {
-			p.m.Lock()
-			defer p.m.Unlock()
-
-			close(ch)
-			p.playImpl()
-		}()
-		<-ch
-	}
+	p.playImpl()
 }
 
 func (p *Player) SetBufferSize(bufferSize int) {
@@ -295,6 +282,10 @@ func (p *playerImpl) removeFromPlayers() {
 	p.mux.removePlayer(p)
 }
 
+// playImpl starts playing without reading the source.
+// The buffer is filled by the mux loop.
+//
+// When playImpl is called, the mutex m must be locked.
 func (p *playerImpl) playImpl() {
 	if p.err != nil {
 		return
@@ -302,34 +293,10 @@ func (p *playerImpl) playImpl() {
 	if p.state != playerPaused {
 		return
 	}
-	p.state = playerPlay
-
-	if !p.eof {
-		buf := getBufferFromPool(p.bufferSize)
-		defer theBufPool.Put(buf)
-
-		if p.buf == nil {
-			p.buf = (*getBufferFromPool(p.bufferSize))[:0]
-		}
-
-		for len(p.buf) < p.bufferSize {
-			n, err := p.read(*buf)
-			if err != nil && err != io.EOF {
-				p.setErrorImpl(err)
-				return
-			}
-			p.buf = append(p.buf, (*buf)[:n]...)
-			if err == io.EOF {
-				p.eof = true
-				break
-			}
-		}
-	}
-
 	if p.eof && len(p.buf) == 0 {
-		p.returnBufferToPool()
-		p.state = playerPaused
+		return
 	}
+	p.state = playerPlay
 
 	p.addToPlayers()
 }
@@ -557,6 +524,7 @@ func (p *playerImpl) readSourceToBuffer() int {
 	if err == io.EOF {
 		p.eof = true
 		if len(p.buf) == 0 {
+			p.returnBufferToPool()
 			p.state = playerPaused
 		}
 	}
