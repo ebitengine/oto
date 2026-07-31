@@ -61,6 +61,27 @@ Status StatusFromResult(oboe::Result result) {
   return Status{oboe::convertToText(result), Retryable(result)};
 }
 
+// Retry calls attempt until it succeeds or fails for a reason that would not
+// go away, and returns the status of the last call.
+template <typename F> Status Retry(F attempt) {
+  constexpr int kTryCount = 5;
+  std::chrono::milliseconds interval{20};
+  Status status;
+  for (int i = 0; i < kTryCount; i++) {
+    if (i > 0) {
+      // The device might not be ready yet. Wait longer each time so that one
+      // that takes a while is still reached.
+      std::this_thread::sleep_for(interval);
+      interval *= 2;
+    }
+    status = attempt();
+    if (!status.msg || !status.retryable) {
+      break;
+    }
+  }
+  return status;
+}
+
 // AudioApiForSdk returns the API to play with.
 oboe::AudioApi AudioApiForSdk() {
   // AAudio binds a stream to one device and disconnects it when the routing
@@ -97,12 +118,15 @@ private:
   Stream();
   void Loop();
 
-  // OpenLocked, StartLocked and ReopenLocked must be called with mutex_ held.
+  // OpenLocked, StartLocked, PlayLocked and ReopenLocked must be called with
+  // mutex_ held.
   Status OpenLocked();
   Status StartLocked();
+  Status PlayLocked();
   Status ReopenLocked();
 
-  // Reopen calls ReopenLocked under mutex_.
+  // TryPlay and Reopen call PlayLocked and ReopenLocked under mutex_.
+  Status TryPlay();
   Status Reopen();
 
   int sample_rate_ = 0;
@@ -178,33 +202,47 @@ Status Stream::StartLocked() {
   return Status{};
 }
 
+Status Stream::PlayLocked() {
+  // Drop a stream left by an attempt that opened one but could not start it.
+  stream_.reset();
+  if (Status status = OpenLocked(); status.msg) {
+    return status;
+  }
+
+  if (!fifo_) {
+    int num_frames = stream_->getBufferSizeInFrames();
+    // The multiplier is an empirical margin for low-end devices
+    // (hajimehoshi/ebiten@4276e296).
+    read_frames_ = num_frames * 3;
+    tmp_.resize(read_frames_ * channel_num_);
+    // The fifo frees space only when onAudioReady runs, so waiting for less
+    // than one callback cannot make more space available.
+    min_wait_ = std::chrono::microseconds(std::max<int64_t>(
+        static_cast<int64_t>(num_frames) * 1000000 / sample_rate_, 1000));
+    // The capacity leaves room for one whole read on top of one whole read
+    // that is still queued.
+    fifo_ = std::make_unique<oboe::FifoBuffer>(channel_num_ * sizeof(float),
+                                               read_frames_ * 2);
+    thread_ = std::make_unique<std::thread>([this]() { Loop(); });
+  }
+
+  return StartLocked();
+}
+
+Status Stream::TryPlay() {
+  std::lock_guard<std::mutex> lock{mutex_};
+  return PlayLocked();
+}
+
 const char *Stream::Play(int sample_rate, int channel_num,
                          int buffer_size_in_bytes) {
   sample_rate_ = sample_rate;
   channel_num_ = channel_num;
   buffer_size_in_bytes_ = buffer_size_in_bytes;
 
-  std::lock_guard<std::mutex> lock{mutex_};
-  if (Status status = OpenLocked(); status.msg) {
-    return status.msg;
-  }
-
-  int num_frames = stream_->getBufferSizeInFrames();
-  // The multiplier is an empirical margin for low-end devices
-  // (hajimehoshi/ebiten@4276e296).
-  read_frames_ = num_frames * 3;
-  tmp_.resize(read_frames_ * channel_num_);
-  // The fifo frees space only when onAudioReady runs, so waiting for less than
-  // one callback cannot make more space available.
-  min_wait_ = std::chrono::microseconds(std::max<int64_t>(
-      static_cast<int64_t>(num_frames) * 1000000 / sample_rate_, 1000));
-  // The capacity leaves room for one whole read on top of one whole read that
-  // is still queued.
-  fifo_ = std::make_unique<oboe::FifoBuffer>(channel_num_ * sizeof(float),
-                                             read_frames_ * 2);
-  thread_ = std::make_unique<std::thread>([this]() { Loop(); });
-
-  return StartLocked().msg;
+  // A device can be busy while this process is starting, e.g. when another app
+  // is still holding it, which passes on its own.
+  return Retry([this]() { return TryPlay(); }).msg;
 }
 
 Status Stream::ReopenLocked() {
@@ -235,19 +273,11 @@ void Stream::onErrorAfterClose(oboe::AudioStream *oboe_stream,
   // keep playing is to open a new one. Oboe calls this on a thread it created
   // for the error, so that needs no thread of its own.
   Status status = StatusFromResult(result);
-  constexpr int kTryCount = 5;
-  std::chrono::milliseconds interval{20};
-  for (int i = 0; i < kTryCount && status.retryable; i++) {
-    if (i > 0) {
-      // The device might not be ready yet. Wait outside of the lock, and wait
-      // longer each time so that a device that takes a while is still reached.
-      std::this_thread::sleep_for(interval);
-      interval *= 2;
-    }
-    status = Reopen();
-    if (!status.msg) {
-      return;
-    }
+  if (status.retryable) {
+    status = Retry([this]() { return Reopen(); });
+  }
+  if (!status.msg) {
+    return;
   }
   // Playing is over and nothing else reports this, so hand it to Go.
   oto_oboe_error(const_cast<char *>(status.msg));
