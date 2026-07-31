@@ -141,7 +141,7 @@ func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeI
 
 		q, bs, err := newAudioQueue(c.sampleRate, c.channelCount, c.oneBufferSizeInBytes)
 		if err != nil {
-			c.err.TryStore(err)
+			c.err.Join(err)
 			return
 		}
 		c.audioQueue = q
@@ -153,7 +153,7 @@ func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeI
 		if osstatus := _AudioQueueStart(c.audioQueue, nil); osstatus != noErr {
 			if osstatus == kAudioQueueErr_QueueInvalidated && rebuildCount < maxAudioQueueRebuildCount {
 				if err := c.rebuildAudioQueue(); err != nil {
-					c.err.TryStore(err)
+					c.err.Join(err)
 					return
 				}
 				rebuildCount++
@@ -172,7 +172,7 @@ func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeI
 				retryCount++
 				goto try
 			}
-			c.err.TryStore(fmt.Errorf("oto: AudioQueueStart failed at newContext: %d", osstatus))
+			c.err.Join(fmt.Errorf("oto: AudioQueueStart failed at newContext: %d", osstatus))
 			return
 		}
 
@@ -215,7 +215,7 @@ func (c *context) appendBuffer(buf32 []float32) {
 
 	if c.toPause {
 		if err := c.pause(); err != nil {
-			c.err.TryStore(err)
+			c.err.Join(err)
 		}
 		c.toPause = false
 		return
@@ -223,7 +223,7 @@ func (c *context) appendBuffer(buf32 []float32) {
 
 	if c.toResume {
 		if err := c.resume(); err != nil {
-			c.err.TryStore(err)
+			c.err.Join(err)
 		}
 		c.toResume = false
 		return
@@ -242,15 +242,15 @@ func (c *context) appendBuffer(buf32 []float32) {
 			// Rebuild a fresh queue and start it. The audio we just rendered into
 			// `buf` is dropped — at most one buffer of glitch.
 			if err := c.rebuildAudioQueue(); err != nil {
-				c.err.TryStore(err)
+				c.err.Join(err)
 				return
 			}
 			if err := c.resume(); err != nil {
-				c.err.TryStore(err)
+				c.err.Join(err)
 			}
 			return
 		}
-		c.err.TryStore(fmt.Errorf("oto: AudioQueueEnqueueBuffer failed: %d", osstatus))
+		c.err.Join(fmt.Errorf("oto: AudioQueueEnqueueBuffer failed: %d", osstatus))
 	}
 }
 

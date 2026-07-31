@@ -243,7 +243,7 @@ func (c *alsaContext) readAndWrite(buf32 []float32) bool {
 			n = int(_snd_pcm_recover(c.handle, int32(n), 1))
 		}
 		if n < 0 {
-			c.err.TryStore(alsaError("snd_pcm_writei or snd_pcm_recover", int32(n)))
+			c.err.Join(alsaError("snd_pcm_writei or snd_pcm_recover", int32(n)))
 			return false
 		}
 		buf = buf[n*c.channelCount:]

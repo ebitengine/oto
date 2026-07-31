@@ -201,17 +201,17 @@ func (c *wasapiContext) start() error {
 			// looping forever.
 			if errors.Is(err, _E_OUTOFMEMORY) {
 				if c.oomRetryCount >= wasapiOOMRetryLimit {
-					c.err.TryStore(err)
+					c.err.Join(err)
 					return
 				}
 				c.oomRetryCount++
 			} else if !errors.Is(err, _AUDCLNT_E_DEVICE_INVALIDATED) && !errors.Is(err, _AUDCLNT_E_RESOURCES_INVALIDATED) && !errors.Is(err, errDeviceSwitched) && !errors.Is(err, _RPC_E_DISCONNECTED) {
-				c.err.TryStore(err)
+				c.err.Join(err)
 				return
 			}
 
 			if err := c.restart(); err != nil {
-				c.err.TryStore(err)
+				c.err.Join(err)
 				return
 			}
 		}

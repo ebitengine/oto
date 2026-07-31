@@ -67,7 +67,7 @@ func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeI
 			return
 		}
 
-		ctx.err.TryStore(fmt.Errorf("oto: initialization failed: WASAPI: %w, WinMM: %w", err0, err1))
+		ctx.err.Join(fmt.Errorf("oto: initialization failed: WASAPI: %w, WinMM: %w", err0, err1))
 	}()
 
 	return ctx, ctx.ready, nil

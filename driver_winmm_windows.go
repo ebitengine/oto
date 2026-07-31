@@ -217,7 +217,7 @@ func (c *winmmContext) waitUntilHeaderAvailable() bool {
 func (c *winmmContext) loop() {
 	defer func() {
 		if err := c.closeLoop(); err != nil {
-			c.err.TryStore(err)
+			c.err.Join(err)
 		}
 	}()
 	for {
@@ -290,7 +290,7 @@ func (c *winmmContext) appendBuffers() {
 				// This error can happen when e.g. a new HDMI connection is detected (#51).
 				// TODO: Retry later.
 			}
-			c.err.TryStore(fmt.Errorf("oto: Queueing the header failed: %v", err))
+			c.err.Join(fmt.Errorf("oto: Queueing the header failed: %v", err))
 		}
 		return
 	}

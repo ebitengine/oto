@@ -60,7 +60,7 @@ func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeI
 		}
 
 		if newALSAContext == nil {
-			ctx.err.TryStore(err0)
+			ctx.err.Join(err0)
 			return
 		}
 
@@ -70,7 +70,7 @@ func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeI
 			return
 		}
 
-		ctx.err.TryStore(fmt.Errorf("oto: initialization failed: PulseAudio: %w; ALSA: %w", err0, err1))
+		ctx.err.Join(fmt.Errorf("oto: initialization failed: PulseAudio: %w; ALSA: %w", err0, err1))
 	}()
 
 	return ctx, ctx.ready, nil

@@ -15,6 +15,7 @@
 package oto
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"sync"
@@ -170,12 +171,16 @@ type atomicError struct {
 	m   sync.Mutex
 }
 
-func (a *atomicError) TryStore(err error) {
+// Join records err in addition to the errors recorded so far. A nil err is
+// ignored.
+func (a *atomicError) Join(err error) {
+	if err == nil {
+		return
+	}
+
 	a.m.Lock()
 	defer a.m.Unlock()
-	if a.err == nil {
-		a.err = err
-	}
+	a.err = errors.Join(a.err, err)
 }
 
 func (a *atomicError) Load() error {
