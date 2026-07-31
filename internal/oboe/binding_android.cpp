@@ -273,14 +273,18 @@ void Stream::onErrorAfterClose(oboe::AudioStream *oboe_stream,
   // keep playing is to open a new one. Oboe calls this on a thread it created
   // for the error, so that needs no thread of its own.
   Status status = StatusFromResult(result);
-  if (status.retryable) {
-    status = Retry([this]() { return Reopen(); });
-  }
-  if (!status.msg) {
+  if (!status.retryable) {
+    oto_oboe_error(const_cast<char *>(status.msg));
     return;
   }
-  // Playing is over and nothing else reports this, so hand it to Go.
+
+  Status reopened = Retry([this]() { return Reopen(); });
+  if (!reopened.msg) {
+    return;
+  }
+  // Report what stopped playing as well as why it could not be resumed.
   oto_oboe_error(const_cast<char *>(status.msg));
+  oto_oboe_error(const_cast<char *>(reopened.msg));
 }
 
 const char *Stream::Pause() {
