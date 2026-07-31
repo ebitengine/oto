@@ -28,7 +28,39 @@ namespace {
 
 class Player;
 
-class Stream : public oboe::AudioStreamDataCallback {
+// Status is the outcome of an operation. msg is null on success, and describes
+// the failure otherwise. retryable is false for a configuration error, which
+// would fail the same way however many times it is tried.
+struct Status {
+  const char *msg = nullptr;
+  bool retryable = false;
+};
+
+// Retryable reports whether opening a stream again might succeed later. An
+// unknown result is treated as retryable: the number of attempts is bounded,
+// so treating a permanent error as temporary costs little, while the opposite
+// gives up on a device that would have come back.
+bool Retryable(oboe::Result result) {
+  switch (result) {
+  case oboe::Result::ErrorIllegalArgument:
+  case oboe::Result::ErrorInvalidFormat:
+  case oboe::Result::ErrorInvalidHandle:
+  case oboe::Result::ErrorInvalidRate:
+  case oboe::Result::ErrorNull:
+  case oboe::Result::ErrorOutOfRange:
+  case oboe::Result::ErrorUnimplemented:
+    return false;
+  default:
+    return true;
+  }
+}
+
+Status StatusFromResult(oboe::Result result) {
+  return Status{oboe::convertToText(result), Retryable(result)};
+}
+
+class Stream : public oboe::AudioStreamDataCallback,
+               public oboe::AudioStreamErrorCallback {
 public:
   // GetInstance returns the instance of Stream. Only one Stream object is used
   // in one process. It is because multiple streams can be problematic in both
@@ -44,21 +76,42 @@ public:
   oboe::DataCallbackResult onAudioReady(oboe::AudioStream *oboe_stream,
                                         void *audio_data,
                                         int32_t num_frames) override;
+  void onErrorAfterClose(oboe::AudioStream *oboe_stream,
+                         oboe::Result result) override;
 
 private:
   Stream();
   void Loop();
 
+  // OpenLocked, StartLocked and ReopenLocked must be called with mutex_ held.
+  Status OpenLocked();
+  Status StartLocked();
+  Status ReopenLocked();
+
+  // Reopen calls ReopenLocked under mutex_.
+  Status Reopen();
+
   int sample_rate_ = 0;
   int channel_num_ = 0;
+  int buffer_size_in_bytes_ = 0;
 
+  // mutex_ guards stream_ and suspended_. onAudioReady never takes it:
+  // onAudioReady is a real-time callback and must not block, and it touches
+  // neither of them.
+  std::mutex mutex_;
   std::shared_ptr<oboe::AudioStream> stream_;
+  bool suspended_ = false;
 
   // fifo_ hands samples from the thread to onAudioReady. It is lock-free, so
   // that onAudioReady never blocks on the thread.
   //
   // read_frames_ is the number of frames read from Go at once, and tmp_ is the
   // buffer for one such read.
+  //
+  // These are sized from the first stream and are never resized, so that
+  // onAudioReady and Loop can read them without locking. A stream opened again
+  // after a disconnection reuses them, and fifo_ absorbs a device whose burst
+  // size differs.
   //
   // All the member variables other than the thread must be initialized before
   // the thread.
@@ -74,31 +127,51 @@ Stream &Stream::GetInstance() {
   return *stream;
 }
 
+Status Stream::OpenLocked() {
+  if (stream_) {
+    return Status{};
+  }
+
+  oboe::AudioStreamBuilder builder;
+  builder.setDirection(oboe::Direction::Output)
+      ->setPerformanceMode(oboe::PerformanceMode::LowLatency)
+      ->setSharingMode(oboe::SharingMode::Shared)
+      ->setFormat(oboe::AudioFormat::Float)
+      ->setChannelCount(channel_num_)
+      ->setSampleRate(sample_rate_)
+      ->setDataCallback(this)
+      ->setErrorCallback(this);
+  if (buffer_size_in_bytes_) {
+    int buffer_size_in_frames = buffer_size_in_bytes_ / channel_num_ / 4;
+    builder.setBufferCapacityInFrames(buffer_size_in_frames);
+  }
+  oboe::Result result = builder.openStream(stream_);
+  if (result != oboe::Result::OK) {
+    return StatusFromResult(result);
+  }
+  if (stream_->getSharingMode() != oboe::SharingMode::Shared) {
+    return Status{"oboe::SharingMode::Shared is not available", false};
+  }
+  return Status{};
+}
+
+Status Stream::StartLocked() {
+  // What if the buffer size is not enough?
+  if (oboe::Result result = stream_->start(); result != oboe::Result::OK) {
+    return StatusFromResult(result);
+  }
+  return Status{};
+}
+
 const char *Stream::Play(int sample_rate, int channel_num,
                          int buffer_size_in_bytes) {
   sample_rate_ = sample_rate;
   channel_num_ = channel_num;
+  buffer_size_in_bytes_ = buffer_size_in_bytes;
 
-  if (!stream_) {
-    oboe::AudioStreamBuilder builder;
-    builder.setDirection(oboe::Direction::Output)
-        ->setPerformanceMode(oboe::PerformanceMode::LowLatency)
-        ->setSharingMode(oboe::SharingMode::Shared)
-        ->setFormat(oboe::AudioFormat::Float)
-        ->setChannelCount(channel_num_)
-        ->setSampleRate(sample_rate_)
-        ->setDataCallback(this);
-    if (buffer_size_in_bytes) {
-      int buffer_size_in_frames = buffer_size_in_bytes / channel_num / 4;
-      builder.setBufferCapacityInFrames(buffer_size_in_frames);
-    }
-    oboe::Result result = builder.openStream(stream_);
-    if (result != oboe::Result::OK) {
-      return oboe::convertToText(result);
-    }
-  }
-  if (stream_->getSharingMode() != oboe::SharingMode::Shared) {
-    return "oboe::SharingMode::Shared is not available";
+  std::lock_guard<std::mutex> lock{mutex_};
+  if (Status status = OpenLocked(); status.msg) {
+    return status.msg;
   }
 
   int num_frames = stream_->getBufferSizeInFrames();
@@ -116,14 +189,58 @@ const char *Stream::Play(int sample_rate, int channel_num,
                                              read_frames_ * 2);
   thread_ = std::make_unique<std::thread>([this]() { Loop(); });
 
-  // What if the buffer size is not enough?
-  if (oboe::Result result = stream_->start(); result != oboe::Result::OK) {
-    return oboe::convertToText(result);
+  return StartLocked().msg;
+}
+
+Status Stream::ReopenLocked() {
+  stream_.reset();
+  if (Status status = OpenLocked(); status.msg) {
+    return status;
   }
-  return nullptr;
+  // No callback can run between opening and starting, so the fifo can be
+  // emptied here. Its contents were mixed for the old device and would
+  // otherwise be played late on the new one.
+  fifo_->setReadCounter(fifo_->getWriteCounter());
+  // A stream opened again while suspended stays paused until Resume, so that a
+  // disconnection cannot make a backgrounded app audible.
+  if (suspended_) {
+    return Status{};
+  }
+  return StartLocked();
+}
+
+Status Stream::Reopen() {
+  std::lock_guard<std::mutex> lock{mutex_};
+  return ReopenLocked();
+}
+
+void Stream::onErrorAfterClose(oboe::AudioStream *oboe_stream,
+                               oboe::Result result) {
+  // Oboe stopped and closed the stream before calling this, so the only way to
+  // keep playing is to open a new one. Oboe calls this on a thread it created
+  // for the error, so that needs no thread of its own.
+  Status status = StatusFromResult(result);
+  constexpr int kTryCount = 5;
+  std::chrono::milliseconds interval{20};
+  for (int i = 0; i < kTryCount && status.retryable; i++) {
+    if (i > 0) {
+      // The device might not be ready yet. Wait outside of the lock, and wait
+      // longer each time so that a device that takes a while is still reached.
+      std::this_thread::sleep_for(interval);
+      interval *= 2;
+    }
+    status = Reopen();
+    if (!status.msg) {
+      return;
+    }
+  }
+  // Playing is over and nothing else reports this, so hand it to Go.
+  oto_oboe_error(const_cast<char *>(status.msg));
 }
 
 const char *Stream::Pause() {
+  std::lock_guard<std::mutex> lock{mutex_};
+  suspended_ = true;
   if (!stream_) {
     return nullptr;
   }
@@ -134,17 +251,23 @@ const char *Stream::Pause() {
 }
 
 const char *Stream::Resume() {
-  if (!stream_) {
+  std::lock_guard<std::mutex> lock{mutex_};
+  suspended_ = false;
+  if (!fifo_) {
     return "Play is not called yet at Resume";
   }
-  if (oboe::Result result = stream_->start(); result != oboe::Result::OK) {
-    return oboe::convertToText(result);
+  if (!stream_) {
+    // A disconnection that could not be recovered leaves no stream. Coming back
+    // to the foreground is a good moment to reach a device again, and it gives
+    // the caller the reason when that still fails.
+    return ReopenLocked().msg;
   }
-  return nullptr;
+  return StartLocked().msg;
 }
 
 const char *Stream::Close() {
   // Nobody calls this so far.
+  std::lock_guard<std::mutex> lock{mutex_};
   if (!stream_) {
     return nullptr;
   }

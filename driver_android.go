@@ -39,7 +39,7 @@ func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeI
 		c.m.Lock()
 		defer c.m.Unlock()
 
-		if err := oboe.Play(sampleRate, channelCount, c.mux.ReadFloat32s, bufferSizeInBytes); err != nil {
+		if err := oboe.Play(sampleRate, channelCount, c.mux.ReadFloat32s, c.err.TryStore, bufferSizeInBytes); err != nil {
 			c.err.TryStore(err)
 			return
 		}

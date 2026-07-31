@@ -29,11 +29,18 @@ import (
 	"unsafe"
 )
 
-var theReadFunc func(buf []float32)
+var (
+	theReadFunc  func(buf []float32)
+	theErrorFunc func(err error)
+)
 
-func Play(sampleRate int, channelCount int, readFunc func(buf []float32), bufferSizeInBytes int) error {
-	// Play can invoke the callback. Set the callback before Play.
+// Play starts playing. errorFunc is called when playing stops for a reason
+// that cannot be recovered from, which can happen at any time after Play
+// returns.
+func Play(sampleRate int, channelCount int, readFunc func(buf []float32), errorFunc func(err error), bufferSizeInBytes int) error {
+	// Play can invoke the callbacks. Set the callbacks before Play.
 	theReadFunc = readFunc
+	theErrorFunc = errorFunc
 	if msg := C.oto_oboe_Play(C.int(sampleRate), C.int(channelCount), C.int(bufferSizeInBytes)); msg != nil {
 		return fmt.Errorf("oboe: Play failed: %s", C.GoString(msg))
 	}
@@ -57,4 +64,9 @@ func Resume() error {
 //export oto_oboe_read
 func oto_oboe_read(buf *C.float, len C.size_t) {
 	theReadFunc(unsafe.Slice((*float32)(unsafe.Pointer(buf)), len))
+}
+
+//export oto_oboe_error
+func oto_oboe_error(msg *C.char) {
+	theErrorFunc(fmt.Errorf("oboe: %s", C.GoString(msg)))
 }
