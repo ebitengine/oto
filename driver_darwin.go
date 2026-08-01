@@ -30,11 +30,6 @@ const (
 	bufferCount = 4
 
 	noErr = 0
-
-	// maxAudioQueueRebuildCount caps how many times we will rebuild the AudioQueue in
-	// response to kAudioQueueErr_QueueInvalidated before giving up. A handful is
-	// enough: a transient mediaserverd reset only invalidates the queue once.
-	maxAudioQueueRebuildCount = 5
 )
 
 func newAudioQueue(sampleRate, channelCount int, oneBufferSizeInBytes int) (_AudioQueueRef, []_AudioQueueBufferRef, error) {
@@ -74,6 +69,24 @@ func newAudioQueue(sampleRate, channelCount int, oneBufferSizeInBytes int) (_Aud
 	return audioQueue, bufs, nil
 }
 
+// queueState is the actual state of the AudioQueue.
+type queueState int
+
+const (
+	// queueStateStopped indicates that the AudioQueue is not running and a start attempt
+	// may be made at any time.
+	queueStateStopped queueState = iota
+
+	// queueStateStartDeferred indicates that a start attempt failed with a temporary
+	// error and the next attempt waits for a timer (deferStart) or an audio session
+	// notification.
+	queueStateStartDeferred
+
+	// queueStateRunning indicates that the AudioQueue was started and has not been
+	// paused or invalidated since.
+	queueStateRunning
+)
+
 type context struct {
 	audioQueue      _AudioQueueRef
 	unqueuedBuffers []_AudioQueueBufferRef
@@ -84,8 +97,26 @@ type context struct {
 
 	cond *sync.Cond
 
-	toPause  bool
-	toResume bool
+	// toSuspend indicates that Suspend was requested and the AudioQueue must not
+	// run until Resume is requested. This is the desired state requested by the user,
+	// and is independent of state, the actual state of the queue.
+	toSuspend bool
+
+	// state is the actual state of the AudioQueue.
+	state queueState
+
+	// toRebuildQueue indicates that the AudioQueue was invalidated and must be
+	// recreated before the next start. This concerns the validity of the queue object
+	// and is independent of state, which concerns the start/stop lifecycle.
+	toRebuildQueue bool
+
+	// startRetries is the number of consecutive start attempts that failed with a
+	// temporary error.
+	startRetries int
+
+	// startRetryTimer is the pending timer scheduled by deferStart, or nil. It is
+	// stopped and cleared when the deferral is ended by another path (endDeferStart).
+	startRetryTimer *time.Timer
 
 	mux *mux.Mux
 	err atomicError
@@ -132,52 +163,17 @@ func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeI
 		runtime.LockOSThread()
 		defer runtime.UnlockOSThread()
 
-		var readyClosed bool
-		defer func() {
-			if !readyClosed {
-				close(ready)
-			}
-		}()
-
 		q, bs, err := newAudioQueue(c.sampleRate, c.channelCount, c.oneBufferSizeInBytes)
 		if err != nil {
 			c.err.Join(err)
+			close(ready)
 			return
 		}
-		c.audioQueue = q
-		c.unqueuedBuffers = bs
+		c.initialize(q, bs)
 
-		var retryCount int
-		var rebuildCount int
-	try:
-		if osstatus := _AudioQueueStart(c.audioQueue, nil); osstatus != noErr {
-			if osstatus == kAudioQueueErr_QueueInvalidated && rebuildCount < maxAudioQueueRebuildCount {
-				if err := c.rebuildAudioQueue(); err != nil {
-					c.err.Join(err)
-					return
-				}
-				rebuildCount++
-				retryCount = 0
-				goto try
-			}
-			maxRetry := 0
-			switch osstatus {
-			case avAudioSessionErrorCodeCannotStartPlaying:
-				maxRetry = 100
-			case avAudioSessionErrorCodeUnspecified:
-				maxRetry = 30
-			}
-			if retryCount < maxRetry {
-				time.Sleep(sleepTime(retryCount))
-				retryCount++
-				goto try
-			}
-			c.err.Join(fmt.Errorf("oto: AudioQueueStart failed at newContext: %d", osstatus))
-			return
-		}
+		setupSessionNotifications()
 
 		close(ready)
-		readyClosed = true
 
 		c.loop()
 	}()
@@ -185,14 +181,46 @@ func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeI
 	return c, ready, nil
 }
 
+// initialize sets the freshly created AudioQueue and attempts the first start.
+// A temporary start failure is not an error: the start is deferred and retried by loop.
+func (c *context) initialize(q _AudioQueueRef, bs []_AudioQueueBufferRef) {
+	c.cond.L.Lock()
+	defer c.cond.L.Unlock()
+
+	c.audioQueue = q
+	c.unqueuedBuffers = bs
+	c.start()
+}
+
 func (c *context) wait() bool {
 	c.cond.L.Lock()
 	defer c.cond.L.Unlock()
 
-	for len(c.unqueuedBuffers) == 0 && c.err.Load() == nil && !c.toPause && !c.toResume {
+	for c.idle() && c.err.Load() == nil {
 		c.cond.Wait()
 	}
 	return c.err.Load() == nil
+}
+
+// idle reports whether step has nothing to do for now: the actual queue state matches
+// the requested state and no buffer is waiting to be filled. It must be kept consistent
+// with step: whenever idle returns false, step must change some state.
+// The caller must hold c.cond.L.
+func (c *context) idle() bool {
+	if c.toRebuildQueue {
+		return false
+	}
+	if c.toSuspend {
+		return c.state != queueStateRunning
+	}
+	switch c.state {
+	case queueStateStopped:
+		return false
+	case queueStateRunning:
+		return len(c.unqueuedBuffers) == 0
+	default:
+		return true
+	}
 }
 
 func (c *context) loop() {
@@ -201,11 +229,11 @@ func (c *context) loop() {
 		if !c.wait() {
 			return
 		}
-		c.appendBuffer(buf32)
+		c.step(buf32)
 	}
 }
 
-func (c *context) appendBuffer(buf32 []float32) {
+func (c *context) step(buf32 []float32) {
 	c.cond.L.Lock()
 	defer c.cond.L.Unlock()
 
@@ -213,19 +241,36 @@ func (c *context) appendBuffer(buf32 []float32) {
 		return
 	}
 
-	if c.toPause {
-		if err := c.pause(); err != nil {
+	if c.toRebuildQueue {
+		if err := c.rebuildAudioQueue(); err != nil {
 			c.err.Join(err)
+			return
 		}
-		c.toPause = false
+		c.toRebuildQueue = false
+		if c.state == queueStateRunning {
+			c.state = queueStateStopped
+		}
 		return
 	}
 
-	if c.toResume {
-		if err := c.resume(); err != nil {
-			c.err.Join(err)
+	if c.toSuspend {
+		if c.state == queueStateRunning {
+			if err := c.pause(); err != nil {
+				c.err.Join(err)
+			}
 		}
-		c.toResume = false
+		return
+	}
+
+	switch c.state {
+	case queueStateStopped:
+		c.start()
+		return
+	case queueStateStartDeferred:
+		return
+	}
+
+	if len(c.unqueuedBuffers) == 0 {
 		return
 	}
 
@@ -238,16 +283,10 @@ func (c *context) appendBuffer(buf32 []float32) {
 
 	if osstatus := _AudioQueueEnqueueBuffer(c.audioQueue, buf, 0, nil); osstatus != noErr {
 		if osstatus == kAudioQueueErr_QueueInvalidated {
-			// The queue was invalidated under us (typically a mediaserverd reset).
-			// Rebuild a fresh queue and start it. The audio we just rendered into
-			// `buf` is dropped — at most one buffer of glitch.
-			if err := c.rebuildAudioQueue(); err != nil {
-				c.err.Join(err)
-				return
-			}
-			if err := c.resume(); err != nil {
-				c.err.Join(err)
-			}
+			// The queue was invalidated (typically a mediaserverd reset).
+			// The audio just rendered into `buf` is dropped: at most one buffer of glitch.
+			c.state = queueStateStopped
+			c.toRebuildQueue = true
 			return
 		}
 		c.err.Join(fmt.Errorf("oto: AudioQueueEnqueueBuffer failed: %d", osstatus))
@@ -256,94 +295,162 @@ func (c *context) appendBuffer(buf32 []float32) {
 
 // Suspend returns immediately. The actual AudioQueuePause runs on a
 // background goroutine so the calling thread (typically the platform UI
-// thread) is never blocked on cond.L — which can be held for several seconds
-// while resume() retries transient AVAudioSession errors. Errors from the
-// asynchronous transition surface via Err.
+// thread) never blocks on AudioToolbox calls. Errors from the asynchronous
+// transition surface via Err.
 func (c *context) Suspend() error {
 	err := c.err.Load()
 	go func() {
 		c.cond.L.Lock()
 		defer c.cond.L.Unlock()
-		c.toPause = true
-		c.toResume = false
+		c.toSuspend = true
 		c.cond.Signal()
 	}()
 	return err
 }
 
 // Resume returns immediately. See Suspend for the rationale; AudioQueueStart
-// (with retries on transient AVAudioSession errors on iOS) runs on a
-// background goroutine.
+// runs on a background goroutine.
 func (c *context) Resume() error {
 	err := c.err.Load()
 	go func() {
 		c.cond.L.Lock()
 		defer c.cond.L.Unlock()
-		c.toPause = false
-		c.toResume = true
+		c.toSuspend = false
+		// Attempt the start right away even if a retry is pending with a backoff.
+		c.endDeferStart()
+		c.startRetries = 0
 		c.cond.Signal()
 	}()
 	return err
 }
 
+// pause pauses the AudioQueue and updates c.state.
+// The caller must hold c.cond.L.
 func (c *context) pause() error {
 	if osstatus := _AudioQueuePause(c.audioQueue); osstatus != noErr {
 		if osstatus == kAudioQueueErr_QueueInvalidated {
-			// Rebuild a fresh stopped queue so a subsequent Resume can start it.
-			return c.rebuildAudioQueue()
+			c.state = queueStateStopped
+			c.toRebuildQueue = true
+			return nil
 		}
 		return fmt.Errorf("oto: AudioQueuePause failed: %d", osstatus)
 	}
+	c.state = queueStateStopped
 	return nil
 }
 
-func (c *context) resume() error {
-	var retryCount int
-	var rebuildCount int
-try:
-	if osstatus := _AudioQueueStart(c.audioQueue, nil); osstatus != noErr {
-		if osstatus == kAudioQueueErr_QueueInvalidated && rebuildCount < maxAudioQueueRebuildCount {
-			if err := c.rebuildAudioQueue(); err != nil {
-				return err
-			}
-			rebuildCount++
-			retryCount = 0
-			goto try
-		}
-		maxRetry := 0
-		switch osstatus {
-		case avAudioSessionErrorCodeCannotStartPlaying:
-			maxRetry = 100
-		case avAudioSessionErrorCodeCannotInterruptOthers,
-			avAudioSessionErrorCodeUnspecified:
-			maxRetry = 30
-		}
-		if retryCount < maxRetry {
-			// It is uncertain that this error is temporary or not. Then let's use exponential-time sleeping.
-			time.Sleep(sleepTime(retryCount))
-			retryCount++
-			goto try
-		}
-		if osstatus == avAudioSessionErrorCodeSiriIsRecording {
-			// As this error should be temporary, it should be OK to use a short time for sleep anytime.
-			time.Sleep(10 * time.Millisecond)
-			goto try
-		}
-		return fmt.Errorf("oto: AudioQueueStart failed at Resume: %d", osstatus)
+// start attempts to start the AudioQueue once.
+//
+// On success, c.state becomes queueStateRunning. When the start fails with a temporary error, such
+// as an audio session that cannot be activated because the application is in the
+// background, another application owns the audio session, or media services are
+// restarting, the start is deferred: playback stays silent and the attempt is repeated
+// until it succeeds (#285). Any other failure is fatal and recorded in c.err.
+//
+// The caller must hold c.cond.L.
+func (c *context) start() {
+	osstatus := _AudioQueueStart(c.audioQueue, nil)
+	if osstatus == noErr {
+		c.state = queueStateRunning
+		c.startRetries = 0
+		return
 	}
-	return nil
+
+	switch osstatus {
+	case kAudioQueueErr_QueueInvalidated:
+		// The queue died (typically a mediaserverd reset). Recreate it before the next
+		// attempt.
+		c.toRebuildQueue = true
+		c.deferStart()
+	case avAudioSessionErrorCodeCannotStartPlaying,
+		avAudioSessionErrorCodeCannotInterruptOthers,
+		avAudioSessionErrorCodeSiriIsRecording,
+		avAudioSessionErrorCodeUnspecified,
+		kAudioHardwareIllegalOperationError:
+		// The audio session cannot be activated now. This state can last arbitrarily
+		// long (e.g. as long as the application stays in the background), so no retry
+		// limit applies.
+		c.deferStart()
+	default:
+		c.err.Join(fmt.Errorf("oto: AudioQueueStart failed: %d", osstatus))
+	}
+}
+
+// deferStart schedules the next start attempt after a backoff delay. Ending the
+// deferral earlier, e.g. on an audio session notification, is done via endDeferStart.
+// The caller must hold c.cond.L.
+func (c *context) deferStart() {
+	c.state = queueStateStartDeferred
+	d := startRetryDelay(c.startRetries)
+	c.startRetries++
+	var t *time.Timer
+	t = time.AfterFunc(d, func() {
+		c.cond.L.Lock()
+		defer c.cond.L.Unlock()
+		if c.startRetryTimer != t {
+			// The deferral this timer belonged to was already ended by endDeferStart.
+			return
+		}
+		c.startRetryTimer = nil
+		if c.state == queueStateStartDeferred {
+			c.state = queueStateStopped
+		}
+		c.cond.Signal()
+	})
+	c.startRetryTimer = t
+}
+
+// endDeferStart ends a pending deferral, if any: the timer scheduled by deferStart is
+// stopped and the state goes back to queueStateStopped so that the next start attempt
+// can happen immediately.
+// The caller must hold c.cond.L, and must call c.cond.Signal after completing all of
+// its state changes.
+func (c *context) endDeferStart() {
+	if c.startRetryTimer != nil {
+		c.startRetryTimer.Stop()
+		c.startRetryTimer = nil
+	}
+	if c.state == queueStateStartDeferred {
+		c.state = queueStateStopped
+	}
+}
+
+// restartFromNotification requests an immediate start attempt in response to an audio
+// session notification: any backoff pending from deferStart is canceled and the retry
+// counter is reset. rebuild indicates that the AudioQueue must be recreated first.
+func (c *context) restartFromNotification(rebuild bool) {
+	c.cond.L.Lock()
+	defer c.cond.L.Unlock()
+
+	if rebuild {
+		c.toRebuildQueue = true
+	}
+	c.endDeferStart()
+	if !c.toSuspend {
+		// The queue might not be running even if the state says so: the system stops
+		// the queue when an interruption begins, without notifying the queue's owner,
+		// so queueStateRunning only means that the last AudioQueueStart succeeded.
+		// Whether the queue is still running cannot be queried reliably, so
+		// conservatively treat the queue as stopped and let loop call AudioQueueStart
+		// again. This can happen during a usual play, e.g. when the application
+		// becomes active without having been interrupted. In that case the extra
+		// AudioQueueStart on the running queue just returns noErr, and playback is not
+		// disturbed.
+		c.state = queueStateStopped
+	}
+	c.startRetries = 0
+	c.cond.Signal()
 }
 
 // rebuildAudioQueue disposes the current AudioQueue (which may already be invalid)
 // and creates a fresh queue with new buffers. The new queue is left in the stopped
-// state — the caller is responsible for any subsequent _AudioQueueStart.
+// state.
 //
-// The caller must serialize access to c.audioQueue and c.unqueuedBuffers (i.e. hold
-// c.cond.L, or be the newContext goroutine before `ready` has been closed).
+// The caller must hold c.cond.L.
 func (c *context) rebuildAudioQueue() error {
 	if c.audioQueue != 0 {
-		// kAudioQueueErr_QueueInvalidated is expected here — that's the very case
-		// we're recovering from. Anything else is unexpected and worth surfacing.
+		// kAudioQueueErr_QueueInvalidated is expected here: that is the very case
+		// being recovered from. Anything else is unexpected and worth surfacing.
 		osstatus := _AudioQueueDispose(c.audioQueue, true)
 		c.audioQueue = 0
 		if osstatus != noErr && osstatus != kAudioQueueErr_QueueInvalidated {
@@ -379,15 +486,17 @@ func render(inUserData unsafe.Pointer, inAQ _AudioQueueRef, inBuffer _AudioQueue
 	theContext.cond.Signal()
 }
 
-func sleepTime(count int) time.Duration {
-	switch count {
-	case 0:
+func startRetryDelay(count int) time.Duration {
+	switch {
+	case count == 0:
 		return 10 * time.Millisecond
-	case 1:
+	case count == 1:
 		return 20 * time.Millisecond
-	case 2:
+	case count == 2:
 		return 50 * time.Millisecond
-	default:
+	case count < 10:
 		return 100 * time.Millisecond
+	default:
+		return time.Second
 	}
 }

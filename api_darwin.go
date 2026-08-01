@@ -32,6 +32,13 @@ const (
 )
 
 const (
+	// kAudioHardwareIllegalOperationError is returned by AudioQueueStart when the
+	// operation is not possible at the moment, e.g. while media services are
+	// restarting (#242).
+	kAudioHardwareIllegalOperationError = 0x6e6f7065 // 'nope'
+)
+
+const (
 	kAudioFormatLinearPCM = 0x6C70636D //'lpcm'
 )
 
@@ -87,6 +94,9 @@ func initializeAPI() error {
 	purego.RegisterLibFunc(&_AudioQueueStart, toolbox, "AudioQueueStart")
 	purego.RegisterLibFunc(&_AudioQueuePause, toolbox, "AudioQueuePause")
 	purego.RegisterLibFunc(&_AudioQueueDispose, toolbox, "AudioQueueDispose")
+
+	initializeSessionAPI()
+
 	return nil
 }
 
