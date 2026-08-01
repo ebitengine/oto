@@ -30,8 +30,9 @@ var (
 	theErrorFunc func(err error)
 )
 
-// Play starts playing. errorFunc is called when playing stops for a reason
-// that cannot be recovered from, which can happen at any time after Play
+// Play starts playing. Playing starts as soon as an audio device is available,
+// which can be after Play returns. errorFunc is called when playing stops for a
+// reason that cannot be recovered from, which can happen at any time after Play
 // returns.
 func Play(sampleRate int, channelCount int, readFunc func(buf []float32), errorFunc func(err error), bufferSizeInBytes int) error {
 	// Play can invoke the callbacks. Set the callbacks before Play.
@@ -50,6 +51,8 @@ func Suspend() error {
 	return nil
 }
 
+// Resume resumes playing. Playing resumes as soon as an audio device is
+// available, which can be after Resume returns.
 func Resume() error {
 	if msg := C.oto_oboe_Resume(); msg != nil {
 		return fmt.Errorf("oboe: Resume failed: %s", C.GoString(msg))
