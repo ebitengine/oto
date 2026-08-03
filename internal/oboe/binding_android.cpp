@@ -99,7 +99,8 @@ enum class State {
   kRunning,
 };
 
-// AudioApiForSdk returns the API to play with.
+// AudioApiForSdk returns the API to play with on the running version of
+// Android.
 oboe::AudioApi AudioApiForSdk() {
   // AAudio binds a stream to one device and disconnects it when the routing
   // changes, which onErrorAfterClose recovers from. Before Android R the
@@ -158,6 +159,11 @@ private:
   std::condition_variable cond_;
 
   std::shared_ptr<oboe::AudioStream> stream_;
+
+  // audio_api_ is the API stream_ is opened with. It falls back to OpenSL ES
+  // for good once AAudio refuses to play.
+  oboe::AudioApi audio_api_ = AudioApiForSdk();
+
   State state_ = State::kStopped;
   bool suspended_ = false;
   bool play_called_ = false;
@@ -203,7 +209,7 @@ Stream &Stream::GetInstance() {
 Status Stream::OpenLocked() {
   oboe::AudioStreamBuilder builder;
   builder.setDirection(oboe::Direction::Output)
-      ->setAudioApi(AudioApiForSdk())
+      ->setAudioApi(audio_api_)
       ->setPerformanceMode(oboe::PerformanceMode::LowLatency)
       ->setSharingMode(oboe::SharingMode::Shared)
       ->setFormat(oboe::AudioFormat::Float)
@@ -293,11 +299,21 @@ Status Stream::StartLocked() {
   return Status{};
 }
 
-// StartOrDeferLocked starts playing, and hands the next attempt to
-// LoopStartRetry when it fails for a reason that can pass. The returned status
-// is set only for a failure that would happen again however long it is retried.
+// StartOrDeferLocked starts playing. A failure that can pass hands the next
+// attempt to LoopStartRetry, and a failure that cannot falls back to OpenSL ES.
+// The returned status is set only for a failure that no further attempt would
+// recover from.
 Status Stream::StartOrDeferLocked() {
   Status status = StartLocked();
+  if (status.msg && !status.retryable &&
+      audio_api_ != oboe::AudioApi::OpenSLES) {
+    // Some devices refuse an AAudio stream for a configuration that plays
+    // everywhere else (google/oboe#1293). OpenSL ES, which followed the same
+    // configuration on every device before AAudio, is tried before playing is
+    // given up on, and takes over for the rest of the process.
+    audio_api_ = oboe::AudioApi::OpenSLES;
+    status = StartLocked();
+  }
   if (status.msg && status.retryable) {
     DeferStartLocked();
     return Status{};
