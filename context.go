@@ -159,7 +159,9 @@ func (c *Context) Resume() error {
 	return c.context.Resume()
 }
 
-// Err returns the current error.
+// Err returns an error that occurred in the audio driver, if any.
+// Errors reported by Err are fatal: once Err returns a non-nil error,
+// this context is no longer usable.
 //
 // Err is concurrent-safe.
 func (c *Context) Err() error {

@@ -65,7 +65,11 @@ func (p *Player) BufferedSize() int {
 	return p.player.BufferedSize()
 }
 
-// Err returns an error if this player has an error.
+// Err returns an error that occurred while reading the source.
+// Reaching the end of the source (io.EOF) is not treated as an error.
+//
+// Once Err returns a non-nil error, this player is closed and no longer usable,
+// and Err keeps returning the same error.
 func (p *Player) Err() error {
 	if err := p.player.Err(); err != nil {
 		return fmt.Errorf("oto: audio error: %w", err)
