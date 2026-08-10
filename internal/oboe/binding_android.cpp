@@ -33,8 +33,9 @@ namespace {
 class Player;
 
 // Status is the outcome of an operation. msg is null on success, and describes
-// the failure otherwise. retryable is false for a configuration error, which
-// would fail the same way however many times it is tried.
+// the failure otherwise. retryable, which is meaningful only for a failure, is
+// false for a configuration error, which would fail the same way however many
+// times it is tried.
 struct Status {
   const char *msg = nullptr;
   bool retryable = false;
@@ -62,6 +63,12 @@ bool Retryable(oboe::Result result) {
 Status StatusFromResult(oboe::Result result) {
   return Status{oboe::convertToText(result), Retryable(result)};
 }
+
+// kStableRunDuration is how long a stream must keep playing for its start to
+// count as a success. A stream that goes away sooner reached the device
+// without being able to use it, so the delay before the next attempt keeps
+// growing.
+constexpr std::chrono::seconds kStableRunDuration{3};
 
 // StartRetryDelay returns how long to wait before the next start attempt after
 // count consecutive failures. The first delays are short, for a device that is
@@ -151,7 +158,7 @@ private:
   int buffer_size_in_bytes_ = 0;
 
   // mutex_ guards the stream and the state that follows it, down to
-  // deferred_until_. onAudioReady never takes it: onAudioReady is a real-time
+  // running_since_. onAudioReady never takes it: onAudioReady is a real-time
   // callback and must not block, and it touches none of them.
   std::mutex mutex_;
 
@@ -168,11 +175,16 @@ private:
   bool suspended_ = false;
   bool play_called_ = false;
 
-  // start_retries_ is the number of consecutive start attempts that failed for
-  // a reason that can pass, and deferred_until_ is when the next one may
-  // happen. Both are meaningful only while state_ is kStartDeferred.
+  // start_retries_ is the number of start attempts since the last one that
+  // played for kStableRunDuration, and deferred_until_ is when the next one
+  // may happen. deferred_until_ is meaningful only while state_ is
+  // kStartDeferred.
   int start_retries_ = 0;
   std::chrono::steady_clock::time_point deferred_until_;
+
+  // running_since_ is when the current run started. It is meaningful only
+  // while state_ is kRunning.
+  std::chrono::steady_clock::time_point running_since_;
 
   // fifo_ hands samples from read_thread_ to onAudioReady. It is lock-free, so
   // that onAudioReady never blocks on read_thread_.
@@ -288,8 +300,11 @@ Status Stream::StartLocked() {
   if (Status status = EnsureStreamLocked(); status.msg) {
     return status;
   }
-  // What if the buffer size is not enough?
-  if (oboe::Result result = stream_->start(); result != oboe::Result::OK) {
+  // The zero timeout requests the start without waiting for the stream to
+  // reach the started state. mutex_ is held here, and Pause and Resume take it
+  // on the caller's UI thread, so nothing under it may wait on a device. A
+  // stream that never starts reports it through the error callback.
+  if (oboe::Result result = stream_->start(0); result != oboe::Result::OK) {
     // A stream disconnected while paused reports it here: no callback runs for
     // a paused stream, so a device that goes away in the background is noticed
     // only at start.
@@ -318,9 +333,13 @@ Status Stream::StartOrDeferLocked() {
     DeferStartLocked();
     return Status{};
   }
-  state_ = status.msg ? State::kStopped : State::kRunning;
-  start_retries_ = 0;
-  return status;
+  if (status.msg) {
+    state_ = State::kStopped;
+    return status;
+  }
+  state_ = State::kRunning;
+  running_since_ = std::chrono::steady_clock::now();
+  return Status{};
 }
 
 // DeferStartLocked schedules the next start attempt.
@@ -356,13 +375,19 @@ void Stream::onErrorAfterClose(oboe::AudioStream *oboe_stream,
   // thread of its own.
   Status status = StatusFromResult(result);
 
-  Status restarted;
   {
     std::lock_guard<std::mutex> lock{mutex_};
     if (stream_.get() != oboe_stream) {
       // This error belongs to a stream that was replaced already, e.g. by a
       // Resume that found it disconnected.
       return;
+    }
+    // A run that lasted long enough is a success, so that a device that plays
+    // and goes away once is reached again at the shortest delay.
+    if (state_ == State::kRunning &&
+        std::chrono::steady_clock::now() - running_since_ >=
+            kStableRunDuration) {
+      start_retries_ = 0;
     }
     // Oboe stopped and closed the stream before calling this, so the only way
     // to keep playing is to open a new one.
@@ -371,19 +396,19 @@ void Stream::onErrorAfterClose(oboe::AudioStream *oboe_stream,
     // A stream that goes away while suspended stays closed until Resume, so
     // that a disconnection cannot make a backgrounded app audible.
     if (status.retryable && !suspended_) {
-      restarted = StartOrDeferLocked();
+      // Opening again waits for the same delay as a start that failed. A
+      // stream that keeps going away as soon as it starts would otherwise be
+      // opened again as fast as the device can lose it.
+      DeferStartLocked();
+      return;
     }
   }
 
-  if (status.retryable && !restarted.msg) {
+  if (!status.msg || status.retryable) {
     return;
   }
-  // Report what stopped playing, and why it cannot play again when that is
-  // known as well.
+  // Report what stopped playing.
   oto_oboe_error(const_cast<char *>(status.msg));
-  if (restarted.msg) {
-    oto_oboe_error(const_cast<char *>(restarted.msg));
-  }
 }
 
 const char *Stream::Pause() {
@@ -398,7 +423,11 @@ const char *Stream::Pause() {
     return nullptr;
   }
   state_ = State::kStopped;
-  if (oboe::Result result = stream_->pause(); result != oboe::Result::OK) {
+  // The zero timeout requests the pause without waiting for the stream to
+  // reach the paused state. This runs on the caller's UI thread, where waiting
+  // on a device is what an ANR is made of, and the request alone is what stops
+  // the samples from being consumed.
+  if (oboe::Result result = stream_->pause(0); result != oboe::Result::OK) {
     // Pausing fails on a stream that was disconnected, which cannot play
     // either. Closing it keeps the process silent, and Resume opens another
     // one.
