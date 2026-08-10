@@ -418,28 +418,28 @@ func (c *context) endDeferStart() {
 // restartFromNotification requests an immediate start attempt in response to an audio
 // session notification: any backoff pending from deferStart is canceled and the retry
 // counter is reset. rebuild indicates that the AudioQueue must be recreated first.
+//
+// It returns immediately: an observer runs on the thread that posts the notification,
+// the main thread for UIApplicationDidBecomeActiveNotification, and loop holds the
+// lock across AudioToolbox calls.
 func (c *context) restartFromNotification(rebuild bool) {
-	c.cond.L.Lock()
-	defer c.cond.L.Unlock()
+	go func() {
+		c.cond.L.Lock()
+		defer c.cond.L.Unlock()
 
-	if rebuild {
-		c.toRebuildQueue = true
-	}
-	c.endDeferStart()
-	if !c.toSuspend {
-		// The queue might not be running even if the state says so: the system stops
-		// the queue when an interruption begins, without notifying the queue's owner,
-		// so queueStateRunning only means that the last AudioQueueStart succeeded.
-		// Whether the queue is still running cannot be queried reliably, so
-		// conservatively treat the queue as stopped and let loop call AudioQueueStart
-		// again. This can happen during a usual play, e.g. when the application
-		// becomes active without having been interrupted. In that case the extra
-		// AudioQueueStart on the running queue just returns noErr, and playback is not
-		// disturbed.
-		c.state = queueStateStopped
-	}
-	c.startRetries = 0
-	c.cond.Signal()
+		if rebuild {
+			c.toRebuildQueue = true
+		}
+		c.endDeferStart()
+		if !c.toSuspend {
+			// An interruption stops the queue without notifying its owner, and whether
+			// it is still running cannot be queried, so let loop start it again. A
+			// start on a running queue returns noErr.
+			c.state = queueStateStopped
+		}
+		c.startRetries = 0
+		c.cond.Signal()
+	}()
 }
 
 // rebuildAudioQueue disposes the current AudioQueue (which may already be invalid)
