@@ -589,7 +589,8 @@ AAudioLoader::signature_I_PSCPM AAudioLoader::load_I_PSCPM(const char *functionN
 // which is the first version to support Android B (API 36).
 #if __NDK_MAJOR__ >= 30
 
-    ASSERT_INT32(AAudio_DeviceType);
+    // Oto: NDK 30 declares AAudio_DeviceType as an enum with an explicit underlying type,
+    // so ASSERT_INT32 no longer holds (https://github.com/google/oboe/issues/2406).
     static_assert((int32_t)DeviceType::BuiltinEarpiece == AAUDIO_DEVICE_BUILTIN_EARPIECE, ERRMSG);
     static_assert((int32_t)DeviceType::BuiltinSpeaker == AAUDIO_DEVICE_BUILTIN_SPEAKER, ERRMSG);
     static_assert((int32_t)DeviceType::WiredHeadset == AAUDIO_DEVICE_WIRED_HEADSET, ERRMSG);

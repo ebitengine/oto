@@ -113,7 +113,8 @@ typedef int32_t aaudio_policy_t;
 #endif
 
 // TODO: find the first NDK version containing the following values
-#if OBOE_USING_NDK && __NDK_MAJOR__ <= 30
+// Oto: NDK 30 declares the types below (https://github.com/google/oboe/issues/2406).
+#if OBOE_USING_NDK && __NDK_MAJOR__ < 30
 typedef enum AAudio_FallbackMode : int32_t {
     AAUDIO_FALLBACK_MODE_DEFAULT = 0,
     AAUDIO_FALLBACK_MODE_MUTE = 1,
