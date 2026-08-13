@@ -31,6 +31,33 @@ import (
 
 const oboeVersion = "1.10.0"
 
+type patch struct {
+	old string
+	new string
+}
+
+// patches is a set of replacements applied to the copied Oboe files, keyed by the output file name.
+//
+// Oboe 1.10.0 does not compile with NDK 30: the NDK already declares the AAudio types that Oboe
+// defines for itself, and AAudio_DeviceType is now an enum instead of int32_t.
+// See https://github.com/google/oboe/issues/2406.
+var patches = map[string][]patch{
+	"oboe_aaudio_AAudioLoader_android.h": {
+		{
+			old: `#if OBOE_USING_NDK && __NDK_MAJOR__ <= 30`,
+			new: `// Oto: NDK 30 declares the types below (https://github.com/google/oboe/issues/2406).
+#if OBOE_USING_NDK && __NDK_MAJOR__ < 30`,
+		},
+	},
+	"oboe_aaudio_AAudioLoader_android.cpp": {
+		{
+			old: `    ASSERT_INT32(AAudio_DeviceType);`,
+			new: `    // Oto: NDK 30 declares AAudio_DeviceType as an enum with an explicit underlying type,
+    // so ASSERT_INT32 no longer holds (https://github.com/google/oboe/issues/2406).`,
+		},
+	},
+}
+
 func main() {
 	if err := run(); err != nil {
 		panic(err)
@@ -131,6 +158,8 @@ func prepareOboe(tmp string) error {
 
 	reInclude := regexp.MustCompile(`(?m)^#include\s+([<"])(.+)[>"]$`)
 
+	patched := map[string]struct{}{}
+
 	fmt.Printf("Copying *.cpp and *.h files\n")
 	for _, dir := range []string{"src", "include"} {
 		dir := dir
@@ -197,6 +226,14 @@ func prepareOboe(tmp string) error {
 				return inc
 			})
 
+			for _, p := range patches[outfn] {
+				if !bytes.Contains(in, []byte(p.old)) {
+					return fmt.Errorf("%s: patch not applicable: %s", outfn, p.old)
+				}
+				in = bytes.Replace(in, []byte(p.old), []byte(p.new), 1)
+				patched[outfn] = struct{}{}
+			}
+
 			out, err := os.Create(outfn)
 			if err != nil {
 				return err
@@ -210,6 +247,12 @@ func prepareOboe(tmp string) error {
 			return nil
 		}); err != nil {
 			return err
+		}
+	}
+
+	for f := range patches {
+		if _, ok := patched[f]; !ok {
+			return fmt.Errorf("%s: patch target not found", f)
 		}
 	}
 
