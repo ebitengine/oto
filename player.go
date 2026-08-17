@@ -43,8 +43,11 @@ func (p *Player) IsPlaying() bool {
 }
 
 // Reset clears the underlying buffer and pauses its playing.
+// After Reset returns, this player does not use the source until Play or Seek is called,
+// so the source can be closed safely.
+// Reset blocks until an ongoing read from the source finishes, if any.
 //
-// Deprecated: use Pause or Seek instead.
+// Reset was deprecated as of v2.3, and was undeprecated as of v3.5.
 func (p *Player) Reset() {
 	p.player.Reset()
 }
