@@ -30,6 +30,15 @@ func (p *Player) Pause() {
 	p.player.Pause()
 }
 
+// PauseAndStopReading pauses its playing and stops reading the source.
+// After PauseAndStopReading returns, this player does not read the source until Play or Seek is called,
+// so the source can be closed safely.
+// The buffered data is kept, and Play resumes playing without a gap.
+// PauseAndStopReading blocks until an ongoing read from the source finishes, if any.
+func (p *Player) PauseAndStopReading() {
+	p.player.PauseAndStopReading()
+}
+
 // Play starts its playing if it doesn't play.
 //
 // Play returns immediately without reading the source.
@@ -43,11 +52,8 @@ func (p *Player) IsPlaying() bool {
 }
 
 // Reset clears the underlying buffer and pauses its playing.
-// After Reset returns, this player does not use the source until Play or Seek is called,
-// so the source can be closed safely.
-// Reset blocks until an ongoing read from the source finishes, if any.
 //
-// Reset was deprecated as of v2.3, and was undeprecated as of v3.5.
+// Deprecated: as of v2.3. Use [Player.Pause], [Player.PauseAndStopReading], or [Player.Seek] instead.
 func (p *Player) Reset() {
 	p.player.Reset()
 }

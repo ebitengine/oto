@@ -124,8 +124,9 @@ func NewContext(options *NewContextOptions) (*Context, chan struct{}, error) {
 // Read data from r is queued to the player's underlying buffer.
 // The underlying buffer is consumed by its playing.
 // Then, r's position and the current playing position don't necessarily match.
-// If you want to clear the underlying buffer for some reasons e.g., you want to seek the position of r,
-// call the player's Reset function.
+// If you want to seek the position of r, call the player's Seek function,
+// which also clears the underlying buffer.
+// If you want to stop using r e.g., you want to close r, call the player's PauseAndStopReading function.
 //
 // You cannot share r by multiple players.
 //

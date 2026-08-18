@@ -167,7 +167,7 @@ const (
 	playerPaused playerState = iota
 
 	// playerPausedAndStopReading is a paused state where the player must not read the source.
-	// This state is entered by Reset or Seek and exited by Play.
+	// This state is entered by PauseAndStopReading, Reset, or Seek, and exited by Play.
 	playerPausedAndStopReading
 
 	// playerPlay is a state where the player is playing.
@@ -192,6 +192,10 @@ type playerImpl struct {
 	// readCond is signaled when reading becomes false.
 	reading  bool
 	readCond *sync.Cond
+
+	// srcGen is a generation counter of the source position.
+	// The result of a read that started at an older generation is stale and must be discarded.
+	srcGen int
 
 	m sync.Mutex
 }
@@ -331,6 +335,36 @@ func (p *playerImpl) Pause() {
 	p.state = playerPaused
 }
 
+func (p *Player) PauseAndStopReading() {
+	p.p.PauseAndStopReading()
+}
+
+func (p *playerImpl) PauseAndStopReading() {
+	p.m.Lock()
+	defer p.m.Unlock()
+
+	p.pauseAndStopReadingImpl()
+}
+
+// pauseAndStopReadingImpl pauses playing and waits until an ongoing read from the source finishes.
+// The buffer is kept as it is.
+//
+// When pauseAndStopReadingImpl is called, the mutex m must be locked.
+func (p *playerImpl) pauseAndStopReadingImpl() {
+	if p.state == playerClosed {
+		return
+	}
+
+	p.state = playerPausedAndStopReading
+	p.removeFromPlayers()
+
+	// Wait until an ongoing read from the source finishes.
+	// The source must not be read after this returns (#288).
+	for p.reading {
+		p.readCond.Wait()
+	}
+}
+
 func (p *Player) Seek(offset int64, whence int) (int64, error) {
 	return p.p.Seek(offset, whence)
 }
@@ -345,10 +379,12 @@ func (p *playerImpl) Seek(offset int64, whence int) (int64, error) {
 	}
 
 	// Reset the internal buffer.
+	// The result of an ongoing read, if any, is data at the old position and must be discarded.
 	if p.state != playerClosed {
 		p.state = playerPausedAndStopReading
 		p.buf = p.buf[:0]
 		p.eof = false
+		p.srcGen++
 		p.removeFromPlayers()
 	}
 
@@ -368,17 +404,7 @@ func (p *playerImpl) Reset() {
 	p.m.Lock()
 	defer p.m.Unlock()
 
-	if p.state == playerClosed {
-		return
-	}
-	p.state = playerPausedAndStopReading
-	p.removeFromPlayers()
-
-	// Wait until an ongoing read from the source finishes.
-	// The source must not be read after Reset returns (#288).
-	for p.reading {
-		p.readCond.Wait()
-	}
+	p.pauseAndStopReadingImpl()
 
 	// Clear the buffer states after waiting, as a read that was in flight might have
 	// added data to the buffer or reached the end of the source.
@@ -541,13 +567,14 @@ func (p *playerImpl) readSourceToBuffer() int {
 	buf := getBufferFromPool(p.bufferSize)
 	defer theBufPool.Put(buf)
 
+	gen := p.srcGen
 	p.reading = true
 	n, err := p.read(*buf)
 	p.reading = false
 	p.readCond.Broadcast()
 
-	// Reset or Close might be called while reading. In this case, discard the read result.
-	if p.state == playerClosed || p.state == playerPausedAndStopReading {
+	// Close or Seek might be called while reading. In this case, discard the read result.
+	if p.state == playerClosed || p.srcGen != gen {
 		return 0
 	}
 
@@ -565,7 +592,9 @@ func (p *playerImpl) readSourceToBuffer() int {
 		p.eof = true
 		if len(p.buf) == 0 {
 			p.returnBufferToPool()
-			p.state = playerPaused
+			if p.state == playerPlay {
+				p.state = playerPaused
+			}
 		}
 	}
 	return n
