@@ -58,13 +58,15 @@ func (p *Player) Reset() {
 	p.player.Reset()
 }
 
-// Volume returns the current volume in the range of [0, 1].
+// Volume returns the current volume, which is 0 or larger.
 // The default volume is 1.
 func (p *Player) Volume() float64 {
 	return p.player.Volume()
 }
 
-// SetVolume sets the current volume in the range of [0, 1].
+// SetVolume sets the current volume, which must be in the range of [0, math.MaxFloat32].
+// A volume larger than 1 amplifies the sound and might cause clipping.
+// A value out of the range, including NaN, is treated as 0.
 func (p *Player) SetVolume(volume float64) {
 	p.player.SetVolume(volume)
 }

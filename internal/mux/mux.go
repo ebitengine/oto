@@ -437,6 +437,14 @@ func (p *Player) SetVolume(volume float64) {
 }
 
 func (p *playerImpl) SetVolume(volume float64) {
+	// A volume out of the range of [0, math.MaxFloat32] is treated as 0.
+	// !(volume > 0) is true for NaN as well as for negative values.
+	// A too large volume is rejected as the mixing narrows the volume to float32,
+	// where such a volume becomes +Inf, and +Inf times a 0 sample is NaN.
+	if !(volume > 0) || volume > math.MaxFloat32 {
+		volume = 0
+	}
+
 	p.m.Lock()
 	defer p.m.Unlock()
 	p.volume = volume
@@ -512,14 +520,24 @@ func (p *playerImpl) readBufferAndAdd(buf []float32) int {
 		default:
 			panic(fmt.Sprintf("mux: unexpected format: %d", format))
 		}
+		var s float32
 		if volume == prevVolume {
-			buf[i] += v * volume
+			s = v * volume
 		} else {
 			rate := float32(i/channelCount) / rateDenom
 			if rate > 1 {
 				rate = 1
 			}
-			buf[i] += v * (volume*rate + prevVolume*(1-rate))
+			s = v * (volume*rate + prevVolume*(1-rate))
+		}
+
+		// Add the value only when the mixed value stays finite, and skip this player otherwise.
+		// A float32 source can supply NaN or infinity, and the accumulation can overflow
+		// with a large volume. As all the players are accumulated into one shared buffer,
+		// a non-finite value there would destroy the other players' samples.
+		// The comparisons are false for NaN and infinity.
+		if mixed := buf[i] + s; -math.MaxFloat32 <= mixed && mixed <= math.MaxFloat32 {
+			buf[i] = mixed
 		}
 	}
 

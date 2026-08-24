@@ -17,7 +17,9 @@ package mux_test
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
+	"math"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -420,5 +422,206 @@ func TestSeekDoesNotBlockOnSource(t *testing.T) {
 	case <-done:
 	case <-time.After(time.Second):
 		t.Fatal("Seek blocked on reading the source")
+	}
+}
+
+// constReader is a source that produces a constant byte value.
+type constReader struct {
+	value byte
+}
+
+func (r *constReader) Read(buf []byte) (int, error) {
+	for i := range buf {
+		buf[i] = r.value
+	}
+	return len(buf), nil
+}
+
+// float32Reader is a source that produces a constant float32 value as FormatFloat32LE data.
+type float32Reader struct {
+	value float32
+
+	m   sync.Mutex
+	pos int
+}
+
+func (r *float32Reader) Read(buf []byte) (int, error) {
+	r.m.Lock()
+	defer r.m.Unlock()
+	bits := math.Float32bits(r.value)
+	for i := range buf {
+		buf[i] = byte(bits >> (8 * ((r.pos + i) % 4)))
+	}
+	r.pos += len(buf)
+	return len(buf), nil
+}
+
+// constSample is the float32 value that a player created by newConstPlayer produces at the volume 1.
+const constSample = 0.5
+
+// newConstPlayer creates a playing player whose source produces constSample, with the given volume.
+func newConstPlayer(t *testing.T, m *mux.Mux, volume float64) *mux.Player {
+	t.Helper()
+
+	// (192 - (1 << 7)) / (1 << 7) is constSample.
+	p := m.NewPlayer(&constReader{value: 192})
+	// Set the volume before playing so that the volume is not ramped while mixing.
+	p.SetVolume(volume)
+	p.Play()
+	return p
+}
+
+func waitForBufferedSize(t *testing.T, p *mux.Player, size int) {
+	t.Helper()
+
+	deadline := time.Now().Add(time.Second)
+	for p.BufferedSize() < size {
+		if time.Now().After(deadline) {
+			t.Fatalf("the buffer was not filled: got %d; want %d", p.BufferedSize(), size)
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+func TestInvalidVolumeDoesNotAffectOtherPlayers(t *testing.T) {
+	const sampleCount = 256
+
+	// 1e39 is larger than math.MaxFloat32 and becomes +Inf when narrowed to float32.
+	for _, volume := range []float64{math.NaN(), math.Inf(1), math.Inf(-1), -1, 1e39} {
+		t.Run(fmt.Sprintf("volume=%v", volume), func(t *testing.T) {
+			m := mux.New(48000, 1, mux.FormatUnsignedInt8)
+			p0 := newConstPlayer(t, m, 1)
+			p1 := newConstPlayer(t, m, volume)
+
+			if got, want := p1.Volume(), 0.0; got != want {
+				t.Errorf("Volume after SetVolume(%v): got %v; want %v", volume, got, want)
+			}
+
+			waitForBufferedSize(t, p0, sampleCount)
+			waitForBufferedSize(t, p1, sampleCount)
+
+			buf := make([]float32, sampleCount)
+			m.ReadFloat32s(buf)
+
+			// Only p0 contributes to the mixed samples.
+			for i, got := range buf {
+				if want := float32(constSample); got != want {
+					t.Fatalf("buf[%d]: got %v; want %v", i, got, want)
+				}
+			}
+		})
+	}
+}
+
+func TestInvalidVolumeWhilePlayingIsRecoverable(t *testing.T) {
+	const sampleCount = 256
+
+	m := mux.New(48000, 1, mux.FormatUnsignedInt8)
+	p := newConstPlayer(t, m, 1)
+
+	p.SetVolume(math.NaN())
+
+	// The volume is ramped from the volume before, and the samples must stay finite meanwhile.
+	buf := make([]float32, sampleCount)
+	for range 2 {
+		waitForBufferedSize(t, p, sampleCount)
+		m.ReadFloat32s(buf)
+		for i, got := range buf {
+			if math.IsNaN(float64(got)) {
+				t.Fatalf("buf[%d] with a NaN volume: got NaN; want a finite value", i)
+			}
+		}
+	}
+
+	// The player must be audible again after a valid volume is set.
+	p.SetVolume(1)
+	var sum float32
+	for range 2 {
+		waitForBufferedSize(t, p, sampleCount)
+		m.ReadFloat32s(buf)
+		for i, got := range buf {
+			if math.IsNaN(float64(got)) {
+				t.Fatalf("buf[%d] after restoring the volume: got NaN; want a finite value", i)
+			}
+			sum += got
+		}
+	}
+	if sum == 0 {
+		t.Error("the player stayed silent after a valid volume was set again")
+	}
+}
+
+func TestVolumeLargerThanOneAmplifies(t *testing.T) {
+	const sampleCount = 256
+
+	m := mux.New(48000, 1, mux.FormatUnsignedInt8)
+	p := newConstPlayer(t, m, 2)
+	waitForBufferedSize(t, p, sampleCount)
+
+	buf := make([]float32, sampleCount)
+	m.ReadFloat32s(buf)
+	for i, got := range buf {
+		if want := float32(2 * constSample); got != want {
+			t.Fatalf("buf[%d]: got %v; want %v", i, got, want)
+		}
+	}
+}
+
+func TestNonFiniteSourceSampleDoesNotAffectOtherPlayers(t *testing.T) {
+	const sampleCount = 256
+
+	for _, value := range []float64{math.NaN(), math.Inf(1), math.Inf(-1)} {
+		t.Run(fmt.Sprintf("sample=%v", value), func(t *testing.T) {
+			m := mux.New(48000, 1, mux.FormatFloat32LE)
+			p0 := m.NewPlayer(&float32Reader{value: constSample})
+			p0.Play()
+			p1 := m.NewPlayer(&float32Reader{value: float32(value)})
+			p1.Play()
+
+			byteLength := mux.FormatFloat32LE.ByteLength()
+			waitForBufferedSize(t, p0, sampleCount*byteLength)
+			waitForBufferedSize(t, p1, sampleCount*byteLength)
+
+			buf := make([]float32, sampleCount)
+			m.ReadFloat32s(buf)
+
+			// The non-finite samples are skipped, and only p0 contributes to the mixed samples.
+			for i, got := range buf {
+				if want := float32(constSample); got != want {
+					t.Fatalf("buf[%d]: got %v; want %v", i, got, want)
+				}
+			}
+		})
+	}
+}
+
+func TestMixedSamplesStayFinite(t *testing.T) {
+	const sampleCount = 256
+
+	// Each player alone is within the float32 range, but their sum is not.
+	m := mux.New(48000, 1, mux.FormatFloat32LE)
+	var players []*mux.Player
+	for range 2 {
+		p := m.NewPlayer(&float32Reader{value: 1})
+		p.SetVolume(3e38)
+		p.Play()
+		players = append(players, p)
+	}
+
+	byteLength := mux.FormatFloat32LE.ByteLength()
+	for _, p := range players {
+		waitForBufferedSize(t, p, sampleCount*byteLength)
+	}
+
+	buf := make([]float32, sampleCount)
+	m.ReadFloat32s(buf)
+
+	for i, got := range buf {
+		if math.IsNaN(float64(got)) || math.IsInf(float64(got), 0) {
+			t.Fatalf("buf[%d]: got %v; want a finite value", i, got)
+		}
+		if got == 0 {
+			t.Fatalf("buf[%d]: got 0; want a non-zero value", i)
+		}
 	}
 }
