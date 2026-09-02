@@ -60,6 +60,8 @@ func newAudioQueue(sampleRate, channelCount int, oneBufferSizeInBytes int) (_Aud
 	for len(bufs) < cap(bufs) {
 		var buf _AudioQueueBufferRef
 		if osstatus := _AudioQueueAllocateBuffer(audioQueue, uint32(oneBufferSizeInBytes), &buf); osstatus != noErr {
+			// Disposing the queue also frees the buffers allocated so far.
+			_ = _AudioQueueDispose(audioQueue, true)
 			return 0, nil, fmt.Errorf("oto: AudioQueueAllocateBuffer failed: %d", osstatus)
 		}
 		buf.mAudioDataByteSize = uint32(oneBufferSizeInBytes)
