@@ -28,6 +28,22 @@ import (
 	"github.com/ebitengine/oto/v3/internal/mux"
 )
 
+// newPlayer creates a player on m and closes it when the test finishes.
+//
+// A player must be kept reachable while it is expected to play.
+// An unreachable player is closed by a runtime cleanup registered in NewPlayer,
+// and a closed player is silently removed from the mux.
+// The function registered by Cleanup keeps p reachable until the test finishes.
+func newPlayer(t *testing.T, m *mux.Mux, src io.Reader) *mux.Player {
+	t.Helper()
+
+	p := m.NewPlayer(src)
+	t.Cleanup(func() {
+		_ = p.Close()
+	})
+	return p
+}
+
 // blockingReader is a source that never returns from Read until unblock is closed.
 type blockingReader struct {
 	unblock chan struct{}
@@ -51,7 +67,7 @@ func newBlockingPlayer(t *testing.T) *mux.Player {
 	t.Cleanup(func() {
 		close(r.unblock)
 	})
-	return mux.New(48000, 2, mux.FormatSignedInt16LE).NewPlayer(r)
+	return newPlayer(t, mux.New(48000, 2, mux.FormatSignedInt16LE), r)
 }
 
 // Issue #270
@@ -76,7 +92,7 @@ func TestBufferIsFilledAfterPlay(t *testing.T) {
 	const bufferSize = 4096
 
 	m := mux.New(48000, 2, mux.FormatSignedInt16LE)
-	p := m.NewPlayer(bytes.NewReader(make([]byte, 2*bufferSize)))
+	p := newPlayer(t, m, bytes.NewReader(make([]byte, 2*bufferSize)))
 	p.SetBufferSize(bufferSize)
 	p.Play()
 
@@ -159,7 +175,7 @@ func TestClosingSourceWhilePausedCausesError(t *testing.T) {
 		began: make(chan struct{}),
 	}
 	m := mux.New(48000, 2, mux.FormatSignedInt16LE)
-	p := m.NewPlayer(src)
+	p := newPlayer(t, m, src)
 	p.Play()
 
 	// Wait until a read from the source is in flight.
@@ -188,7 +204,7 @@ func TestPauseAndStopReadingKeepsOngoingReadResult(t *testing.T) {
 		began: make(chan struct{}),
 	}
 	m := mux.New(48000, 2, mux.FormatSignedInt16LE)
-	p := m.NewPlayer(src)
+	p := newPlayer(t, m, src)
 	p.Play()
 
 	// Wait until a read from the source is in flight.
@@ -248,7 +264,7 @@ func TestPauseAndStopReadingDoesNotLoseData(t *testing.T) {
 
 	src := &rampReader{}
 	m := mux.New(48000, 1, mux.FormatUnsignedInt8)
-	p := m.NewPlayer(src)
+	p := newPlayer(t, m, src)
 	p.SetBufferSize(bufferSize)
 	p.Play()
 
@@ -321,7 +337,7 @@ func TestClosingSourceAfterPauseAndStopReadingIsSafe(t *testing.T) {
 		began: make(chan struct{}),
 	}
 	m := mux.New(48000, 2, mux.FormatSignedInt16LE)
-	p := m.NewPlayer(src)
+	p := newPlayer(t, m, src)
 	p.Play()
 
 	// Wait until a read from the source is in flight.
@@ -361,7 +377,7 @@ func TestResetClearsBuffer(t *testing.T) {
 
 	src := &rampReader{}
 	m := mux.New(48000, 1, mux.FormatUnsignedInt8)
-	p := m.NewPlayer(src)
+	p := newPlayer(t, m, src)
 	p.SetBufferSize(bufferSize)
 	p.Play()
 
@@ -387,7 +403,7 @@ func TestSeekDiscardsOngoingReadResult(t *testing.T) {
 		began: make(chan struct{}),
 	}
 	m := mux.New(48000, 2, mux.FormatSignedInt16LE)
-	p := m.NewPlayer(src)
+	p := newPlayer(t, m, src)
 	p.Play()
 
 	// Wait until a read from the source is in flight.
@@ -532,7 +548,7 @@ func newConstPlayer(t *testing.T, m *mux.Mux, volume float64) *mux.Player {
 	t.Helper()
 
 	// (192 - (1 << 7)) / (1 << 7) is constSample.
-	p := m.NewPlayer(&constReader{value: 192})
+	p := newPlayer(t, m, &constReader{value: 192})
 	// Set the volume before playing so that the volume is not ramped while mixing.
 	p.SetVolume(volume)
 	p.Play()
@@ -641,9 +657,9 @@ func TestNonFiniteSourceSampleDoesNotAffectOtherPlayers(t *testing.T) {
 	for _, value := range []float64{math.NaN(), math.Inf(1), math.Inf(-1)} {
 		t.Run(fmt.Sprintf("sample=%v", value), func(t *testing.T) {
 			m := mux.New(48000, 1, mux.FormatFloat32LE)
-			p0 := m.NewPlayer(&float32Reader{value: constSample})
+			p0 := newPlayer(t, m, &float32Reader{value: constSample})
 			p0.Play()
-			p1 := m.NewPlayer(&float32Reader{value: float32(value)})
+			p1 := newPlayer(t, m, &float32Reader{value: float32(value)})
 			p1.Play()
 
 			byteLength := mux.FormatFloat32LE.ByteLength()
@@ -670,7 +686,7 @@ func TestMixedSamplesStayFinite(t *testing.T) {
 	m := mux.New(48000, 1, mux.FormatFloat32LE)
 	var players []*mux.Player
 	for range 2 {
-		p := m.NewPlayer(&float32Reader{value: 1})
+		p := newPlayer(t, m, &float32Reader{value: 1})
 		p.SetVolume(3e38)
 		p.Play()
 		players = append(players, p)
