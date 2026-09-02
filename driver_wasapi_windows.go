@@ -45,6 +45,7 @@ func newCOMThread() (*comThread, error) {
 		// S_FALSE is returned when CoInitializeEx is nested. This is a successful case.
 		if err := windows.CoInitializeEx(0, windows.COINIT_MULTITHREADED); err != nil && !errors.Is(err, syscall.Errno(windows.S_FALSE)) {
 			errCh <- err
+			return
 		}
 		// CoUninitialize should be called even when CoInitializeEx returns S_FALSE.
 		defer windows.CoUninitialize()
