@@ -30,6 +30,9 @@ import (
 
 type comThread struct {
 	funcCh chan func()
+
+	stopped bool
+	m       sync.Mutex
 }
 
 func newCOMThread() (*comThread, error) {
@@ -62,13 +65,33 @@ func newCOMThread() (*comThread, error) {
 	}, nil
 }
 
+// Run calls f on the COM thread and waits for it. f is not called after Stop.
 func (c *comThread) Run(f func()) {
+	c.m.Lock()
+	defer c.m.Unlock()
+
+	if c.stopped {
+		return
+	}
+
 	ch := make(chan struct{})
 	c.funcCh <- func() {
 		f()
 		close(ch)
 	}
 	<-ch
+}
+
+// Stop terminates the COM thread. Stop must not be called on the COM thread.
+func (c *comThread) Stop() {
+	c.m.Lock()
+	defer c.m.Unlock()
+
+	if c.stopped {
+		return
+	}
+	c.stopped = true
+	close(c.funcCh)
 }
 
 type wasapiContext struct {
@@ -120,6 +143,12 @@ func newWASAPIContext(sampleRate, channelCount int, mux *mux.Mux, bufferSizeInBy
 	if err != nil {
 		return nil, err
 	}
+
+	defer func() {
+		if ferr != nil {
+			t.Stop()
+		}
+	}()
 
 	c := &wasapiContext{
 		sampleRate:        sampleRate,
@@ -266,6 +295,12 @@ func (c *wasapiContext) startOnCOMThread() (ferr error) {
 		return err
 	}
 	c.client = (*_IAudioClient2)(client)
+	defer func() {
+		if ferr != nil {
+			c.client.Release()
+			c.client = nil
+		}
+	}()
 
 	if err := c.client.SetClientProperties(&_AudioClientProperties{
 		cbSize:     uint32(unsafe.Sizeof(_AudioClientProperties{})),
@@ -337,6 +372,12 @@ func (c *wasapiContext) startOnCOMThread() (ferr error) {
 		return err
 	}
 	c.renderClient = (*_IAudioRenderClient)(renderClient)
+	defer func() {
+		if ferr != nil {
+			c.renderClient.Release()
+			c.renderClient = nil
+		}
+	}()
 
 	if err := c.client.SetEventHandle(c.sampleReadyEvent); err != nil {
 		return err
