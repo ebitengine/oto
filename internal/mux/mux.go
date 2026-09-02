@@ -381,11 +381,13 @@ func (p *playerImpl) Seek(offset int64, whence int) (int64, error) {
 	// Reset the internal buffer.
 	// The result of an ongoing read, if any, is data at the old position and must be discarded.
 	if p.state != playerClosed {
-		p.state = playerPausedAndStopReading
 		p.buf = p.buf[:0]
 		p.eof = false
 		p.srcGen++
-		p.removeFromPlayers()
+
+		// Wait until an ongoing read from the source finishes.
+		// Otherwise the source would be sought while it is being read.
+		p.pauseAndStopReadingImpl()
 	}
 
 	// Check if the source implements io.Seeker.

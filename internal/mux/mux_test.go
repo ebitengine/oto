@@ -395,33 +395,101 @@ func TestSeekDiscardsOngoingReadResult(t *testing.T) {
 
 	// Pause not to resume playing after seeking.
 	p.Pause()
-	if _, err := p.Seek(0, io.SeekStart); err != nil {
-		t.Fatal(err)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		if _, err := p.Seek(0, io.SeekStart); err != nil {
+			t.Error(err)
+		}
+	}()
+
+	// Let the ongoing read finish so that Seek can return.
+	close(src.gate)
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("Seek did not return after the ongoing read finished")
 	}
 
 	// The ongoing read is data at the old position and must be discarded.
-	close(src.gate)
 	time.Sleep(100 * time.Millisecond)
 	if got := p.BufferedSize(); got != 0 {
 		t.Errorf("BufferedSize after Seek: got %d; want 0", got)
 	}
 }
 
-// Issue #270
-func TestSeekDoesNotBlockOnSource(t *testing.T) {
-	p := newBlockingPlayer(t)
+// seekingReader is a source that reports whether Seek was called while Read was in flight.
+// Read does not return until gate is closed.
+type seekingReader struct {
+	gate      chan struct{}
+	began     chan struct{}
+	beganOnce sync.Once
+
+	reading    atomic.Bool
+	overlapped atomic.Bool
+}
+
+func (r *seekingReader) Read(buf []byte) (int, error) {
+	r.reading.Store(true)
+	defer r.reading.Store(false)
+
+	r.beganOnce.Do(func() {
+		close(r.began)
+	})
+	<-r.gate
+
+	for i := range buf {
+		buf[i] = 0
+	}
+	return len(buf), nil
+}
+
+func (r *seekingReader) Seek(offset int64, whence int) (int64, error) {
+	if r.reading.Load() {
+		r.overlapped.Store(true)
+	}
+	return 0, nil
+}
+
+// Issue #290
+func TestSeekWaitsForOngoingRead(t *testing.T) {
+	src := &seekingReader{
+		gate:  make(chan struct{}),
+		began: make(chan struct{}),
+	}
+	m := mux.New(48000, 2, mux.FormatSignedInt16LE)
+	p := m.NewPlayer(src)
 	p.Play()
+
+	// Wait until a read from the source is in flight.
+	<-src.began
 
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		_, _ = p.Seek(0, io.SeekStart)
+		if _, err := p.Seek(0, io.SeekStart); err != nil {
+			t.Error(err)
+		}
 	}()
 
 	select {
 	case <-done:
+		t.Fatal("Seek returned while a read from the source was in flight")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	// Let the ongoing read finish. Seek should return soon.
+	close(src.gate)
+	select {
+	case <-done:
 	case <-time.After(time.Second):
-		t.Fatal("Seek blocked on reading the source")
+		t.Fatal("Seek did not return after the ongoing read finished")
+	}
+
+	// The source must not be sought and read at the same time.
+	if src.overlapped.Load() {
+		t.Error("the source was sought while a read from the source was in flight")
 	}
 }
 
