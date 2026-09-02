@@ -46,6 +46,8 @@ func registerSessionNotificationObservers() {
 		block := objc.NewBlock(func(_ objc.Block, _ objc.ID) {
 			theContext.restartFromNotification(false)
 		})
+		// The notification center copies the block, so this reference is unneeded.
+		defer block.Release()
 		center.Send(selAddObserver, name, objc.ID(0), objc.ID(0), block)
 	}
 
@@ -55,6 +57,8 @@ func registerSessionNotificationObservers() {
 		block := objc.NewBlock(func(_ objc.Block, _ objc.ID) {
 			theContext.restartFromNotification(true)
 		})
+		// The notification center copies the block, so this reference is unneeded.
+		defer block.Release()
 		center.Send(selAddObserver, name, objc.ID(0), objc.ID(0), block)
 	}
 
@@ -79,6 +83,8 @@ func registerSessionNotificationObservers() {
 			}
 			theContext.restartFromNotification(false)
 		})
+		// The notification center copies the block, so this reference is unneeded.
+		defer block.Release()
 		center.Send(selAddObserver, name, objc.ID(0), objc.ID(0), block)
 	}
 }
