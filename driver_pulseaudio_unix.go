@@ -34,10 +34,6 @@ type pulseContext struct {
 	suspended bool
 	cond      *sync.Cond
 
-	// suspendMu serializes Suspend and Resume, which are concurrent-safe, so that the
-	// stream ends up in the state that the last of them requested.
-	suspendMu sync.Mutex
-
 	mux *mux.Mux
 	err atomicError
 }
@@ -136,34 +132,13 @@ func (c *pulseContext) setSuspended(suspended bool) error {
 	return nil
 }
 
+// Suspend stops the playback. Audio that the server has already buffered still plays.
 func (c *pulseContext) Suspend() error {
-	c.suspendMu.Lock()
-	defer c.suspendMu.Unlock()
-
-	if err := c.setSuspended(true); err != nil {
-		return err
-	}
-
-	// Cork the stream without holding c.cond.L. Corking waits for a reply that is read by
-	// the same goroutine that dispatches buffer requests to the reader, and the reader
-	// might be blocked on c.cond.L.
-	c.stream.Pause()
-	return nil
+	return c.setSuspended(true)
 }
 
 func (c *pulseContext) Resume() error {
-	c.suspendMu.Lock()
-	defer c.suspendMu.Unlock()
-
-	// Wake up the reader before uncorking. The reader must be able to return so that the
-	// goroutine dispatching buffer requests can accept a new one, otherwise the reply to
-	// uncorking is never read.
-	if err := c.setSuspended(false); err != nil {
-		return err
-	}
-
-	c.stream.Resume()
-	return nil
+	return c.setSuspended(false)
 }
 
 func (c *pulseContext) Err() error {
