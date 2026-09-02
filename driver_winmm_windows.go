@@ -148,6 +148,13 @@ func (c *winmmContext) start() error {
 	for len(c.headers) < cap(c.headers) {
 		h, err := newHeader(c.waveOut, headerBufferSize)
 		if err != nil {
+			// Undo the partially initialized state, as this context is abandoned.
+			for _, hdr := range c.headers {
+				err = errors.Join(err, hdr.Close())
+			}
+			c.headers = nil
+			err = errors.Join(err, waveOutClose(c.waveOut))
+			c.waveOut = 0
 			return err
 		}
 		c.headers = append(c.headers, h)
