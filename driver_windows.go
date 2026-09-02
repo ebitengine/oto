@@ -17,6 +17,7 @@ package oto
 import (
 	"errors"
 	"fmt"
+	"sync/atomic"
 	"time"
 
 	"github.com/ebitengine/oto/v3/internal/mux"
@@ -125,7 +126,7 @@ func (c *context) Err() error {
 }
 
 type nullContext struct {
-	suspended bool
+	suspended atomic.Bool
 }
 
 func newNullContext(sampleRate int, channelCount int, mux *mux.Mux) *nullContext {
@@ -138,7 +139,7 @@ func (c *nullContext) loop(sampleRate int, channelCount int, mux *mux.Mux) {
 	var buf32 [4096]float32
 	sleep := time.Duration(float64(time.Second) * float64(len(buf32)) / float64(channelCount) / float64(sampleRate))
 	for {
-		if c.suspended {
+		if c.suspended.Load() {
 			time.Sleep(time.Second)
 			continue
 		}
@@ -149,12 +150,12 @@ func (c *nullContext) loop(sampleRate int, channelCount int, mux *mux.Mux) {
 }
 
 func (c *nullContext) Suspend() error {
-	c.suspended = true
+	c.suspended.Store(true)
 	return nil
 }
 
 func (c *nullContext) Resume() error {
-	c.suspended = false
+	c.suspended.Store(false)
 	return nil
 }
 
