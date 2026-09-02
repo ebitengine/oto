@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unsafe"
 
@@ -102,7 +103,11 @@ type context struct {
 	// toSuspend indicates that Suspend was requested and the AudioQueue must not
 	// run until Resume is requested. This is the desired state requested by the user,
 	// and is independent of state, the actual state of the queue.
-	toSuspend bool
+	//
+	// This is atomic so that Suspend and Resume can record the requested state without
+	// waiting for c.cond.L, which loop can hold for a long time across AudioToolbox
+	// calls. Consecutive calls then take effect in the order they were made.
+	toSuspend atomic.Bool
 
 	// state is the actual state of the AudioQueue.
 	state queueState
@@ -183,7 +188,8 @@ func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeI
 	return c, ready, nil
 }
 
-// initialize sets the freshly created AudioQueue and attempts the first start.
+// initialize sets the freshly created AudioQueue and attempts the first start unless
+// a suspend is already requested.
 // A temporary start failure is not an error: the start is deferred and retried by loop.
 func (c *context) initialize(q _AudioQueueRef, bs []_AudioQueueBufferRef) {
 	c.cond.L.Lock()
@@ -191,7 +197,9 @@ func (c *context) initialize(q _AudioQueueRef, bs []_AudioQueueBufferRef) {
 
 	c.audioQueue = q
 	c.unqueuedBuffers = bs
-	c.start()
+	if !c.toSuspend.Load() {
+		c.start()
+	}
 }
 
 func (c *context) wait() bool {
@@ -212,7 +220,7 @@ func (c *context) idle() bool {
 	if c.toRebuildQueue {
 		return false
 	}
-	if c.toSuspend {
+	if c.toSuspend.Load() {
 		return c.state != queueStateRunning
 	}
 	switch c.state {
@@ -255,7 +263,7 @@ func (c *context) step(buf32 []float32) {
 		return
 	}
 
-	if c.toSuspend {
+	if c.toSuspend.Load() {
 		if c.state == queueStateRunning {
 			if err := c.pause(); err != nil {
 				c.err.Join(err)
@@ -301,10 +309,10 @@ func (c *context) step(buf32 []float32) {
 // transition surface via Err.
 func (c *context) Suspend() error {
 	err := c.err.Load()
+	c.toSuspend.Store(true)
 	go func() {
 		c.cond.L.Lock()
 		defer c.cond.L.Unlock()
-		c.toSuspend = true
 		c.cond.Signal()
 	}()
 	return err
@@ -314,11 +322,13 @@ func (c *context) Suspend() error {
 // runs on a background goroutine.
 func (c *context) Resume() error {
 	err := c.err.Load()
+	c.toSuspend.Store(false)
 	go func() {
 		c.cond.L.Lock()
 		defer c.cond.L.Unlock()
-		c.toSuspend = false
 		// Attempt the start right away even if a retry is pending with a backoff.
+		// These two only affect the timing of the next start attempt, so running them
+		// out of order with respect to another Suspend or Resume is harmless.
 		c.endDeferStart()
 		c.startRetries = 0
 		c.cond.Signal()
@@ -433,7 +443,7 @@ func (c *context) restartFromNotification(rebuild bool) {
 			c.toRebuildQueue = true
 		}
 		c.endDeferStart()
-		if !c.toSuspend {
+		if !c.toSuspend.Load() {
 			// An interruption stops the queue without notifying its owner, and whether
 			// it is still running cannot be queried, so let loop start it again. A
 			// start on a running queue returns noErr.
