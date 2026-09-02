@@ -34,6 +34,10 @@ type pulseContext struct {
 	suspended bool
 	cond      *sync.Cond
 
+	// suspendMu serializes Suspend and Resume, which are concurrent-safe, so that the
+	// stream ends up in the state that the last of them requested.
+	suspendMu sync.Mutex
+
 	mux *mux.Mux
 	err atomicError
 }
@@ -94,13 +98,7 @@ func newPulseContext(sampleRate int, channelCount int, mux *mux.Mux, bufferSizeI
 }
 
 func (c *pulseContext) read(buf []float32) (int, error) {
-	c.cond.L.Lock()
-	defer c.cond.L.Unlock()
-
-	for c.suspended && c.err.Load() == nil {
-		c.cond.Wait()
-	}
-	if err := c.err.Load(); err != nil {
+	if err := c.waitUntilResumed(); err != nil {
 		return 0, err
 	}
 
@@ -108,7 +106,19 @@ func (c *pulseContext) read(buf []float32) (int, error) {
 	return len(buf), nil
 }
 
-func (c *pulseContext) Suspend() error {
+// waitUntilResumed blocks while the context is suspended.
+func (c *pulseContext) waitUntilResumed() error {
+	c.cond.L.Lock()
+	defer c.cond.L.Unlock()
+
+	for c.suspended && c.err.Load() == nil {
+		c.cond.Wait()
+	}
+	return c.err.Load()
+}
+
+// setSuspended updates the suspended state and wakes up a waiting reader.
+func (c *pulseContext) setSuspended(suspended bool) error {
 	c.cond.L.Lock()
 	defer c.cond.L.Unlock()
 
@@ -119,25 +129,40 @@ func (c *pulseContext) Suspend() error {
 		return fmt.Errorf("oto: PulseAudio error: %w", err)
 	}
 
-	c.suspended = true
+	c.suspended = suspended
+	if !suspended {
+		c.cond.Signal()
+	}
+	return nil
+}
+
+func (c *pulseContext) Suspend() error {
+	c.suspendMu.Lock()
+	defer c.suspendMu.Unlock()
+
+	if err := c.setSuspended(true); err != nil {
+		return err
+	}
+
+	// Cork the stream without holding c.cond.L. Corking waits for a reply that is read by
+	// the same goroutine that dispatches buffer requests to the reader, and the reader
+	// might be blocked on c.cond.L.
 	c.stream.Pause()
 	return nil
 }
 
 func (c *pulseContext) Resume() error {
-	c.cond.L.Lock()
-	defer c.cond.L.Unlock()
+	c.suspendMu.Lock()
+	defer c.suspendMu.Unlock()
 
-	if err := c.err.Load(); err != nil {
+	// Wake up the reader before uncorking. The reader must be able to return so that the
+	// goroutine dispatching buffer requests can accept a new one, otherwise the reply to
+	// uncorking is never read.
+	if err := c.setSuspended(false); err != nil {
 		return err
 	}
-	if err := c.stream.Error(); err != nil {
-		return fmt.Errorf("oto: PulseAudio error: %w", err)
-	}
 
-	c.suspended = false
 	c.stream.Resume()
-	c.cond.Signal()
 	return nil
 }
 
