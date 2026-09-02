@@ -461,6 +461,8 @@ func (i *_IMMDevice) GetId() (string, error) {
 	if uint32(r) != uint32(windows.S_OK) {
 		return "", fmt.Errorf("oto: IMMDevice::GetId failed: HRESULT(%d)", uint32(r))
 	}
+	// The returned string is allocated by COM and must be released by the caller.
+	defer windows.CoTaskMemFree(unsafe.Pointer(strId))
 	return windows.UTF16PtrToString(strId), nil
 }
 
