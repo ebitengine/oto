@@ -21,6 +21,9 @@ import (
 )
 
 // Player is a PCM (pulse-code modulation) audio player.
+//
+// A player must be kept reachable as long as it should keep playing.
+// A player is closed when it becomes unreachable, even in the middle of playing.
 type Player struct {
 	player *mux.Player
 }

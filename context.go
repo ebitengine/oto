@@ -112,6 +112,9 @@ func NewContext(options *NewContextOptions) (*Context, chan struct{}, error) {
 // NewPlayer creates a new, ready-to-use Player belonging to the Context.
 // It is safe to create multiple players.
 //
+// The returned player must be kept reachable as long as it should keep playing.
+// A player is closed when it becomes unreachable, even in the middle of playing.
+//
 // The format of r is as follows:
 //
 //	[data]      = [sample 1] [sample 2] [sample 3] ...
