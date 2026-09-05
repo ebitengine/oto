@@ -130,6 +130,9 @@ func main() {
     }
     // It might take a bit for the hardware audio devices to be ready, so we wait on the channel.
     <-readyChan
+    if err := otoCtx.Err(); err != nil {
+        panic("oto initialization failed: " + err.Error())
+    }
 
     // Create a new 'player' that will handle our sound. Paused by default.
     player := otoCtx.NewPlayer(decodedMp3)

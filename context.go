@@ -82,7 +82,8 @@ type NewContextOptions struct {
 
 // NewContext creates a new context with given options.
 // A context creates and holds ready-to-use Player objects.
-// NewContext returns a context, a channel that is closed when the context is ready, and an error if it exists.
+// NewContext returns a context, a channel that closes when initialization finishes, and an error if it exists.
+// After the channel closes, call Context.Err to check whether initialization succeeded.
 //
 // Creating multiple contexts is NOT supported.
 func NewContext(options *NewContextOptions) (*Context, chan struct{}, error) {

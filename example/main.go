@@ -174,6 +174,9 @@ func run() error {
 		return err
 	}
 	<-ready
+	if err := c.Err(); err != nil {
+		return err
+	}
 
 	var wg sync.WaitGroup
 	var players []*oto.Player

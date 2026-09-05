@@ -136,23 +136,6 @@ func newALSAContextImpl(sampleRate int, channelCount int, mux *mux.Mux, bufferSi
 		mux:          mux,
 	}
 
-	// Open a default ALSA audio device for blocking stream playback.
-	var openErrs []string
-	var handle uintptr
-	var found bool
-	for _, name := range deviceCandidates() {
-		if err := _snd_pcm_open(&handle, name, _SND_PCM_STREAM_PLAYBACK, 0); err < 0 {
-			openErrs = append(openErrs, fmt.Sprintf("%q: %s", name, _snd_strerror(err)))
-			continue
-		}
-		found = true
-		break
-	}
-	if !found {
-		return nil, fmt.Errorf("oto: ALSA error at snd_pcm_open: %s", strings.Join(openErrs, ", "))
-	}
-	c.handle = handle
-
 	// TODO: Should snd_pcm_hw_params_set_periods be called explicitly?
 	const periods = 2
 	var periodSize uint
@@ -164,9 +147,8 @@ func newALSAContextImpl(sampleRate int, channelCount int, mux *mux.Mux, bufferSi
 	} else {
 		periodSize = 1024
 	}
-	bufferSize := periodSize * periods
-	if err := c.alsaPCMHwParams(sampleRate, channelCount, &bufferSize, &periodSize); err != nil {
-		_snd_pcm_close(c.handle)
+	periodSize, err := c.openDevice(deviceCandidates(), sampleRate, channelCount, periodSize*periods, periodSize)
+	if err != nil {
 		return nil, err
 	}
 
@@ -183,6 +165,29 @@ func newALSAContextImpl(sampleRate int, channelCount int, mux *mux.Mux, bufferSi
 	}()
 
 	return c, nil
+}
+
+func (c *alsaContext) openDevice(names []string, sampleRate, channelCount int, bufferSize, periodSize uint) (uint, error) {
+	var deviceErrs []string
+	for _, name := range names {
+		var handle uintptr
+		if err := _snd_pcm_open(&handle, name, _SND_PCM_STREAM_PLAYBACK, 0); err < 0 {
+			deviceErrs = append(deviceErrs, fmt.Sprintf("%q: %v", name, alsaError("snd_pcm_open", err)))
+			continue
+		}
+		c.handle = handle
+
+		// ALSA adjusts these sizes while configuring each device.
+		bs, ps := bufferSize, periodSize
+		if err := c.alsaPCMHwParams(sampleRate, channelCount, &bs, &ps); err != nil {
+			_snd_pcm_close(handle)
+			c.handle = 0
+			deviceErrs = append(deviceErrs, fmt.Sprintf("%q: %v", name, err))
+			continue
+		}
+		return ps, nil
+	}
+	return 0, fmt.Errorf("oto: ALSA device initialization failed: %s", strings.Join(deviceErrs, ", "))
 }
 
 func (c *alsaContext) alsaPCMHwParams(sampleRate, channelCount int, bufferSize, periodSize *uint) error {
@@ -314,6 +319,10 @@ func deviceCandidates() []string {
 			continue
 		}
 		devices = append(devices, name)
+		// The plug plugin converts float samples to a format supported by the device.
+		if !strings.HasPrefix(name, "plug:") && !strings.HasPrefix(name, "plughw:") {
+			devices = append(devices, "plug:"+name)
+		}
 	}
 
 	return append([]string{"default", "plug:default"}, devices...)
