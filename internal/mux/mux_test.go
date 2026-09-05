@@ -709,3 +709,165 @@ func TestMixedSamplesStayFinite(t *testing.T) {
 		}
 	}
 }
+
+// emptyReader keeps the player active without filling its buffer or reaching EOF.
+type emptyReader struct{}
+
+func (*emptyReader) Read([]byte) (int, error) {
+	return 0, nil
+}
+
+func (*emptyReader) Seek(int64, int) (int64, error) {
+	return 0, nil
+}
+
+func TestPlayerRegistration(t *testing.T) {
+	m := mux.New(48000, 1, mux.FormatUnsignedInt8)
+	p := newPlayer(t, m, &emptyReader{})
+	for _, tt := range []struct {
+		name       string
+		run        func()
+		playing    bool
+		registered bool
+	}{
+		{
+			name: "new",
+			run:  func() {},
+		},
+		{
+			name:       "play",
+			run:        p.Play,
+			playing:    true,
+			registered: true,
+		},
+		{
+			name:       "pause",
+			run:        p.Pause,
+			registered: true,
+		},
+		{
+			name: "stop",
+			run:  p.PauseAndStopReading,
+		},
+		{
+			name:       "resume",
+			run:        p.Play,
+			playing:    true,
+			registered: true,
+		},
+		{
+			name: "seek",
+			run: func() {
+				if _, err := p.Seek(0, io.SeekStart); err != nil {
+					t.Fatal(err)
+				}
+			},
+			playing:    true,
+			registered: true,
+		},
+		{
+			name: "reset",
+			run:  p.Reset,
+		},
+		{
+			name:       "replay",
+			run:        p.Play,
+			playing:    true,
+			registered: true,
+		},
+		{
+			name: "close",
+			run: func() {
+				_ = p.Close()
+			},
+		},
+		{
+			name: "play closed",
+			run:  p.Play,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.run()
+			if got := p.IsPlaying(); got != tt.playing {
+				t.Errorf("IsPlaying: got %v; want %v", got, tt.playing)
+			}
+			if got := p.IsRegistered(); got != tt.registered {
+				t.Errorf("IsRegistered: got %v; want %v", got, tt.registered)
+			}
+		})
+	}
+}
+
+func TestConcurrentPlayerRegistration(t *testing.T) {
+	m := mux.New(48000, 1, mux.FormatUnsignedInt8)
+	for _, action := range []string{"stop", "reset", "seek", "close"} {
+		t.Run(action, func(t *testing.T) {
+			for i := range 3000 {
+				p := m.NewPlayer(&emptyReader{})
+				p.Play()
+				if action == "close" {
+					p.Pause()
+				}
+				var wg sync.WaitGroup
+				start := make(chan struct{})
+				wg.Go(func() {
+					<-start
+					switch action {
+					case "stop":
+						p.PauseAndStopReading()
+					case "reset":
+						p.Reset()
+					case "seek":
+						if _, err := p.Seek(0, io.SeekStart); err != nil {
+							t.Error(err)
+						}
+					case "close":
+						_ = p.Close()
+					}
+				})
+				wg.Go(func() {
+					<-start
+					p.Play()
+				})
+				close(start)
+				wg.Wait()
+				p.Play()
+				playing, registered := p.IsPlaying(), p.IsRegistered()
+				_ = p.Close()
+				want := action != "close"
+				if playing != want || registered != want {
+					t.Fatalf("iteration %d: playing=%v, registered=%v; want both %v", i, playing, registered, want)
+				}
+			}
+		})
+	}
+}
+
+func TestSourceErrorUnregistersPlayer(t *testing.T) {
+	errSource := errors.New("source failed")
+	m := mux.New(48000, 1, mux.FormatUnsignedInt8)
+	p := newPlayer(t, m, &errorReader{err: errSource})
+	p.Play()
+	deadline := time.Now().Add(time.Second)
+	for p.Err() == nil {
+		if time.Now().After(deadline) {
+			t.Fatal("the source error was not reported")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if err := p.Err(); !errors.Is(err, errSource) {
+		t.Fatalf("Err: got %v; want %v", err, errSource)
+	}
+	p.Play()
+	if p.IsPlaying() || p.IsRegistered() {
+		t.Fatal("a player with a source error stayed playing or registered")
+	}
+}
+
+type errorReader struct {
+	err error
+}
+
+func (r *errorReader) Read([]byte) (int, error) {
+	return 0, r.err
+}

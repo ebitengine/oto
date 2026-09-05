@@ -53,8 +53,10 @@ type Mux struct {
 	channelCount int
 	format       Format
 
-	players map[*playerImpl]struct{}
-	cond    *sync.Cond
+	// playersMu must not be held while locking a player.
+	playersMu sync.Mutex
+	players   map[*playerImpl]struct{}
+	cond      *sync.Cond
 }
 
 // New creates a new Mux.
@@ -69,8 +71,8 @@ func New(sampleRate int, channelCount int, format Format) *Mux {
 	return m
 }
 
-func (m *Mux) shouldWait() bool {
-	for p := range m.players {
+func (m *Mux) shouldWait(players []*playerImpl) bool {
+	for _, p := range players {
 		if p.canReadSourceToBuffer() {
 			return false
 		}
@@ -78,11 +80,16 @@ func (m *Mux) shouldWait() bool {
 	return true
 }
 
-func (m *Mux) wait() {
+func (m *Mux) wait(players []*playerImpl) []*playerImpl {
 	m.cond.L.Lock()
 	defer m.cond.L.Unlock()
 
-	for m.shouldWait() {
+	for {
+		clear(players)
+		players = m.appendPlayers(players[:0])
+		if !m.shouldWait(players) {
+			return players
+		}
 		m.cond.Wait()
 	}
 }
@@ -90,17 +97,7 @@ func (m *Mux) wait() {
 func (m *Mux) loop() {
 	var players []*playerImpl
 	for {
-		m.wait()
-
-		m.cond.L.Lock()
-		for i := range players {
-			players[i] = nil
-		}
-		players = players[:0]
-		for p := range m.players {
-			players = append(players, p)
-		}
-		m.cond.L.Unlock()
+		players = m.wait(players)
 
 		allZero := true
 		for _, p := range players {
@@ -118,33 +115,45 @@ func (m *Mux) loop() {
 	}
 }
 
+func (m *Mux) appendPlayers(players []*playerImpl) []*playerImpl {
+	m.playersMu.Lock()
+	defer m.playersMu.Unlock()
+
+	for p := range m.players {
+		players = append(players, p)
+	}
+	return players
+}
+
 func (m *Mux) addPlayer(player *playerImpl) {
-	m.cond.L.Lock()
-	defer m.cond.L.Unlock()
+	m.playersMu.Lock()
+	defer m.playersMu.Unlock()
 
 	if m.players == nil {
 		m.players = map[*playerImpl]struct{}{}
 	}
 	m.players[player] = struct{}{}
-	m.cond.Signal()
 }
 
 func (m *Mux) removePlayer(player *playerImpl) {
+	m.playersMu.Lock()
+	defer m.playersMu.Unlock()
+
+	delete(m.players, player)
+}
+
+func (m *Mux) signal() {
+	// Callers must release player locks before signaling: wait inspects players
+	// under the condition lock. Taking this lock also prevents a missed wakeup.
 	m.cond.L.Lock()
 	defer m.cond.L.Unlock()
 
-	delete(m.players, player)
 	m.cond.Signal()
 }
 
 // ReadFloat32s fills buf with the multiplexed data of the players as float32 values.
 func (m *Mux) ReadFloat32s(buf []float32) {
-	m.cond.L.Lock()
-	players := make([]*playerImpl, 0, len(m.players))
-	for p := range m.players {
-		players = append(players, p)
-	}
-	m.cond.L.Unlock()
+	players := m.appendPlayers(nil)
 
 	for i := range buf {
 		buf[i] = 0
@@ -152,7 +161,7 @@ func (m *Mux) ReadFloat32s(buf []float32) {
 	for _, p := range players {
 		p.readBufferAndAdd(buf)
 	}
-	m.cond.Signal()
+	m.signal()
 }
 
 type Player struct {
@@ -234,6 +243,8 @@ func (p *Player) Play() {
 }
 
 func (p *playerImpl) Play() {
+	defer p.mux.signal()
+
 	p.m.Lock()
 	defer p.m.Unlock()
 
@@ -273,35 +284,6 @@ func getBufferFromPool(size int) *[]byte {
 	return buf
 }
 
-// read reads the source to buf.
-// read unlocks the mutex temporarily and locks when reading finishes.
-// This avoids locking during an external function call Read (#188).
-//
-// When read is called, the mutex m must be locked.
-func (p *playerImpl) read(buf []byte) (int, error) {
-	p.m.Unlock()
-	defer p.m.Lock()
-	return p.src.Read(buf)
-}
-
-// addToPlayers adds p to the players set.
-//
-// When addToPlayers is called, the mutex m must be locked.
-func (p *playerImpl) addToPlayers() {
-	p.m.Unlock()
-	defer p.m.Lock()
-	p.mux.addPlayer(p)
-}
-
-// removeFromPlayers removes p from the players set.
-//
-// When removeFromPlayers is called, the mutex m must be locked.
-func (p *playerImpl) removeFromPlayers() {
-	p.m.Unlock()
-	defer p.m.Lock()
-	p.mux.removePlayer(p)
-}
-
 // playImpl starts playing without reading the source.
 // The buffer is filled by the mux loop.
 //
@@ -318,7 +300,7 @@ func (p *playerImpl) playImpl() {
 	}
 	p.state = playerPlay
 
-	p.addToPlayers()
+	p.mux.addPlayer(p)
 }
 
 func (p *Player) Pause() {
@@ -356,7 +338,7 @@ func (p *playerImpl) pauseAndStopReadingImpl() {
 	}
 
 	p.state = playerPausedAndStopReading
-	p.removeFromPlayers()
+	p.mux.removePlayer(p)
 
 	// Wait until an ongoing read from the source finishes.
 	// The source must not be read after this returns (#288).
@@ -370,6 +352,8 @@ func (p *Player) Seek(offset int64, whence int) (int64, error) {
 }
 
 func (p *playerImpl) Seek(offset int64, whence int) (int64, error) {
+	defer p.mux.signal()
+
 	p.m.Lock()
 	defer p.m.Unlock()
 
@@ -477,7 +461,7 @@ func (p *playerImpl) Close() error {
 }
 
 func (p *playerImpl) closeImpl() error {
-	p.removeFromPlayers()
+	p.mux.removePlayer(p)
 
 	if p.state == playerClosed {
 		return p.err
@@ -570,26 +554,36 @@ func (p *playerImpl) canReadSourceToBuffer() bool {
 }
 
 func (p *playerImpl) readSourceToBuffer() int {
+	buf, gen := p.prepareSourceRead()
+	if buf == nil {
+		return 0
+	}
+	defer theBufPool.Put(buf)
+
+	n, err := p.src.Read(*buf)
+	return p.finishSourceRead(buf, gen, n, err)
+}
+
+func (p *playerImpl) prepareSourceRead() (*[]byte, int) {
 	p.m.Lock()
 	defer p.m.Unlock()
 
-	if p.err != nil {
-		return 0
+	if p.err != nil || p.state == playerClosed || p.state == playerPausedAndStopReading {
+		return nil, 0
 	}
-	if p.state == playerClosed || p.state == playerPausedAndStopReading {
-		return 0
-	}
-
 	if len(p.buf) >= p.bufferSize {
-		return 0
+		return nil, 0
 	}
 
 	buf := getBufferFromPool(p.bufferSize)
-	defer theBufPool.Put(buf)
-
-	gen := p.srcGen
 	p.reading = true
-	n, err := p.read(*buf)
+	return buf, p.srcGen
+}
+
+func (p *playerImpl) finishSourceRead(buf *[]byte, gen, n int, err error) int {
+	p.m.Lock()
+	defer p.m.Unlock()
+
 	p.reading = false
 	p.readCond.Broadcast()
 
