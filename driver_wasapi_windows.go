@@ -30,6 +30,7 @@ import (
 
 type comThread struct {
 	funcCh chan func()
+	done   chan struct{}
 
 	stopped bool
 	m       sync.Mutex
@@ -38,7 +39,9 @@ type comThread struct {
 func newCOMThread() (*comThread, error) {
 	funcCh := make(chan func())
 	errCh := make(chan error)
+	done := make(chan struct{})
 	go func() {
+		defer close(done)
 		runtime.LockOSThread()
 		defer runtime.UnlockOSThread()
 
@@ -63,6 +66,7 @@ func newCOMThread() (*comThread, error) {
 
 	return &comThread{
 		funcCh: funcCh,
+		done:   done,
 	}, nil
 }
 
@@ -93,6 +97,7 @@ func (c *comThread) Stop() {
 	}
 	c.stopped = true
 	close(c.funcCh)
+	<-c.done
 }
 
 type wasapiContext struct {
@@ -145,12 +150,6 @@ func newWASAPIContext(sampleRate, channelCount int, mux *mux.Mux, bufferSizeInBy
 		return nil, err
 	}
 
-	defer func() {
-		if ferr != nil {
-			t.Stop()
-		}
-	}()
-
 	c := &wasapiContext{
 		sampleRate:        sampleRate,
 		channelCount:      channelCount,
@@ -160,15 +159,16 @@ func newWASAPIContext(sampleRate, channelCount int, mux *mux.Mux, bufferSizeInBy
 		suspendedCond:     sync.NewCond(&sync.Mutex{}),
 	}
 
+	defer func() {
+		if ferr != nil {
+			c.close()
+		}
+	}()
+
 	ev, err := windows.CreateEventEx(nil, nil, 0, windows.EVENT_ALL_ACCESS)
 	if err != nil {
 		return nil, err
 	}
-	defer func() {
-		if ferr != nil {
-			windows.CloseHandle(ev)
-		}
-	}()
 	c.sampleReadyEvent = ev
 
 	if err := c.start(); err != nil {
@@ -210,66 +210,98 @@ func (c *wasapiContext) isDeviceSwitched() (bool, error) {
 }
 
 func (c *wasapiContext) start() error {
-	var cerr error
-	c.comThread.Run(func() {
-		if err := c.startOnCOMThread(); err != nil {
-			cerr = err
-			return
-		}
-	})
-	if cerr != nil {
-		return cerr
+	if err := c.initialize(); err != nil {
+		return err
 	}
-
-	go func() {
-		if err := c.loop(); err != nil {
-			// E_OUTOFMEMORY from IAudioRenderClient::GetBuffer has been observed on Xbox.
-			// The cause is not confirmed, but it appears to be rare and recoverable, so
-			// try restarting the client. The counter is reset after any successful buffer
-			// write (see writeOnRenderThread), so this cap applies to consecutive failures
-			// without intervening progress, ensuring a stuck device surfaces instead of
-			// looping forever.
-			if errors.Is(err, _E_OUTOFMEMORY) {
-				if c.oomRetryCount >= wasapiOOMRetryLimit {
-					c.err.Join(err)
-					return
-				}
-				c.oomRetryCount++
-			} else if !errors.Is(err, _AUDCLNT_E_DEVICE_INVALIDATED) && !errors.Is(err, _AUDCLNT_E_RESOURCES_INVALIDATED) && !errors.Is(err, errDeviceSwitched) && !errors.Is(err, _RPC_E_DISCONNECTED) {
-				c.err.Join(err)
-				return
-			}
-
-			if err := c.restart(); err != nil {
-				c.err.Join(err)
-				return
-			}
-		}
-	}()
-
+	go c.run()
 	return nil
 }
 
-func (c *wasapiContext) startOnCOMThread() (ferr error) {
-	// Always release and re-create the enumerator on (re)start. A cached
-	// enumerator can become disconnected (RPC_E_DISCONNECTED) across
-	// Xbox/UWP suspend/resume or when the audio service is restarted, and
-	// any subsequent call on it will keep failing.
+func (c *wasapiContext) initialize() error {
+	var cerr error
+	c.comThread.Run(func() {
+		cerr = c.startOnCOMThread()
+	})
+	return cerr
+}
+
+func (c *wasapiContext) run() {
+	// This goroutine owns the resources across all recovery attempts. The render
+	// loop has returned before cleanup can close the event or release interfaces.
+	defer c.close()
+
+	for {
+		err := c.loop()
+		c.comThread.Run(c.releaseOnCOMThread)
+		if err == nil {
+			return
+		}
+		// E_OUTOFMEMORY from IAudioRenderClient::GetBuffer has been observed on Xbox.
+		// The counter is reset after a successful buffer write, so this cap applies
+		// to consecutive failures without intervening progress.
+		if errors.Is(err, _E_OUTOFMEMORY) {
+			if c.oomRetryCount >= wasapiOOMRetryLimit {
+				c.err.Join(err)
+				return
+			}
+			c.oomRetryCount++
+		} else if !errors.Is(err, _AUDCLNT_E_DEVICE_INVALIDATED) && !errors.Is(err, _AUDCLNT_E_RESOURCES_INVALIDATED) && !errors.Is(err, errDeviceSwitched) && !errors.Is(err, _RPC_E_DISCONNECTED) {
+			c.err.Join(err)
+			return
+		}
+
+		if err := c.restart(); err != nil {
+			c.err.Join(err)
+			return
+		}
+	}
+}
+
+// close must be called outside the COM thread after rendering has ended.
+func (c *wasapiContext) close() {
+	c.comThread.Run(c.releaseOnCOMThread)
+	if c.sampleReadyEvent != 0 {
+		windows.CloseHandle(c.sampleReadyEvent)
+		c.sampleReadyEvent = 0
+	}
+	c.comThread.Stop()
+}
+
+func (c *wasapiContext) releaseOnCOMThread() {
+	if c.client != nil {
+		_, _ = c.client.Stop()
+	}
+	// The render service must be released on the thread that acquired it,
+	// before releasing the audio client that owns it.
+	if c.renderClient != nil {
+		c.renderClient.Release()
+		c.renderClient = nil
+	}
+	if c.client != nil {
+		c.client.Release()
+		c.client = nil
+	}
 	if c.enumerator != nil {
 		c.enumerator.Release()
 		c.enumerator = nil
 	}
+}
+
+func (c *wasapiContext) startOnCOMThread() (ferr error) {
+	c.releaseOnCOMThread()
+	defer func() {
+		if ferr != nil {
+			c.releaseOnCOMThread()
+		}
+	}()
+
+	// Recreate the enumerator because it can become disconnected across
+	// suspend/resume or an audio service restart.
 	e, err := _CoCreateInstance(&uuidMMDeviceEnumerator, nil, uint32(_CLSCTX_ALL), &uuidIMMDeviceEnumerator)
 	if err != nil {
 		return err
 	}
 	c.enumerator = (*_IMMDeviceEnumerator)(e)
-	defer func() {
-		if ferr != nil {
-			c.enumerator.Release()
-			c.enumerator = nil
-		}
-	}()
 
 	device, err := c.enumerator.GetDefaultAudioEndPoint(eRender, eConsole)
 	if err != nil {
@@ -286,22 +318,11 @@ func (c *wasapiContext) startOnCOMThread() (ferr error) {
 	}
 	c.currentDeviceID = id
 
-	if c.client != nil {
-		c.client.Release()
-		c.client = nil
-	}
-
 	client, err := device.Activate(&uuidIAudioClient2, uint32(_CLSCTX_ALL), nil)
 	if err != nil {
 		return err
 	}
 	c.client = (*_IAudioClient2)(client)
-	defer func() {
-		if ferr != nil {
-			c.client.Release()
-			c.client = nil
-		}
-	}()
 
 	if err := c.client.SetClientProperties(&_AudioClientProperties{
 		cbSize:     uint32(unsafe.Sizeof(_AudioClientProperties{})),
@@ -363,22 +384,11 @@ func (c *wasapiContext) startOnCOMThread() (ferr error) {
 	}
 	c.bufferFrames = frames
 
-	if c.renderClient != nil {
-		c.renderClient.Release()
-		c.renderClient = nil
-	}
-
 	renderClient, err := c.client.GetService(&uuidIAudioRenderClient)
 	if err != nil {
 		return err
 	}
 	c.renderClient = (*_IAudioRenderClient)(renderClient)
-	defer func() {
-		if ferr != nil {
-			c.renderClient.Release()
-			c.renderClient = nil
-		}
-	}()
 
 	if err := c.client.SetEventHandle(c.sampleReadyEvent); err != nil {
 		return err
@@ -399,14 +409,12 @@ func (c *wasapiContext) loop() error {
 
 	// S_FALSE is returned when CoInitializeEx is nested. This is a successful case.
 	if err := windows.CoInitializeEx(0, windows.COINIT_MULTITHREADED); err != nil && !errors.Is(err, syscall.Errno(windows.S_FALSE)) {
-		_, _ = c.client.Stop()
 		return err
 	}
 	// CoUninitialize should be called even when CoInitializeEx returns S_FALSE.
 	defer windows.CoUninitialize()
 
 	if err := c.loopOnRenderThread(); err != nil {
-		_, _ = c.client.Stop()
 		return err
 	}
 
@@ -564,7 +572,7 @@ func (c *wasapiContext) restart() error {
 		}
 
 		if now := time.Now(); !now.Before(nextReacquire) {
-			err := c.start()
+			err := c.initialize()
 			if err == nil {
 				return nil
 			}
