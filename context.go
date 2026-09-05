@@ -49,7 +49,7 @@ const (
 	// FormatUnsignedInt8 is the format of 8 bits integers.
 	FormatUnsignedInt8
 
-	//FormatSignedInt16LE is the format of 16 bits integers little endian.
+	// FormatSignedInt16LE is the format of 16 bits integers little endian.
 	FormatSignedInt16LE
 )
 

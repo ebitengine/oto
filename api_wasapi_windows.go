@@ -186,7 +186,7 @@ type _AudioClientProperties struct {
 }
 
 type _PROPVARIANT struct {
-	// TODO: Implmeent this
+	// TODO: Implement this
 }
 
 type _WAVEFORMATEXTENSIBLE struct {
