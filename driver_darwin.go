@@ -126,7 +126,7 @@ type context struct {
 	startRetryTimer *time.Timer
 
 	mux *mux.Mux
-	err atomicError
+	err mutexError
 }
 
 // TODO: Convert the error code correctly.

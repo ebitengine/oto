@@ -24,7 +24,7 @@ import (
 type context struct {
 	mux *mux.Mux
 
-	err atomicError
+	err mutexError
 
 	m sync.Mutex
 }

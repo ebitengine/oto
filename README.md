@@ -146,7 +146,7 @@ func main() {
     }
 
     // Now that the sound finished playing, we can restart from the beginning (or go to any location in the sound) using seek
-    // newPos, err := player.(io.Seeker).Seek(0, io.SeekStart)
+    // newPos, err := player.Seek(0, io.SeekStart)
     // if err != nil{
     //     panic("player.Seek failed: " + err.Error())
     // }
@@ -209,13 +209,13 @@ Data is moved from io.Reader->internal buffer->audio device, and when the intern
 is not guaranteed, so there might be a small delay. The amount of data in the buffer can be retrieved
 using `Player.BufferedSize()`.
 
-The size of the underlying buffer of a player can also be set by type-asserting the player object:
+The size of the underlying buffer of a player can also be set by calling the player's `SetBufferSize` function:
 
 ```go
-myPlayer.(oto.BufferSizeSetter).SetBufferSize(newBufferSize)
+myPlayer.SetBufferSize(newBufferSize)
 ```
 
-This works because players implement a `Player` interface and a `BufferSizeSetter` interface.
+`NewPlayer` returns a `*oto.Player`, which has functions like `SetBufferSize` and `Seek`.
 
 ## Crosscompiling
 

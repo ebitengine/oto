@@ -119,7 +119,7 @@ type alsaContext struct {
 	cond *sync.Cond
 
 	mux *mux.Mux
-	err atomicError
+	err mutexError
 }
 
 func newALSAContextImpl(sampleRate int, channelCount int, mux *mux.Mux, bufferSizeInBytes int) (*alsaContext, error) {

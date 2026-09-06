@@ -39,7 +39,7 @@ type context struct {
 	backend unixBackend
 
 	ready chan struct{}
-	err   atomicError
+	err   mutexError
 }
 
 func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeInBytes int, applicationName string) (*context, chan struct{}, error) {

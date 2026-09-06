@@ -134,7 +134,7 @@ func NewContext(options *NewContextOptions) (*Context, chan struct{}, error) {
 //
 // You cannot share r by multiple players.
 //
-// The returned player implements Player, BufferSizeSetter, and io.Seeker.
+// The returned player is a *Player, which has functions like SetBufferSize and Seek.
 // You can modify the buffer size of a player by the SetBufferSize function.
 // A small buffer size is useful if you want to play a real-time PCM for example.
 // Note that the audio quality might be affected if you modify the buffer size.
@@ -173,14 +173,14 @@ func (c *Context) Err() error {
 	return c.context.Err()
 }
 
-type atomicError struct {
+type mutexError struct {
 	err error
 	m   sync.Mutex
 }
 
 // Join records err in addition to the errors recorded so far. A nil err is
 // ignored.
-func (a *atomicError) Join(err error) {
+func (a *mutexError) Join(err error) {
 	if err == nil {
 		return
 	}
@@ -190,7 +190,7 @@ func (a *atomicError) Join(err error) {
 	a.err = errors.Join(a.err, err)
 }
 
-func (a *atomicError) Load() error {
+func (a *mutexError) Load() error {
 	a.m.Lock()
 	defer a.m.Unlock()
 	return a.err

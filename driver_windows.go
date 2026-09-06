@@ -36,7 +36,7 @@ type context struct {
 	nullContext   *nullContext
 
 	ready chan struct{}
-	err   atomicError
+	err   mutexError
 }
 
 func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeInBytes int, _ string) (*context, chan struct{}, error) {
