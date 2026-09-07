@@ -67,14 +67,14 @@ func (p *Player) Volume() float64 {
 	return p.player.Volume()
 }
 
-// SetVolume sets the current volume, which must be in the range of [0, math.MaxFloat32].
+// SetVolume sets the current volume in the range of [0, math.MaxFloat32].
 // A volume larger than 1 amplifies the sound and might cause clipping.
 // A value out of the range, including NaN, is treated as 0.
 func (p *Player) SetVolume(volume float64) {
 	p.player.SetVolume(volume)
 }
 
-// BufferedSize returns the byte size of the buffer data that is not sent to the audio hardware yet.
+// BufferedSize returns the byte size of the buffered data that is not sent to the audio hardware yet.
 func (p *Player) BufferedSize() int {
 	return p.player.BufferedSize()
 }
@@ -109,7 +109,7 @@ func (p *Player) Seek(offset int64, whence int) (int64, error) {
 //
 // Close does nothing and always returns nil.
 //
-// Deprecated: as of v3.4. you don't have to call Close.
+// Deprecated: as of v3.4, you don't have to call Close.
 func (p *Player) Close() error {
 	// (*mux.Player).Close() is called by the finalizer. Let's rely on it.
 	return nil

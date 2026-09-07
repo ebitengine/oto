@@ -30,8 +30,6 @@
 
 namespace {
 
-class Player;
-
 // Status is the outcome of an operation. msg is null on success, and describes
 // the failure otherwise. retryable, which is meaningful only for a failure, is
 // false for a configuration error, which would fail the same way however many
@@ -65,9 +63,8 @@ Status StatusFromResult(oboe::Result result) {
 }
 
 // kStableRunDuration is how long a stream must keep playing for its start to
-// count as a success. A stream that goes away sooner reached the device
-// without being able to use it, so the delay before the next attempt keeps
-// growing.
+// count as a success. A stream that goes away sooner managed to start but not
+// to keep playing, so the delay before the next attempt keeps growing.
 constexpr std::chrono::seconds kStableRunDuration{3};
 
 // StartRetryDelay returns how long to wait before the next start attempt after
@@ -98,7 +95,7 @@ enum class State {
   kStopped,
 
   // kStartDeferred means that a start attempt failed for a reason that can
-  // pass, and that LoopStartRetry attempts it again.
+  // be temporary, and that LoopStartRetry attempts it again.
   kStartDeferred,
 
   // kRunning means that the stream was started and has not been paused, closed
@@ -123,8 +120,8 @@ class Stream : public oboe::AudioStreamDataCallback,
                public oboe::AudioStreamErrorCallback {
 public:
   // GetInstance returns the instance of Stream. Only one Stream object is used
-  // in one process. It is because multiple streams can be problematic in both
-  // AAudio and OpenSL (#1656, #1660).
+  // in one process, because multiple streams can be problematic in both AAudio
+  // and OpenSL (#1656, #1660).
   static Stream &GetInstance();
 
   const char *Play(int sample_rate, int channel_num, int buffer_size_in_bytes);

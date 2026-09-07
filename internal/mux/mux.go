@@ -26,7 +26,7 @@ import (
 	"time"
 )
 
-// Format must sync with oto's Format.
+// Format must be kept in sync with oto's Format.
 type Format int
 
 const (
@@ -108,7 +108,7 @@ func (m *Mux) loop() {
 		}
 
 		// Sleeping is necessary especially on browsers.
-		// Sometimes a player continues to read 0 bytes from the source and this loop can be a busy loop in such case.
+		// Sometimes a player continues to read 0 bytes from the source and this loop can be a busy loop in such a case.
 		if allZero {
 			time.Sleep(time.Millisecond)
 		}
@@ -630,7 +630,7 @@ func (p *playerImpl) returnBufferToPool() {
 // TODO: The term 'buffer' is confusing. Name each buffer with good terms.
 
 // defaultBufferSize returns the default size of the buffer for the audio source.
-// This buffer is used when unreading on pausing the player.
+// The mux loop reads the source into this buffer, and ReadFloat32s consumes it.
 func (m *Mux) defaultBufferSize() int {
 	bytesPerSample := m.channelCount * m.format.ByteLength()
 	s := m.sampleRate * bytesPerSample / 2 // 0.5[s]

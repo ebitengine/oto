@@ -54,7 +54,7 @@ Add them to "Linked Frameworks and Libraries" on your Xcode project.
 ### Linux, FreeBSD, OpenBSD
 
 Oto uses PulseAudio on Linux and BSD systems via the pure-Go package `github.com/jfreymuth/pulse`,
-though BSD systems are not tested well.
+though BSD systems are not well tested.
 
 If the PulseAudio server is not discoverable automatically, set `PULSE_SERVER`.
 
@@ -68,7 +68,7 @@ is enabled by default, need nothing extra.
 
 ## Usage
 
-The two main components of Oto are a `Context` and `Players`. The context handles interactions with
+The two main components of Oto are `Context` and `Player`. The context handles interactions with
 the OS and audio drivers, and as such there can only be **one** context in your program.
 
 From a context you can create any number of different players, where each player is given an `io.Reader` that
@@ -116,7 +116,7 @@ func main() {
     // Usually 44100 or 48000. Other values might cause distortions in Oto
     op.SampleRate = 44100
 
-    // Number of channels (aka locations) to play sounds from. Either 1 or 2.
+    // Number of channels to play sounds from. Either 1 or 2.
     // 1 is mono sound, and 2 is stereo (most speakers are stereo). 
     op.ChannelCount = 2
 
@@ -146,7 +146,7 @@ func main() {
     }
 
     // Now that the sound finished playing, we can restart from the beginning (or go to any location in the sound) using seek
-    // newPos, err := player.(io.Seeker).Seek(0, io.SeekStart)
+    // newPos, err := player.Seek(0, io.SeekStart)
     // if err != nil{
     //     panic("player.Seek failed: " + err.Error())
     // }
@@ -209,13 +209,13 @@ Data is moved from io.Reader->internal buffer->audio device, and when the intern
 is not guaranteed, so there might be a small delay. The amount of data in the buffer can be retrieved
 using `Player.BufferedSize()`.
 
-The size of the underlying buffer of a player can also be set by type-asserting the player object:
+The size of the underlying buffer of a player can also be set by calling the player's `SetBufferSize` function:
 
 ```go
-myPlayer.(oto.BufferSizeSetter).SetBufferSize(newBufferSize)
+myPlayer.SetBufferSize(newBufferSize)
 ```
 
-This works because players implement a `Player` interface and a `BufferSizeSetter` interface.
+`NewPlayer` returns a `*oto.Player`, which has functions like `SetBufferSize` and `Seek`.
 
 ## Crosscompiling
 

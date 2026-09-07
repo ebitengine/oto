@@ -28,7 +28,7 @@ import (
 
 var (
 	sampleRate   = flag.Int("samplerate", 48000, "sample rate")
-	channelCount = flag.Int("channelcount", 2, "number of channel")
+	channelCount = flag.Int("channelcount", 2, "number of channels")
 	format       = flag.String("format", "s16le", "source format (u8, s16le, or f32le)")
 )
 
@@ -210,7 +210,7 @@ func run() error {
 
 	wg.Wait()
 
-	// Pin the players not to GC the players.
+	// Keep the players alive so that they are not garbage-collected.
 	runtime.KeepAlive(players)
 
 	return nil

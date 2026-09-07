@@ -245,7 +245,7 @@ func TestPauseAndStopReadingKeepsOngoingReadResult(t *testing.T) {
 	}
 
 	// The player must be reusable after PauseAndStopReading.
-	// Consume the buffered data to make a room for a new read.
+	// Consume the buffered data to make room for a new read.
 	p.Play()
 	m.ReadFloat32s(make([]float32, 4096))
 	deadline := time.Now().Add(time.Second)
@@ -360,7 +360,7 @@ func TestClosingSourceAfterPauseAndStopReadingIsSafe(t *testing.T) {
 	_ = src.Close()
 	reads := src.reads.Load()
 
-	// Consume the mux's buffer to tempt it to read the source again.
+	// Consume the mux's buffer to prompt it to read the source again.
 	m.ReadFloat32s(make([]float32, 256))
 	time.Sleep(100 * time.Millisecond)
 
@@ -409,7 +409,7 @@ func TestSeekDiscardsOngoingReadResult(t *testing.T) {
 	// Wait until a read from the source is in flight.
 	<-src.began
 
-	// Pause not to resume playing after seeking.
+	// Pause so that playing does not resume after seeking.
 	p.Pause()
 
 	done := make(chan struct{})
