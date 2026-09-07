@@ -486,18 +486,18 @@ type _IMMDeviceEnumerator_Vtbl struct {
 	UnregisterEndpointNotificationCallback uintptr
 }
 
-func (i *_IMMDeviceEnumerator) GetDefaultAudioEndPoint(dataFlow _EDataFlow, role _ERole) (*_IMMDevice, error) {
+func (i *_IMMDeviceEnumerator) GetDefaultAudioEndpoint(dataFlow _EDataFlow, role _ERole) (*_IMMDevice, error) {
 	var endPoint *_IMMDevice
 	r, _, _ := syscall.Syscall6(i.vtbl.GetDefaultAudioEndpoint, 4, uintptr(unsafe.Pointer(i)),
 		uintptr(dataFlow), uintptr(role), uintptr(unsafe.Pointer(&endPoint)), 0, 0)
 	if uint32(r) != uint32(windows.S_OK) {
 		if isWin32Err(uint32(r)) {
-			return nil, fmt.Errorf("oto: IMMDeviceEnumerator::GetDefaultAudioEndPoint failed: %w", _E_NOTFOUND)
+			return nil, fmt.Errorf("oto: IMMDeviceEnumerator::GetDefaultAudioEndpoint failed: %w", _E_NOTFOUND)
 		}
 		if isRPCErr(uint32(r)) {
-			return nil, fmt.Errorf("oto: IMMDeviceEnumerator::GetDefaultAudioEndPoint failed: %w", _RPC_ERR(r))
+			return nil, fmt.Errorf("oto: IMMDeviceEnumerator::GetDefaultAudioEndpoint failed: %w", _RPC_ERR(r))
 		}
-		return nil, fmt.Errorf("oto: IMMDeviceEnumerator::GetDefaultAudioEndPoint failed: HRESULT(%d)", uint32(r))
+		return nil, fmt.Errorf("oto: IMMDeviceEnumerator::GetDefaultAudioEndpoint failed: HRESULT(%d)", uint32(r))
 	}
 	return endPoint, nil
 }

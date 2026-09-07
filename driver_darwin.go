@@ -54,7 +54,7 @@ func newAudioQueue(sampleRate, channelCount int, oneBufferSizeInBytes int) (_Aud
 		0, //CFStringRef
 		0,
 		&audioQueue); osstatus != noErr {
-		return 0, nil, fmt.Errorf("oto: AudioQueueNewFormat with StreamFormat failed: %d", osstatus)
+		return 0, nil, fmt.Errorf("oto: AudioQueueNewOutput failed: %d", osstatus)
 	}
 
 	bufs := make([]_AudioQueueBufferRef, 0, bufferCount)
@@ -138,7 +138,7 @@ func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeI
 	// defaultOneBufferSizeInBytes is the default buffer size in bytes.
 	//
 	// 12288 seems necessary at least on iPod touch (7th) and MacBook Pro 2020.
-	// With 48000[Hz] stereo, the maximum delay is (12288*4[buffers] / 4 / 2)[samples] / 48000 [Hz] = 100[ms].
+	// With 48000[Hz] stereo, the maximum delay is (12288*4[buffers] / 4 / 2)[samples] / 48000 [Hz] = 128[ms].
 	// '4' is float32 size in bytes. '2' is a number of channels for stereo.
 	const defaultOneBufferSizeInBytes = 12288
 

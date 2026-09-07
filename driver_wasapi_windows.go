@@ -125,8 +125,7 @@ type wasapiContext struct {
 }
 
 var (
-	errDeviceSwitched     = errors.New("oto: device switched")
-	errFormatNotSupported = errors.New("oto: the specified format is not supported (there is the closest format instead)")
+	errDeviceSwitched = errors.New("oto: device switched")
 )
 
 const (
@@ -187,7 +186,7 @@ func (c *wasapiContext) isDeviceSwitched() (bool, error) {
 	var switched bool
 	var cerr error
 	c.comThread.Run(func() {
-		device, err := c.enumerator.GetDefaultAudioEndPoint(eRender, eConsole)
+		device, err := c.enumerator.GetDefaultAudioEndpoint(eRender, eConsole)
 		if err != nil {
 			cerr = err
 			return
@@ -303,7 +302,7 @@ func (c *wasapiContext) startOnCOMThread() (ferr error) {
 	}
 	c.enumerator = (*_IMMDeviceEnumerator)(e)
 
-	device, err := c.enumerator.GetDefaultAudioEndPoint(eRender, eConsole)
+	device, err := c.enumerator.GetDefaultAudioEndpoint(eRender, eConsole)
 	if err != nil {
 		if errors.Is(err, _E_NOTFOUND) {
 			return errDeviceNotFound
@@ -333,7 +332,7 @@ func (c *wasapiContext) startOnCOMThread() (ferr error) {
 	}
 
 	// Check the format is supported by WASAPI.
-	// Stereo with 48000 [Hz] is likely supported, but mono and/or other sample rates are unlikely supported.
+	// Stereo with 48000 [Hz] is likely supported, but mono and/or other sample rates are unlikely to be supported.
 	// Fallback to WinMM in this case anyway.
 	const bitsPerSample = 32
 	nBlockAlign := c.channelCount * bitsPerSample / 8
@@ -531,8 +530,7 @@ func (c *wasapiContext) Err() error {
 // isWASAPIDeviceTransientError reports whether err from (re)starting the client
 // indicates a temporarily unusable device rather than a permanent failure.
 func isWASAPIDeviceTransientError(err error) bool {
-	return errors.Is(err, errFormatNotSupported) ||
-		errors.Is(err, errDeviceNotFound) ||
+	return errors.Is(err, errDeviceNotFound) ||
 		errors.Is(err, _AUDCLNT_E_DEVICE_INVALIDATED) ||
 		errors.Is(err, _AUDCLNT_E_RESOURCES_INVALIDATED) ||
 		errors.Is(err, _RPC_E_DISCONNECTED)

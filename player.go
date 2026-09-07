@@ -74,7 +74,7 @@ func (p *Player) SetVolume(volume float64) {
 	p.player.SetVolume(volume)
 }
 
-// BufferedSize returns the byte size of the buffer data that is not sent to the audio hardware yet.
+// BufferedSize returns the byte size of the buffered data that is not sent to the audio hardware yet.
 func (p *Player) BufferedSize() int {
 	return p.player.BufferedSize()
 }

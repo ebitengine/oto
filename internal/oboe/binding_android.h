@@ -23,8 +23,6 @@
 extern "C" {
 #endif
 
-typedef uintptr_t PlayerID;
-
 const char *oto_oboe_Play(int sample_rate, int channel_num,
                           int buffer_size_in_bytes);
 const char *oto_oboe_Suspend();

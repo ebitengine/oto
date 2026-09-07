@@ -43,20 +43,20 @@ type Context struct {
 type Format int
 
 const (
-	// FormatFloat32LE is the format of 32 bits floats little endian.
+	// FormatFloat32LE is the format of 32-bit floats in little endian.
 	FormatFloat32LE Format = iota
 
-	// FormatUnsignedInt8 is the format of 8 bits integers.
+	// FormatUnsignedInt8 is the format of 8-bit integers.
 	FormatUnsignedInt8
 
-	// FormatSignedInt16LE is the format of 16 bits integers little endian.
+	// FormatSignedInt16LE is the format of 16-bit integers in little endian.
 	FormatSignedInt16LE
 )
 
 // NewContextOptions represents options for NewContext.
 type NewContextOptions struct {
 	// SampleRate specifies the number of samples that should be played during one second.
-	// Usual numbers are 44100 or 48000. One context has only one sample rate. You cannot play multiple audio
+	// Typical values are 44100 or 48000. One context has only one sample rate. You cannot play multiple audio
 	// sources with different sample rates at the same time.
 	SampleRate int
 
@@ -70,9 +70,9 @@ type NewContextOptions struct {
 	// BufferSize specifies a buffer size in the underlying device.
 	//
 	// If 0 is specified, the driver's default buffer size is used.
-	// Set BufferSize to adjust the buffer size if you want to adjust latency or reduce noises.
-	// Too big buffer size can increase the latency time.
-	// On the other hand, too small buffer size can cause glitch noises due to buffer shortage.
+	// Set BufferSize to adjust the buffer size if you want to adjust latency or reduce noise.
+	// A buffer size that is too big increases the latency.
+	// On the other hand, a buffer size that is too small can cause glitch noises due to buffer shortage.
 	BufferSize time.Duration
 
 	// ApplicationName specifies the name of the client application.
@@ -82,7 +82,7 @@ type NewContextOptions struct {
 
 // NewContext creates a new context with given options.
 // A context creates and holds ready-to-use Player objects.
-// NewContext returns a context, a channel that closes when initialization finishes, and an error if it exists.
+// NewContext returns a context, a channel that closes when initialization finishes, and an error, if any.
 // After the channel closes, call Context.Err to check whether initialization succeeded.
 //
 // Creating multiple contexts is NOT supported.
@@ -97,7 +97,7 @@ func NewContext(options *NewContextOptions) (*Context, chan struct{}, error) {
 
 	var bufferSizeInBytes int
 	if options.BufferSize != 0 {
-		// The underlying driver always uses 32bit floats.
+		// The underlying driver always uses 32-bit floats.
 		bytesPerSample := options.ChannelCount * 4
 		bytesPerSecond := options.SampleRate * bytesPerSample
 		bufferSizeInBytes = int(int64(options.BufferSize) * int64(bytesPerSecond) / int64(time.Second))
@@ -130,7 +130,7 @@ func NewContext(options *NewContextOptions) (*Context, chan struct{}, error) {
 // Then, r's position and the current playing position don't necessarily match.
 // If you want to seek the position of r, call the player's Seek function,
 // which also clears the underlying buffer.
-// If you want to stop using r e.g., you want to close r, call the player's PauseAndStopReading function.
+// If you want to stop using r (e.g. you want to close r), call the player's PauseAndStopReading function.
 //
 // You cannot share r by multiple players.
 //

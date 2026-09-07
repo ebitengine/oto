@@ -28,6 +28,7 @@ A low-level library to play sound.
 - iOS
 - WebAssembly (no Cgo required)
 - Nintendo Switch
+- PlayStation 5
 - Xbox
 
 ## Prerequisite
@@ -54,7 +55,7 @@ Add them to "Linked Frameworks and Libraries" on your Xcode project.
 ### Linux, FreeBSD, OpenBSD
 
 Oto uses PulseAudio on Linux and BSD systems via the pure-Go package `github.com/jfreymuth/pulse`,
-though BSD systems are not tested well.
+though BSD systems are not well tested.
 
 If the PulseAudio server is not discoverable automatically, set `PULSE_SERVER`.
 
@@ -68,7 +69,7 @@ is enabled by default, need nothing extra.
 
 ## Usage
 
-The two main components of Oto are a `Context` and `Players`. The context handles interactions with
+The two main components of Oto are `Context` and `Player`. The context handles interactions with
 the OS and audio drivers, and as such there can only be **one** context in your program.
 
 From a context you can create any number of different players, where each player is given an `io.Reader` that
@@ -116,7 +117,7 @@ func main() {
     // Usually 44100 or 48000. Other values might cause distortions in Oto
     op.SampleRate = 44100
 
-    // Number of channels (aka locations) to play sounds from. Either 1 or 2.
+    // Number of channels to play sounds from. Either 1 or 2.
     // 1 is mono sound, and 2 is stereo (most speakers are stereo). 
     op.ChannelCount = 2
 

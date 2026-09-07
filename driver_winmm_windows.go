@@ -26,9 +26,6 @@ import (
 	"github.com/ebitengine/oto/v3/internal/mux"
 )
 
-// Avoid goroutines on Windows (hajimehoshi/ebiten#1768).
-// Apparently, switching contexts might take longer than other platforms.
-
 const defaultHeaderBufferSize = 4096
 
 type header struct {
@@ -201,7 +198,7 @@ func (c *winmmContext) isHeaderAvailable() bool {
 }
 
 var waveOutOpenCallback = windows.NewCallback(func(hwo, uMsg, dwInstance, dwParam1, dwParam2 uintptr) uintptr {
-	// Queuing a header in this callback might not work especially when a headset is connected or disconnected.
+	// Queueing a header in this callback might not work especially when a headset is connected or disconnected.
 	// Just signal the condition variable and don't do other things.
 	const womDone = 0x3bd
 	if uMsg != womDone {

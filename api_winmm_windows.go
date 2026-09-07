@@ -101,7 +101,7 @@ func (m _MMRESULT) Error() string {
 	case _WAVERR_SYNC:
 		return "WAVERR_SYNC"
 	}
-	return fmt.Sprintf("MMRESULT (%d)", m)
+	return fmt.Sprintf("MMRESULT(%d)", m)
 }
 
 func waveOutOpen(f *_WAVEFORMATEX, callback uintptr) (uintptr, error) {
