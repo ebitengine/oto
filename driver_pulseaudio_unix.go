@@ -35,7 +35,7 @@ type pulseContext struct {
 	cond      *sync.Cond
 
 	mux *mux.Mux
-	err mutexError
+	err atomicError
 }
 
 func newPulseContext(sampleRate int, channelCount int, mux *mux.Mux, bufferSizeInBytes int, applicationName string) (*pulseContext, error) {

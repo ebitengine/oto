@@ -28,7 +28,6 @@ A low-level library to play sound.
 - iOS
 - WebAssembly (no Cgo required)
 - Nintendo Switch
-- PlayStation 5
 - Xbox
 
 ## Prerequisite

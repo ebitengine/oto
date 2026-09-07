@@ -107,7 +107,7 @@ type wasapiContext struct {
 	bufferSizeInBytes int
 
 	comThread     *comThread
-	err           mutexError
+	err           atomicError
 	suspended     bool
 	suspendedCond *sync.Cond
 

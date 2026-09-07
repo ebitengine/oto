@@ -76,7 +76,7 @@ type winmmContext struct {
 	buf32 []float32
 
 	mux       *mux.Mux
-	err       mutexError
+	err       atomicError
 	loopEndCh chan error
 
 	cond *sync.Cond

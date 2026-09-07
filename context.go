@@ -173,14 +173,14 @@ func (c *Context) Err() error {
 	return c.context.Err()
 }
 
-type mutexError struct {
+type atomicError struct {
 	err error
 	m   sync.Mutex
 }
 
 // Join records err in addition to the errors recorded so far. A nil err is
 // ignored.
-func (a *mutexError) Join(err error) {
+func (a *atomicError) Join(err error) {
 	if err == nil {
 		return
 	}
@@ -190,7 +190,7 @@ func (a *mutexError) Join(err error) {
 	a.err = errors.Join(a.err, err)
 }
 
-func (a *mutexError) Load() error {
+func (a *atomicError) Load() error {
 	a.m.Lock()
 	defer a.m.Unlock()
 	return a.err
