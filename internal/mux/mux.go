@@ -488,7 +488,10 @@ func (p *playerImpl) readBufferAndAdd(buf []float32) int {
 	volume := float32(p.volume)
 
 	channelCount := p.mux.channelCount
-	rateDenom := float32(n / channelCount)
+	// The division must be done on floats, or a buffer with fewer samples than
+	// channels makes rateDenom 0 and the ramp rate 0/0, i.e. NaN, silencing the
+	// whole ramp.
+	rateDenom := float32(n) / float32(channelCount)
 
 	src := p.buf[:n*bitDepthInBytes]
 
