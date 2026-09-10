@@ -466,13 +466,15 @@ func (c *wasapiContext) writeOnRenderThread() error {
 		return err
 	}
 
-	frames := c.bufferFrames - paddingFrames
+	// The subtraction must happen on signed ints: padding can exceed the buffer size
+	// transiently, and on uint32 that would wrap around to a huge frame count.
+	frames := int(c.bufferFrames) - int(paddingFrames)
 	if frames <= 0 {
 		return nil
 	}
 
 	// Get the destination buffer.
-	dstBuf, err := c.renderClient.GetBuffer(frames)
+	dstBuf, err := c.renderClient.GetBuffer(uint32(frames))
 	if err != nil {
 		return err
 	}
@@ -491,7 +493,7 @@ func (c *wasapiContext) writeOnRenderThread() error {
 	copy(unsafe.Slice((*float32)(unsafe.Pointer(dstBuf)), len(c.buf)), c.buf)
 
 	// Release the buffer.
-	if err := c.renderClient.ReleaseBuffer(frames, 0); err != nil {
+	if err := c.renderClient.ReleaseBuffer(uint32(frames), 0); err != nil {
 		return err
 	}
 
