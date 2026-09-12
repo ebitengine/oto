@@ -657,11 +657,23 @@ func TestVolumeRampWithFewerSamplesThanChannelsDoesNotSilence(t *testing.T) {
 		src          []byte
 	}{
 		// A stereo player with a single sample left in its buffer.
-		{"stereo with one sample", 2, signedInt16LEBytes(half)},
+		{
+			name:         "stereo with one sample",
+			channelCount: 2,
+			src:          signedInt16LEBytes(half),
+		},
 		// A stereo player with a partial frame left in its buffer.
-		{"stereo with a partial frame", 2, signedInt16LEBytes(half, half, half)[:3]},
+		{
+			name:         "stereo with a partial frame",
+			channelCount: 2,
+			src:          signedInt16LEBytes(half, half, half)[:3],
+		},
 		// A quadrophonic player with a single sample left in its buffer.
-		{"quad with one sample", 4, signedInt16LEBytes(half)},
+		{
+			name:         "quad with one sample",
+			channelCount: 4,
+			src:          signedInt16LEBytes(half),
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			m := mux.New(48000, tc.channelCount, mux.FormatSignedInt16LE)
