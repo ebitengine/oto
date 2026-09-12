@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -632,6 +633,72 @@ func TestInvalidVolumeWhilePlayingIsRecoverable(t *testing.T) {
 	}
 	if sum == 0 {
 		t.Error("the player stayed silent after a valid volume was set again")
+	}
+}
+
+// signedInt16LEBytes returns the little-endian 16-bit representation of the given values.
+func signedInt16LEBytes(values ...int16) []byte {
+	bs := make([]byte, 0, 2*len(values))
+	for _, v := range values {
+		bs = append(bs, byte(v), byte(v>>8))
+	}
+	return bs
+}
+
+// A volume ramp must not be dropped when fewer samples than the channel count
+// are buffered. With an integer division for the ramp denominator, the
+// denominator became 0 and the whole ramp became NaN, silencing the player.
+func TestVolumeRampWithFewerSamplesThanChannelsDoesNotSilence(t *testing.T) {
+	const half = 1 << 14
+
+	for _, tc := range []struct {
+		name         string
+		channelCount int
+		src          []byte
+	}{
+		// A stereo player with a single sample left in its buffer.
+		{
+			name:         "stereo with one sample",
+			channelCount: 2,
+			src:          signedInt16LEBytes(half),
+		},
+		// A stereo player with a partial frame left in its buffer.
+		{
+			name:         "stereo with a partial frame",
+			channelCount: 2,
+			src:          signedInt16LEBytes(half, half, half)[:3],
+		},
+		// A quadrophonic player with a single sample left in its buffer.
+		{
+			name:         "quad with one sample",
+			channelCount: 4,
+			src:          signedInt16LEBytes(half),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := mux.New(48000, tc.channelCount, mux.FormatSignedInt16LE)
+			p := newPlayer(t, m, &bytes.Reader{})
+			p.SetVolume(0.5)
+
+			// Ramp from the volume 1 to the volume 0.5.
+			p.PrimeForMixing(slices.Clone(tc.src), 1)
+
+			buf := make([]float32, len(tc.src)/mux.FormatSignedInt16LE.ByteLength())
+			if got, want := p.ReadBufferAndAdd(buf), len(buf); got != want {
+				t.Fatalf("mixed samples: got %d; want %d", got, want)
+			}
+
+			for i, got := range buf {
+				if math.IsNaN(float64(got)) {
+					t.Fatalf("buf[%d]: got NaN; want a finite value", i)
+				}
+				// The sample source is 0.5 and the volume is ramped from 1 to 0.5,
+				// so every mixed sample must lie in [0.25, 0.5].
+				if got < 0.25 || got > 0.5 {
+					t.Errorf("buf[%d]: got %v; want a value in [0.25, 0.5]", i, got)
+				}
+			}
+		})
 	}
 }
 
