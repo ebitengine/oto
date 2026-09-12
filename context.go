@@ -68,6 +68,7 @@ type NewContextOptions struct {
 	Format Format
 
 	// BufferSize specifies a buffer size in the underlying device.
+	// BufferSize must not be negative.
 	//
 	// If 0 is specified, the driver's default buffer size is used.
 	// Set BufferSize to adjust the buffer size if you want to adjust latency or reduce noise.
@@ -81,12 +82,20 @@ type NewContextOptions struct {
 }
 
 // NewContext creates a new context with given options.
+// The options must not be nil.
 // A context creates and holds ready-to-use Player objects.
 // NewContext returns a context, a channel that closes when initialization finishes, and an error, if any.
 // After the channel closes, call Context.Err to check whether initialization succeeded.
 //
 // Creating multiple contexts is NOT supported.
 func NewContext(options *NewContextOptions) (*Context, chan struct{}, error) {
+	if options == nil {
+		return nil, nil, fmt.Errorf("oto: options must not be nil")
+	}
+	if options.BufferSize < 0 {
+		return nil, nil, fmt.Errorf("oto: buffer size must not be negative: %s", options.BufferSize)
+	}
+
 	contextCreationMutex.Lock()
 	defer contextCreationMutex.Unlock()
 
