@@ -498,7 +498,7 @@ func (p *playerImpl) readBufferAndAdd(buf []float32) int {
 		case FormatFloat32LE:
 			v = math.Float32frombits(uint32(src[4*i]) | uint32(src[4*i+1])<<8 | uint32(src[4*i+2])<<16 | uint32(src[4*i+3])<<24)
 		case FormatUnsignedInt8:
-			v8 := src[i]
+			v8 := int(src[i])
 			v = float32(v8-(1<<7)) / (1 << 7)
 		case FormatSignedInt16LE:
 			v16 := int16(src[2*i]) | (int16(src[2*i+1]) << 8)
