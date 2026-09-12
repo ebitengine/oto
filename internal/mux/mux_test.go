@@ -567,6 +567,27 @@ func waitForBufferedSize(t *testing.T, p *mux.Player, size int) {
 	}
 }
 
+// Issue #298
+func TestUnsignedInt8Samples(t *testing.T) {
+	src := make([]byte, 256)
+	for i := range src {
+		src[i] = byte(i)
+	}
+
+	m := mux.New(48000, 1, mux.FormatUnsignedInt8)
+	p := newPlayer(t, m, bytes.NewReader(src))
+	p.Play()
+	waitForBufferedSize(t, p, len(src))
+
+	buf := make([]float32, len(src))
+	m.ReadFloat32s(buf)
+	for i, got := range buf {
+		if want := float32(i)/128 - 1; got != want {
+			t.Errorf("sample %d: got %v; want %v", i, got, want)
+		}
+	}
+}
+
 func TestInvalidVolumeDoesNotAffectOtherPlayers(t *testing.T) {
 	const sampleCount = 256
 
