@@ -465,10 +465,13 @@ func (c *wasapiContext) writeOnRenderThread() error {
 		return err
 	}
 
-	frames := c.bufferFrames - paddingFrames
-	if frames <= 0 {
+	// Defensive check: WASAPI should never report more padding than the buffer size,
+	// but if it did, the uint32 subtraction below would wrap around to a huge frame
+	// count and GetBuffer would fail, so skip the write instead.
+	if paddingFrames >= c.bufferFrames {
 		return nil
 	}
+	frames := c.bufferFrames - paddingFrames
 
 	// Get the destination buffer.
 	dstBuf, err := c.renderClient.GetBuffer(frames)
