@@ -25,6 +25,7 @@ import (
 
 	"golang.org/x/sys/windows"
 
+	"github.com/ebitengine/oto/v3/internal/mathutil"
 	"github.com/ebitengine/oto/v3/internal/mux"
 )
 
@@ -359,7 +360,11 @@ func (c *wasapiContext) startOnCOMThread() (ferr error) {
 	var bufferSizeIn100ns _REFERENCE_TIME
 	if c.bufferSizeInBytes != 0 {
 		bufferSizeInFrames := int64(c.bufferSizeInBytes) / int64(nBlockAlign)
-		bufferSizeIn100ns = _REFERENCE_TIME(1e7 * bufferSizeInFrames / int64(c.sampleRate))
+		duration, ok := mathutil.MulDiv(bufferSizeInFrames, 1e7, int64(c.sampleRate))
+		if !ok {
+			return fmt.Errorf("oto: WASAPI buffer duration is unrepresentable")
+		}
+		bufferSizeIn100ns = _REFERENCE_TIME(duration)
 	} else {
 		// The default buffer size can be too small and might cause glitch noises.
 		// Specify 50[ms] as the buffer size.

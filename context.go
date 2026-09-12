@@ -21,6 +21,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ebitengine/oto/v3/internal/mathutil"
 	"github.com/ebitengine/oto/v3/internal/mux"
 )
 
@@ -104,19 +105,37 @@ func NewContext(options *NewContextOptions) (*Context, chan struct{}, error) {
 	}
 	contextCreated = true
 
-	var bufferSizeInBytes int
-	if options.BufferSize != 0 {
-		// The underlying driver always uses 32-bit floats.
-		bytesPerSample := options.ChannelCount * 4
-		bytesPerSecond := options.SampleRate * bytesPerSample
-		bufferSizeInBytes = int(int64(options.BufferSize) * int64(bytesPerSecond) / int64(time.Second))
-		bufferSizeInBytes = bufferSizeInBytes / bytesPerSample * bytesPerSample
+	bufferSizeInBytes, err := durationToBufferSize(options.BufferSize, options.SampleRate, options.ChannelCount)
+	if err != nil {
+		return nil, nil, err
 	}
 	ctx, ready, err := newContext(options.SampleRate, options.ChannelCount, mux.Format(options.Format), bufferSizeInBytes, options.ApplicationName)
 	if err != nil {
 		return nil, nil, err
 	}
 	return &Context{context: ctx}, ready, nil
+}
+
+func durationToBufferSize(duration time.Duration, sampleRate, channelCount int) (int, error) {
+	if duration == 0 {
+		return 0, nil
+	}
+	if duration < 0 || sampleRate <= 0 || channelCount <= 0 {
+		return 0, fmt.Errorf("oto: invalid buffer duration, sample rate, or channel count")
+	}
+
+	// The underlying driver always uses 32-bit floats.
+	const maxInt = int(^uint(0) >> 1)
+	if channelCount > maxInt/4 {
+		return 0, fmt.Errorf("oto: buffer frame size exceeds int range")
+	}
+	bytesPerFrame := channelCount * 4
+
+	frames, ok := mathutil.MulDiv(int64(duration), int64(sampleRate), int64(time.Second))
+	if !ok || frames > int64(maxInt/bytesPerFrame) {
+		return 0, fmt.Errorf("oto: buffer size exceeds int range")
+	}
+	return int(frames) * bytesPerFrame, nil
 }
 
 // NewPlayer creates a new, ready-to-use Player belonging to the Context.
