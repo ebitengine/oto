@@ -36,14 +36,15 @@ func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeI
 		mux: mux.New(sampleRate, channelCount, format),
 	}
 	go func() {
+		// The ready channel must close even if Play fails, or callers waiting on it block forever.
+		defer close(ready)
+
 		c.m.Lock()
 		defer c.m.Unlock()
 
 		if err := oboe.Play(sampleRate, channelCount, c.mux.ReadFloat32s, c.err.Join, bufferSizeInBytes); err != nil {
 			c.err.Join(err)
-			return
 		}
-		close(ready)
 	}()
 	return c, ready, nil
 }
