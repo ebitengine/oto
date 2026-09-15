@@ -194,6 +194,8 @@ type playerImpl struct {
 	err        error
 	state      playerState
 	buf        []byte
+	// readPos is the offset of the unconsumed data in buf.
+	readPos    int
 	eof        bool
 	bufferSize int
 
@@ -295,7 +297,7 @@ func (p *playerImpl) playImpl() {
 	if p.state != playerPaused && p.state != playerPausedAndStopReading {
 		return
 	}
-	if p.eof && len(p.buf) == 0 {
+	if p.eof && p.buffered() == 0 {
 		return
 	}
 	p.state = playerPlay
@@ -366,6 +368,7 @@ func (p *playerImpl) Seek(offset int64, whence int) (int64, error) {
 	// The result of an ongoing read, if any, is data at the old position and must be discarded.
 	if p.state != playerClosed {
 		p.buf = p.buf[:0]
+		p.readPos = 0
 		p.eof = false
 		p.srcGen++
 
@@ -395,6 +398,7 @@ func (p *playerImpl) Reset() {
 	// Clear the buffer states after waiting, as a read that was in flight might have
 	// added data to the buffer or reached the end of the source.
 	p.buf = p.buf[:0]
+	p.readPos = 0
 	p.eof = false
 }
 
@@ -446,7 +450,7 @@ func (p *Player) BufferedSize() int {
 func (p *playerImpl) BufferedSize() int {
 	p.m.Lock()
 	defer p.m.Unlock()
-	return len(p.buf)
+	return p.buffered()
 }
 
 func (p *Player) Close() error {
@@ -472,6 +476,10 @@ func (p *playerImpl) closeImpl() error {
 	return p.err
 }
 
+func (p *playerImpl) buffered() int {
+	return len(p.buf) - p.readPos
+}
+
 func (p *playerImpl) readBufferAndAdd(buf []float32) int {
 	p.m.Lock()
 	defer p.m.Unlock()
@@ -482,7 +490,7 @@ func (p *playerImpl) readBufferAndAdd(buf []float32) int {
 
 	format := p.mux.format
 	bitDepthInBytes := format.ByteLength()
-	n := min(len(p.buf)/bitDepthInBytes, len(buf))
+	n := min(p.buffered()/bitDepthInBytes, len(buf))
 
 	prevVolume := float32(p.prevVolume)
 	volume := float32(p.volume)
@@ -490,7 +498,7 @@ func (p *playerImpl) readBufferAndAdd(buf []float32) int {
 	channelCount := p.mux.channelCount
 	rateDenom := float32(n / channelCount)
 
-	src := p.buf[:n*bitDepthInBytes]
+	src := p.buf[p.readPos : p.readPos+n*bitDepthInBytes]
 
 	for i := range n {
 		var v float32
@@ -529,10 +537,14 @@ func (p *playerImpl) readBufferAndAdd(buf []float32) int {
 
 	p.prevVolume = p.volume
 
-	copy(p.buf, p.buf[n*bitDepthInBytes:])
-	p.buf = p.buf[:len(p.buf)-n*bitDepthInBytes]
+	// The consumed region is compacted lazily when the buffer is refilled.
+	p.readPos += n * bitDepthInBytes
+	if p.readPos == len(p.buf) {
+		p.buf = p.buf[:0]
+		p.readPos = 0
+	}
 
-	if p.eof && len(p.buf) == 0 {
+	if p.eof && p.buffered() == 0 {
 		p.returnBufferToPool()
 		p.state = playerPaused
 	}
@@ -550,7 +562,7 @@ func (p *playerImpl) canReadSourceToBuffer() bool {
 	if p.eof {
 		return false
 	}
-	return len(p.buf) < p.bufferSize
+	return p.buffered() < p.bufferSize
 }
 
 func (p *playerImpl) readSourceToBuffer() int {
@@ -571,7 +583,7 @@ func (p *playerImpl) prepareSourceRead() (*[]byte, int) {
 	if p.err != nil || p.state == playerClosed || p.state == playerPausedAndStopReading {
 		return nil, 0
 	}
-	if len(p.buf) >= p.bufferSize {
+	if p.buffered() >= p.bufferSize {
 		return nil, 0
 	}
 
@@ -599,12 +611,22 @@ func (p *playerImpl) finishSourceRead(buf *[]byte, gen, n int, err error) int {
 
 	if p.buf == nil {
 		p.buf = (*getBufferFromPool(p.bufferSize))[:0]
+		p.readPos = 0
+	}
+
+	// Compact the unconsumed bytes to the front when the read result does not
+	// fit at the tail of the backing array.
+	buffered := p.buffered()
+	if p.readPos > 0 && len(p.buf)+n > cap(p.buf) {
+		copy(p.buf, p.buf[p.readPos:])
+		p.buf = p.buf[:buffered]
+		p.readPos = 0
 	}
 
 	p.buf = append(p.buf, (*buf)[:n]...)
 	if err == io.EOF {
 		p.eof = true
-		if len(p.buf) == 0 {
+		if p.buffered() == 0 {
 			p.returnBufferToPool()
 			if p.state == playerPlay {
 				p.state = playerPaused
@@ -625,6 +647,7 @@ func (p *playerImpl) returnBufferToPool() {
 		theBufPool.Put(&buf)
 		p.buf = nil
 	}
+	p.readPos = 0
 }
 
 // TODO: The term 'buffer' is confusing. Name each buffer with good terms.
