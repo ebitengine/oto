@@ -744,8 +744,8 @@ public:
      *         position.
      *         Result::ErrorClosed if the stream is closed. The value is the requested position.
      */
-    virtual ResultWithValue<int64_t> flushFromFrame(
-            FlushFromAccuracy accuracy, int64_t positionInFrames) {
+    virtual ResultWithValue<int64_t> flushFromFrame([[maybe_unused]] FlushFromAccuracy accuracy,
+                                                    [[maybe_unused]] int64_t positionInFrames) {
         return ResultWithValue<int64_t>(Result::ErrorUnimplemented);
     }
 
@@ -763,7 +763,8 @@ public:
      *         playback parameters.
      *         Result::ErrorInvalidState if the stream is not initialized successfully.
      */
-    virtual oboe::Result setPlaybackParameters(const PlaybackParameters& parameters) {
+    virtual oboe::Result setPlaybackParameters(
+            [[maybe_unused]] const PlaybackParameters& parameters) {
         return Result::ErrorUnimplemented;
     }
 
@@ -777,6 +778,37 @@ public:
      */
     virtual ResultWithValue<PlaybackParameters> getPlaybackParameters() {
         return ResultWithValue<PlaybackParameters>(Result::ErrorUnimplemented);
+    }
+
+    /*
+     * Make a shared_ptr that will prevent this stream from being deleted.
+     */
+    std::shared_ptr<oboe::AudioStream> lockWeakThis() {
+        return mWeakThis.lock();
+    }
+
+    /**
+     * Returns a pointer to the parent stream if this stream is wrapped
+     * by a parent FilterAudioStream. May be unassigned if no parent exists.
+     */
+    AudioStream *getParentStream() const {
+        return mParentStream;
+    }
+
+    /**
+     * Returns true if this stream is owned by a parent FilterAudioStream.
+     * When true, the parent must remain alive during callbacks.
+     */
+    bool hasParentStream() const {
+        return mHasParentStream;
+    }
+
+    /**
+     * Sets the parent wrapper stream. For internal use only.
+     */
+    void setParentStream(AudioStream *parentStream) {
+        mParentStream = parentStream;
+        mHasParentStream = parentStream != nullptr;
     }
 
 protected:
@@ -888,14 +920,14 @@ protected:
         mWeakThis = sharedStream;
     }
 
-    /*
-     * Make a shared_ptr that will prevent this stream from being deleted.
-     */
-    std::shared_ptr<oboe::AudioStream> lockWeakThis() {
-        return mWeakThis.lock();
-    }
-
     std::weak_ptr<AudioStream> mWeakThis; // weak pointer to this object
+
+    // Pointer to parent stream.
+    // Non-empty only when wrapped by another AudioStream.
+    AudioStream *mParentStream{};
+
+    // Flag to indicate whether this stream is wrapped by a parent.
+    bool mHasParentStream{};
 
     /**
      * Number of frames which have been written into the stream

@@ -69,6 +69,10 @@ typedef int32_t aaudio_session_id_t;
 #define OBOE_USING_NDK 0
 #endif
 
+#ifndef __NDK_BETA__
+#define __NDK_BETA__ 0
+#endif
+
 #if __NDK_MAJOR__ < 24
 // Defined in SC_V2
 typedef uint32_t aaudio_channel_mask_t;
@@ -80,6 +84,15 @@ typedef int32_t aaudio_spatialization_behavior_t;
 typedef void (*AAudioStream_presentationEndCallback)(
         AAudioStream* stream,
         void* userData);
+#endif
+
+#if OBOE_USING_NDK && (__NDK_MAJOR__ < 30 || (__NDK_MAJOR__ == 30 && __NDK_BETA__ == 1))
+// Defined in Android C (added in NDK 30 beta 2)
+typedef void (*AAudioStream_routingChangedCallback)(
+        AAudioStream* stream,
+        void* userData,
+        const int32_t* deviceIds,
+        int32_t numDevices);
 #endif
 
 #ifndef __ANDROID_API_Q__
@@ -106,15 +119,16 @@ typedef void (*AAudioStream_presentationEndCallback)(
 #define __ANDROID_API_B__ 36
 #endif
 
+#ifndef __ANDROID_API_C__
+#define __ANDROID_API_C__ 37
+#endif
+
 #if OBOE_USING_NDK && __NDK_MAJOR__ < 30
 // These were defined in Android B
 typedef int32_t AAudio_DeviceType;
 typedef int32_t aaudio_policy_t;
-#endif
 
-// TODO: find the first NDK version containing the following values
-// Oto: NDK 30 declares the types below (https://github.com/google/oboe/issues/2406).
-#if OBOE_USING_NDK && __NDK_MAJOR__ < 30
+// These were defined in Android C
 typedef enum AAudio_FallbackMode : int32_t {
     AAUDIO_FALLBACK_MODE_DEFAULT = 0,
     AAUDIO_FALLBACK_MODE_MUTE = 1,
@@ -202,6 +216,10 @@ class AAudioLoader {
                                        AAudioStream_presentationEndCallback,
                                        void *);
 
+    typedef void (*signature_V_PBRCCPV)(AAudioStreamBuilder *,
+                                        AAudioStream_routingChangedCallback,
+                                        void *);
+
     typedef aaudio_format_t (*signature_F_PS)(AAudioStream *stream);
 
     typedef int32_t (*signature_I_PSPVIL)(AAudioStream *, void *, int32_t, int64_t);
@@ -279,6 +297,7 @@ class AAudioLoader {
     signature_V_PBPDPV  builder_setDataCallback = nullptr;
     signature_V_PBPEPV  builder_setErrorCallback = nullptr;
     signature_V_PBPRPV  builder_setPresentationEndCallback = nullptr;
+    signature_V_PBRCCPV builder_setRoutingChangedCallback = nullptr;
     signature_V_PBPDPV  builder_setPartialDataCallback = nullptr;
 
     signature_I_PB      builder_delete = nullptr;
@@ -383,6 +402,7 @@ class AAudioLoader {
     signature_I_I       load_I_I(const char *name);
     signature_I         load_I(const char *name);
     signature_V_PBPRPV  load_V_PBPRPV(const char *name);
+    signature_V_PBRCCPV load_V_PBRCCPV(const char *name);
     signature_I_PSII    load_I_PSII(const char *name);
     signature_I_PSPIPI  load_I_PSPIPI(const char *name);
     signature_I_PSIPL   load_I_PSIPL(const char *name);

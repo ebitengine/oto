@@ -15,6 +15,7 @@
  */
 
 #include <dlfcn.h>
+#include <type_traits>
 #include "oboe_oboe_Utilities_android.h"
 #include "oboe_common_OboeDebug_android.h"
 #include "oboe_aaudio_AAudioLoader_android.h"
@@ -104,6 +105,10 @@ int AAudioLoader::open() {
 
     if (getSdkVersion() >= __ANDROID_API_B__) {
         builder_setPresentationEndCallback = load_V_PBPRPV("AAudioStreamBuilder_setPresentationEndCallback");
+    }
+
+    if (getSdkVersion() >= __ANDROID_API_C__) {
+        builder_setRoutingChangedCallback = load_V_PBRCCPV("AAudioStreamBuilder_setRoutingChangedCallback");
     }
 
     builder_delete             = load_I_PB("AAudioStreamBuilder_delete");
@@ -360,6 +365,12 @@ AAudioLoader::signature_V_PBPRPV AAudioLoader::load_V_PBPRPV(const char *functio
     return reinterpret_cast<signature_V_PBPRPV>(proc);
 }
 
+AAudioLoader::signature_V_PBRCCPV AAudioLoader::load_V_PBRCCPV(const char *functionName) {
+    void *proc = dlsym(mLibHandle, functionName);
+    AAudioLoader_check(proc, functionName);
+    return reinterpret_cast<signature_V_PBRCCPV>(proc);
+}
+
 AAudioLoader::signature_I_PSII AAudioLoader::load_I_PSII(const char *functionName) {
     void *proc = dlsym(mLibHandle, functionName);
     AAudioLoader_check(proc, functionName);
@@ -390,8 +401,14 @@ AAudioLoader::signature_I_PSCPM AAudioLoader::load_I_PSCPM(const char *functionN
     return reinterpret_cast<signature_I_PSCPM>(proc);
 }
 
-// Ensure that all AAudio primitive data types are int32_t
-#define ASSERT_INT32(type) static_assert(std::is_same<int32_t, type>::value, \
+template <typename T, bool = std::is_enum<T>::value>
+struct IsInt32 : std::is_same<int32_t, T> {};
+
+template <typename T>
+struct IsInt32<T, true> : std::is_same<int32_t, typename std::underlying_type<T>::type> {};
+
+// Ensure that all AAudio primitive data types and enums are int32_t
+#define ASSERT_INT32(type) static_assert(IsInt32<type>::value, \
 #type" must be int32_t")
 
 // Ensure that all AAudio primitive data types are uint32_t
@@ -585,12 +602,10 @@ AAudioLoader::signature_I_PSCPM AAudioLoader::load_I_PSCPM(const char *functionN
 
 #endif
 
-// The aaudio device type and aaudio policy were added in NDK 29,
-// which is the first version to support Android B (API 36).
+// The aaudio device type, aaudio policy, and playback parameters were added in NDK 30.
 #if __NDK_MAJOR__ >= 30
 
-    // Oto: NDK 30 declares AAudio_DeviceType as an enum with an explicit underlying type,
-    // so ASSERT_INT32 no longer holds (https://github.com/google/oboe/issues/2406).
+    ASSERT_INT32(AAudio_DeviceType);
     static_assert((int32_t)DeviceType::BuiltinEarpiece == AAUDIO_DEVICE_BUILTIN_EARPIECE, ERRMSG);
     static_assert((int32_t)DeviceType::BuiltinSpeaker == AAUDIO_DEVICE_BUILTIN_SPEAKER, ERRMSG);
     static_assert((int32_t)DeviceType::WiredHeadset == AAUDIO_DEVICE_WIRED_HEADSET, ERRMSG);
@@ -628,7 +643,16 @@ AAudioLoader::signature_I_PSCPM AAudioLoader::load_I_PSCPM(const char *functionN
     static_assert((int32_t)MMapPolicy::Auto == AAUDIO_POLICY_AUTO, ERRMSG);
     static_assert((int32_t)MMapPolicy::Always == AAUDIO_POLICY_ALWAYS, ERRMSG);
 
-#endif // __NDK_MAJOR__ >= 29
+    ASSERT_INT32(AAudio_FallbackMode);
+    static_assert((int32_t)FallbackMode::Default == AAUDIO_FALLBACK_MODE_DEFAULT, ERRMSG);
+    static_assert((int32_t)FallbackMode::Mute == AAUDIO_FALLBACK_MODE_MUTE, ERRMSG);
+    static_assert((int32_t)FallbackMode::Fail == AAUDIO_FALLBACK_MODE_FAIL, ERRMSG);
+
+    ASSERT_INT32(AAudio_StretchMode);
+    static_assert((int32_t)StretchMode::Default == AAUDIO_STRETCH_MODE_DEFAULT, ERRMSG);
+    static_assert((int32_t)StretchMode::Voice == AAUDIO_STRETCH_MODE_VOICE, ERRMSG);
+
+#endif // __NDK_MAJOR__ >= 30
 
 #endif // AAUDIO_AAUDIO_H
 
