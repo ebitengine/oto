@@ -21,3 +21,21 @@ func (p *Player) IsRegistered() bool {
 	_, ok := p.p.mux.players[p.p]
 	return ok
 }
+
+// PrimeForMixing puts the player into the playing state with buf as its buffered
+// source data and a volume ramp from prevVolume to the current volume, without
+// registering the player with the mux. It is used to test the mixing directly.
+func (p *Player) PrimeForMixing(buf []byte, prevVolume float64) {
+	p.p.m.Lock()
+	defer p.p.m.Unlock()
+
+	p.p.state = playerPlay
+	p.p.buf = buf
+	p.p.prevVolume = prevVolume
+}
+
+// ReadBufferAndAdd mixes the buffered source data into buf and returns the number
+// of mixed samples.
+func (p *Player) ReadBufferAndAdd(buf []float32) int {
+	return p.p.readBufferAndAdd(buf)
+}
