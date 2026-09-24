@@ -50,15 +50,17 @@ SLresult OutputMixerOpenSL::open() {
     return result;
 
 error:
-    close();
+    closeLocked();
     return result;
 }
 
 void OutputMixerOpenSL::close() {
     std::lock_guard<std::mutex> lock(mLock);
+    closeLocked();
+}
 
+void OutputMixerOpenSL::closeLocked() {
     if (--mOpenCount == 0) {
-        // destroy output mix object, and invalidate all associated interfaces
         if (mOutputMixObject != nullptr) {
             (*mOutputMixObject)->Destroy(mOutputMixObject);
             mOutputMixObject = nullptr;

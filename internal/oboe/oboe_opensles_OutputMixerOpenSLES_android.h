@@ -40,6 +40,8 @@ public:
                                SLDataSource *audioSource);
 
 private:
+    void closeLocked();
+
     // Make this a safe Singleton
     OutputMixerOpenSL()= default;
     ~OutputMixerOpenSL()= default;
