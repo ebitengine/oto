@@ -212,6 +212,7 @@ private:
         std::atomic<int> idx{0};
         std::vector<std::vector<int32_t>> deviceIds{ {}, {} };
     };
+    mutable std::mutex mUpdatedDeviceIdsLock;
     UpdatedDeviceIds mUpdatedDeviceIds;
 };
 

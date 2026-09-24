@@ -976,17 +976,20 @@ StreamState AudioStreamAAudio::getState() {
 }
 
 void AudioStreamAAudio::onRoutingChanged(std::vector<int32_t> deviceIds) {
+    std::lock_guard<std::mutex> lock(mUpdatedDeviceIdsLock);
     int nextIdx = mUpdatedDeviceIds.idx.load() ^ 1;
     mUpdatedDeviceIds.deviceIds[nextIdx] = deviceIds;
     mUpdatedDeviceIds.idx.store(nextIdx);
 }
 
 int32_t AudioStreamAAudio::getDeviceId() const {
+    std::lock_guard<std::mutex> lock(mUpdatedDeviceIdsLock);
     auto deviceIds = mUpdatedDeviceIds.deviceIds[mUpdatedDeviceIds.idx.load()];
     return deviceIds.empty() ? kUnspecified : deviceIds[0];
 }
 
 std::vector<int32_t> AudioStreamAAudio::getDeviceIds() const {
+    std::lock_guard<std::mutex> lock(mUpdatedDeviceIdsLock);
     auto deviceIds = mUpdatedDeviceIds.deviceIds[mUpdatedDeviceIds.idx.load()];
     return deviceIds;
 }
@@ -1244,7 +1247,10 @@ void AudioStreamAAudio::updateDeviceIds() {
             mDeviceIds.push_back(deviceIds[i]);
         }
     }
-    mUpdatedDeviceIds.deviceIds[mUpdatedDeviceIds.idx.load()] = mDeviceIds;
+    {
+        std::lock_guard<std::mutex> lock(mUpdatedDeviceIdsLock);
+        mUpdatedDeviceIds.deviceIds[mUpdatedDeviceIds.idx.load()] = mDeviceIds;
+    }
 
     // This should not happen in most cases. Please file a bug on Oboe if you see this happening.
     if (getDeviceIds().empty()) {
