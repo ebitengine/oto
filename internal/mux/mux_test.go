@@ -1003,3 +1003,35 @@ func TestPartialSampleAtEOFStopsPlayer(t *testing.T) {
 		t.Errorf("IsRegistered after EOF: got %v; want false", got)
 	}
 }
+
+func TestSeekNonSeekerPreservesBuffer(t *testing.T) {
+	for _, playing := range []bool{false, true} {
+		t.Run(fmt.Sprintf("playing=%t", playing), func(t *testing.T) {
+			src := []byte{0, 64, 128, 192, 255}
+			m := mux.New(48000, 1, mux.FormatUnsignedInt8)
+			p := newPlayer(t, m, bytes.NewBuffer(src))
+			p.Play()
+			waitForBufferedSize(t, p, len(src))
+			if !playing {
+				p.PauseAndStopReading()
+			}
+			if _, err := p.Seek(0, io.SeekStart); err == nil {
+				t.Fatal("Seek on a non-seekable source succeeded")
+			}
+			if got := p.BufferedSize(); got != len(src) {
+				t.Fatalf("BufferedSize after failed Seek: got %d; want %d", got, len(src))
+			}
+			if got := p.IsPlaying(); got != playing {
+				t.Fatalf("IsPlaying: got %t; want %t", got, playing)
+			}
+			p.Play()
+			buf := make([]float32, len(src))
+			m.ReadFloat32s(buf)
+			for i, got := range buf {
+				if want := float32(src[i])/128 - 1; got != want {
+					t.Errorf("sample %d: got %v; want %v", i, got, want)
+				}
+			}
+		})
+	}
+}

@@ -361,6 +361,12 @@ func (p *Player) Seek(offset int64, whence int) (int64, error) {
 }
 
 func (p *playerImpl) Seek(offset int64, whence int) (int64, error) {
+	// Check if the source implements io.Seeker.
+	s, ok := p.src.(io.Seeker)
+	if !ok {
+		return 0, errors.New("mux: the source must implement io.Seeker")
+	}
+
 	defer p.mux.signal()
 
 	p.m.Lock()
@@ -387,11 +393,6 @@ func (p *playerImpl) Seek(offset int64, whence int) (int64, error) {
 		p.reportSourceErrorIfDrainedImpl()
 	}
 
-	// Check if the source implements io.Seeker.
-	s, ok := p.src.(io.Seeker)
-	if !ok {
-		return 0, errors.New("mux: the source must implement io.Seeker")
-	}
 	return s.Seek(offset, whence)
 }
 
