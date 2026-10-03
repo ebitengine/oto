@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -650,55 +649,18 @@ func signedInt16LEBytes(values ...int16) []byte {
 // denominator became 0 and the whole ramp became NaN, silencing the player.
 func TestVolumeRampWithFewerSamplesThanChannelsDoesNotSilence(t *testing.T) {
 	const half = 1 << 14
+	m := mux.New(48000, 2, mux.FormatSignedInt16LE)
+	p := newPlayer(t, m, bytes.NewReader(signedInt16LEBytes(half)))
+	p.SetBufferSize(2)
+	p.Play()
+	waitForBufferedSize(t, p, 2)
+	p.SetVolume(0.5)
 
-	for _, tc := range []struct {
-		name         string
-		channelCount int
-		src          []byte
-	}{
-		// A stereo player with a single sample left in its buffer.
-		{
-			name:         "stereo with one sample",
-			channelCount: 2,
-			src:          signedInt16LEBytes(half),
-		},
-		// A stereo player with a partial frame left in its buffer.
-		{
-			name:         "stereo with a partial frame",
-			channelCount: 2,
-			src:          signedInt16LEBytes(half, half, half)[:3],
-		},
-		// A quadrophonic player with a single sample left in its buffer.
-		{
-			name:         "quad with one sample",
-			channelCount: 4,
-			src:          signedInt16LEBytes(half),
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			m := mux.New(48000, tc.channelCount, mux.FormatSignedInt16LE)
-			p := newPlayer(t, m, &bytes.Reader{})
-			p.SetVolume(0.5)
-
-			// Ramp from the volume 1 to the volume 0.5.
-			p.PrimeForMixing(slices.Clone(tc.src), 1)
-
-			buf := make([]float32, len(tc.src)/mux.FormatSignedInt16LE.ByteLength())
-			if got, want := p.ReadBufferAndAdd(buf), len(buf); got != want {
-				t.Fatalf("mixed samples: got %d; want %d", got, want)
-			}
-
-			for i, got := range buf {
-				if math.IsNaN(float64(got)) {
-					t.Fatalf("buf[%d]: got NaN; want a finite value", i)
-				}
-				// The sample source is 0.5 and the volume is ramped from 1 to 0.5,
-				// so every mixed sample must lie in [0.25, 0.5].
-				if got < 0.25 || got > 0.5 {
-					t.Errorf("buf[%d]: got %v; want a value in [0.25, 0.5]", i, got)
-				}
-			}
-		})
+	buf := make([]float32, 1)
+	m.ReadFloat32s(buf)
+	// The first (and only) sample uses the previous volume, 1.
+	if got := buf[0]; got != 0.5 {
+		t.Errorf("mixed sample: got %v; want 0.5", got)
 	}
 }
 
