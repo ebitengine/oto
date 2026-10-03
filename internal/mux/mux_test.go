@@ -656,6 +656,35 @@ func TestInvalidVolumeWhilePlayingIsRecoverable(t *testing.T) {
 	}
 }
 
+// signedInt16LEBytes returns the little-endian 16-bit representation of the given values.
+func signedInt16LEBytes(values ...int16) []byte {
+	bs := make([]byte, 0, 2*len(values))
+	for _, v := range values {
+		bs = append(bs, byte(v), byte(v>>8))
+	}
+	return bs
+}
+
+// A volume ramp must not be dropped when fewer samples than the channel count
+// are buffered. With an integer division for the ramp denominator, the
+// denominator became 0 and the whole ramp became NaN, silencing the player.
+func TestVolumeRampWithFewerSamplesThanChannelsDoesNotSilence(t *testing.T) {
+	const half = 1 << 14
+	m := mux.New(48000, 2, mux.FormatSignedInt16LE)
+	p := newPlayer(t, m, bytes.NewReader(signedInt16LEBytes(half)))
+	p.SetBufferSize(2)
+	p.Play()
+	waitForBufferedSize(t, p, 2)
+	p.SetVolume(0.5)
+
+	buf := make([]float32, 1)
+	m.ReadFloat32s(buf)
+	// The first (and only) sample uses the previous volume, 1.
+	if got := buf[0]; got != 0.5 {
+		t.Errorf("mixed sample: got %v; want 0.5", got)
+	}
+}
+
 func TestVolumeLargerThanOneAmplifies(t *testing.T) {
 	const sampleCount = 256
 
