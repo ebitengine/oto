@@ -28,7 +28,7 @@ type context struct {
 	audioContext            js.Value
 	scriptProcessor         js.Value
 	scriptProcessorCallback js.Func
-	ready                   bool
+	err                     atomicError
 
 	mux *mux.Mux
 }
@@ -57,6 +57,8 @@ func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeI
 	}
 
 	buf32 := make([]float32, bufferSizeInBytes/4)
+	var moduleReady bool
+	var finishInitialization func()
 
 	if w := d.audioContext.Get("audioWorklet"); w.Truthy() {
 		script := fmt.Sprintf(`
@@ -112,9 +114,14 @@ class OtoWorkletProcessor extends AudioWorkletProcessor {
 registerProcessor('oto-worklet-processor', OtoWorkletProcessor);
 `, bufferSizeInBytes/4/channelCount, channelCount)
 		scriptURL := newScriptURL(script)
-		var onAddModuleSuccess js.Func
-		onAddModuleSuccess = js.FuncOf(func(this js.Value, arguments []js.Value) any {
+		var onAddModuleSuccess, onAddModuleFailure js.Func
+		release := func() {
 			js.Global().Get("URL").Call("revokeObjectURL", scriptURL)
+			onAddModuleSuccess.Release()
+			onAddModuleFailure.Release()
+		}
+		onAddModuleSuccess = js.FuncOf(func(this js.Value, arguments []js.Value) any {
+			defer release()
 
 			node := js.Global().Get("AudioWorkletNode").New(d.audioContext, "oto-worklet-processor", map[string]any{
 				"outputChannelCount": []any{channelCount},
@@ -131,10 +138,17 @@ registerProcessor('oto-worklet-processor', OtoWorkletProcessor);
 			}))
 			node.Call("connect", d.audioContext.Get("destination"))
 
-			onAddModuleSuccess.Release()
+			moduleReady = true
+			finishInitialization()
 			return nil
 		})
-		w.Call("addModule", scriptURL).Call("then", onAddModuleSuccess)
+		onAddModuleFailure = js.FuncOf(func(this js.Value, arguments []js.Value) any {
+			defer release()
+			d.err.Join(fmt.Errorf("oto: AudioWorklet.addModule failed: %s", js.Global().Get("String").Invoke(arguments[0]).String()))
+			finishInitialization()
+			return nil
+		})
+		w.Call("addModule", scriptURL).Call("then", onAddModuleSuccess, onAddModuleFailure)
 	} else {
 		// Use ScriptProcessorNode if AudioWorklet is not available.
 
@@ -169,6 +183,7 @@ registerProcessor('oto-worklet-processor', OtoWorkletProcessor);
 		d.scriptProcessor = sp
 		d.scriptProcessorCallback = f
 		sp.Call("connect", d.audioContext.Get("destination"))
+		moduleReady = true
 	}
 
 	// Browsers require user interaction to start the audio.
@@ -176,22 +191,43 @@ registerProcessor('oto-worklet-processor', OtoWorkletProcessor);
 
 	events := []string{"touchend", "keyup", "mouseup"}
 
+	var resumed, resuming, finished bool
 	var onEventFired js.Func
-	var onResumeSuccess js.Func
-	onResumeSuccess = js.FuncOf(func(this js.Value, arguments []js.Value) any {
-		d.ready = true
+	finishInitialization = func() {
+		if finished || (d.err.Load() == nil && (!moduleReady || !resumed)) {
+			return
+		}
+		finished = true
 		close(ready)
 		for _, event := range events {
 			js.Global().Get("document").Call("removeEventListener", event, onEventFired)
 		}
 		onEventFired.Release()
-		onResumeSuccess.Release()
-		return nil
-	})
+	}
 	onEventFired = js.FuncOf(func(this js.Value, arguments []js.Value) any {
-		if !d.ready {
-			d.audioContext.Call("resume").Call("then", onResumeSuccess)
+		if resumed || resuming || finished {
+			return nil
 		}
+		resuming = true
+		// A module load failure can finish initialization while resume is pending.
+		// Keep these callbacks alive until their promise settles.
+		var onSuccess, onFailure js.Func
+		release := func() {
+			resuming = false
+			onSuccess.Release()
+			onFailure.Release()
+		}
+		onSuccess = js.FuncOf(func(this js.Value, arguments []js.Value) any {
+			defer release()
+			resumed = true
+			finishInitialization()
+			return nil
+		})
+		onFailure = js.FuncOf(func(this js.Value, arguments []js.Value) any {
+			defer release()
+			return nil
+		})
+		d.audioContext.Call("resume").Call("then", onSuccess, onFailure)
 		return nil
 	})
 	for _, event := range events {
@@ -212,7 +248,7 @@ func (c *context) Resume() error {
 }
 
 func (c *context) Err() error {
-	return nil
+	return c.err.Load()
 }
 
 func float32SliceToTypedArray(s []float32) js.Value {
