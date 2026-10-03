@@ -354,15 +354,6 @@ void Stream::DeferStartLocked() {
 
 const char *Stream::Play(int sample_rate, int channel_num,
                          int buffer_size_in_bytes) {
-  // The frame counts and the read wait below divide by these, so a value the
-  // caller left at zero would fault instead of reporting a bad configuration.
-  if (sample_rate <= 0) {
-    return "oto_oboe_Play: sample rate must be positive";
-  }
-  if (channel_num <= 0) {
-    return "oto_oboe_Play: channel count must be positive";
-  }
-
   std::lock_guard<std::mutex> lock{mutex_};
   sample_rate_ = sample_rate;
   channel_num_ = channel_num;

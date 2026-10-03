@@ -15,6 +15,7 @@
 package oto_test
 
 import (
+	"fmt"
 	"math"
 	"strconv"
 	"testing"
@@ -181,5 +182,36 @@ func TestDurationToBufferSize(t *testing.T) {
 				t.Errorf("DurationToBufferSize = %d, want %d", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestNewContextRejectsInvalidAudioOptions(t *testing.T) {
+	for _, bufferSize := range []time.Duration{0, 10 * time.Millisecond} {
+		for _, tt := range []struct {
+			name         string
+			sampleRate   int
+			channelCount int
+			want         string
+		}{
+			{name: "zero sample rate", channelCount: 2, want: "oto: sample rate must be positive: 0"},
+			{name: "negative sample rate", sampleRate: -1, channelCount: 2, want: "oto: sample rate must be positive: -1"},
+			{name: "zero channels", sampleRate: 48000, want: "oto: channel count must be 1 or 2: 0"},
+			{name: "negative channels", sampleRate: 48000, channelCount: -1, want: "oto: channel count must be 1 or 2: -1"},
+			{name: "three channels", sampleRate: 48000, channelCount: 3, want: "oto: channel count must be 1 or 2: 3"},
+		} {
+			t.Run(fmt.Sprintf("%s/buffer=%s", tt.name, bufferSize), func(t *testing.T) {
+				ctx, ready, err := oto.NewContext(&oto.NewContextOptions{
+					SampleRate:   tt.sampleRate,
+					ChannelCount: tt.channelCount,
+					BufferSize:   bufferSize,
+				})
+				if err == nil || err.Error() != tt.want {
+					t.Fatalf("NewContext error: got %v; want %q", err, tt.want)
+				}
+				if ctx != nil || ready != nil {
+					t.Fatal("NewContext returned a context or ready channel for invalid options")
+				}
+			})
+		}
 	}
 }

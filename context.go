@@ -93,6 +93,12 @@ func NewContext(options *NewContextOptions) (*Context, chan struct{}, error) {
 	if options == nil {
 		return nil, nil, fmt.Errorf("oto: options must not be nil")
 	}
+	if options.SampleRate <= 0 {
+		return nil, nil, fmt.Errorf("oto: sample rate must be positive: %d", options.SampleRate)
+	}
+	if options.ChannelCount != 1 && options.ChannelCount != 2 {
+		return nil, nil, fmt.Errorf("oto: channel count must be 1 or 2: %d", options.ChannelCount)
+	}
 	if options.BufferSize < 0 {
 		return nil, nil, fmt.Errorf("oto: buffer size must not be negative: %s", options.BufferSize)
 	}
