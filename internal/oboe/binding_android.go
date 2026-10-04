@@ -63,6 +63,13 @@ func Resume() error {
 	return nil
 }
 
+// Latency returns how many frames read from the read function are still to be
+// heard, and whether the device has said yet.
+func Latency() (int64, bool) {
+	n := int64(C.oto_oboe_Latency())
+	return n, n >= 0
+}
+
 //export oto_oboe_read
 func oto_oboe_read(buf *C.float, len C.size_t) {
 	theReadFunc(unsafe.Slice((*float32)(unsafe.Pointer(buf)), len))

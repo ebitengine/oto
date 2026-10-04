@@ -130,6 +130,7 @@ public:
   const char *Resume();
   const char *Close();
   const char *AppendBuffer(float *buf, size_t len);
+  int64_t Latency();
 
   oboe::DataCallbackResult onAudioReady(oboe::AudioStream *oboe_stream,
                                         void *audio_data,
@@ -215,6 +216,13 @@ private:
   std::atomic<int64_t> min_wait_us_{1000};
   std::atomic<int> max_callback_{0};
 
+  // buffers_ready_ says fifo_ is made, and
+  // stream_latency_frames_ is how many frames the stream playing holds that are
+  // still to be heard, as its timestamp last said, or -1 while it has not said.
+  // LoopRead measures it every kLatencyEvery.
+  std::atomic<bool> buffers_ready_{false};
+  std::atomic<int64_t> stream_latency_frames_{-1};
+
   // read_thread_ runs LoopRead, which reads from Go into fifo_.
   std::unique_ptr<std::thread> read_thread_;
 
@@ -276,6 +284,7 @@ void Stream::PrepareBuffersLocked() {
   // One second of sound is more than any device's queue.
   fifo_ = std::make_unique<oboe::FifoBuffer>(channel_num_ * sizeof(float),
                                              sample_rate_);
+  buffers_ready_.store(true);
 }
 
 // ConfigureRefillLocked sets how LoopRead refills fifo_ for the stream just
@@ -312,6 +321,8 @@ Status Stream::EnsureStreamLocked() {
     return Status{};
   }
   ConfigureRefillLocked();
+  // The stream is new, and has not said how long it takes yet.
+  stream_latency_frames_.store(-1);
   // No callback can run before the stream is started, so the fifo can be
   // emptied here. Its contents were mixed for the device that went away and
   // would otherwise be played late on the new one.
@@ -510,8 +521,40 @@ oboe::DataCallbackResult Stream::onAudioReady(oboe::AudioStream *oboe_stream,
 
 Stream::Stream() = default;
 
+// kLatencyEvery is how often LoopRead measures how long the stream takes to
+// play what it is given.
+constexpr std::chrono::milliseconds kLatencyEvery{100};
+
+// Latency returns how many frames read from Go are still to be heard: those
+// queued in fifo_, and those the stream holds, which on Android includes a
+// Bluetooth headset's own delay where the headset reports it. It returns -1
+// while the stream has not said yet.
+int64_t Stream::Latency() {
+  if (!buffers_ready_.load()) {
+    return -1;
+  }
+  int64_t stream = stream_latency_frames_.load();
+  if (stream < 0) {
+    return -1;
+  }
+  return stream + fifo_->getFullFramesAvailable();
+}
+
 void Stream::LoopRead() {
+  auto measured = std::chrono::steady_clock::now();
   for (;;) {
+    if (auto now = std::chrono::steady_clock::now(); now - measured >= kLatencyEvery) {
+      measured = now;
+      // The stream is reached under mutex_, which Pause and Resume hold only
+      // briefly; a measurement is skipped rather than waited for.
+      std::unique_lock<std::mutex> lock{mutex_, std::try_to_lock};
+      if (lock.owns_lock() && stream_ && state_ == State::kRunning) {
+        if (auto ms = stream_->calculateLatencyMillis(); ms) {
+          stream_latency_frames_.store(
+              static_cast<int64_t>(ms.value() * sample_rate_ / 1000));
+        }
+      }
+    }
     // The queue is kept at the larger of the target and two of the largest
     // callbacks so far plus a read, for a device whose callbacks outgrow its
     // bursts, and at most the fifo's capacity less one read.
@@ -576,5 +619,7 @@ const char *oto_oboe_Play(int sample_rate, int channel_num,
 const char *oto_oboe_Suspend() { return Stream::GetInstance().Pause(); }
 
 const char *oto_oboe_Resume() { return Stream::GetInstance().Resume(); }
+
+int64_t oto_oboe_Latency() { return Stream::GetInstance().Latency(); }
 
 } // extern "C"
