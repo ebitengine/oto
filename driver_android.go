@@ -42,10 +42,7 @@ func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeI
 		c.m.Lock()
 		defer c.m.Unlock()
 
-		// Reads are paced: the device can take a large burst at once, and reads
-		// made as fast as there is room would outrun the players' buffers.
-		pacer := mux.NewPacer(c.mux)
-		if err := oboe.Play(sampleRate, channelCount, pacer.ReadFloat32s, c.err.Join, bufferSizeInBytes); err != nil {
+		if err := oboe.Play(sampleRate, channelCount, c.mux.ReadFloat32s, c.err.Join, bufferSizeInBytes); err != nil {
 			c.err.Join(err)
 		}
 	}()

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package mux_test
+package oboe
 
 import (
 	"encoding/binary"
@@ -39,12 +39,18 @@ func (r *workingReader) Read(buf []byte) (int, error) {
 	return n, nil
 }
 
+// played is what a run of readLikeAndroid heard after its warm-up.
+type played struct {
+	// silent and total count the samples read from the mux, and short the
+	// times the device found fewer frames queued than its burst.
+	silent, total, short int
+}
+
 // readLikeAndroid plays m as the Android driver reads it for a Bluetooth
 // headset, for d: the device takes a burst of 1,920 frames every 40 ms, and
 // read tops a queue of 3,840 frames up, 480 frames at a time, as soon as there
-// is room. It returns how many of the samples read after the first fifth of d
-// were silent, and how many there were.
-func readLikeAndroid(m *mux.Mux, read func([]float32), d time.Duration) (silent, total int) {
+// is room. It counts what is heard after the first fifth of d.
+func readLikeAndroid(read func([]float32), d time.Duration) played {
 	const (
 		rate   = 48000
 		burst  = 1920
@@ -52,8 +58,14 @@ func readLikeAndroid(m *mux.Mux, read func([]float32), d time.Duration) (silent,
 		chunk  = 480
 	)
 	var queued atomic.Int64
+	var short atomic.Int64
+	start := time.Now()
+	warm := func() bool { return time.Since(start) >= d/5 }
+
 	stop := make(chan struct{})
+	done := make(chan struct{})
 	go func() {
+		defer close(done)
 		t := time.NewTicker(time.Second * burst / rate)
 		defer t.Stop()
 		for {
@@ -61,14 +73,24 @@ func readLikeAndroid(m *mux.Mux, read func([]float32), d time.Duration) (silent,
 			case <-stop:
 				return
 			case <-t.C:
-				queued.Store(max(queued.Load()-burst, 0))
+			}
+			// The device takes its burst, or what is queued, without losing a
+			// reader's frames added meanwhile.
+			for {
+				q := queued.Load()
+				take := min(q, burst)
+				if queued.CompareAndSwap(q, q-take) {
+					if take < burst && warm() {
+						short.Add(1)
+					}
+					break
+				}
 			}
 		}
 	}()
-	defer close(stop)
 
+	var p played
 	buf := make([]float32, chunk*2)
-	start := time.Now()
 	for time.Since(start) < d {
 		if queued.Load()+chunk > target {
 			time.Sleep(time.Millisecond)
@@ -76,26 +98,32 @@ func readLikeAndroid(m *mux.Mux, read func([]float32), d time.Duration) (silent,
 		}
 		read(buf)
 		queued.Add(chunk)
-		if time.Since(start) < d/5 {
+		if !warm() {
 			continue
 		}
 		for _, v := range buf {
 			if v == 0 {
-				silent++
+				p.silent++
 			}
 		}
-		total += len(buf)
+		p.total += len(buf)
 	}
-	return silent, total
+	close(stop)
+	<-done
+	p.short = int(short.Load())
+	return p
 }
 
-// newWorkingPlayer plays a source of sound on a mux at 48 kHz, through a
-// player buffering 20 ms, once its buffer is full.
-func newWorkingPlayer(t *testing.T) *mux.Mux {
+// newWorkingMux plays a source of sound on a mux at 48 kHz, through a player
+// buffering 20 ms, once its buffer is full.
+func newWorkingMux(t *testing.T) *mux.Mux {
 	t.Helper()
 
 	m := mux.New(48000, 2, mux.FormatFloat32LE)
-	p := newPlayer(t, m, &workingReader{work: 2 * time.Millisecond})
+	p := m.NewPlayer(&workingReader{work: 2 * time.Millisecond})
+	t.Cleanup(func() {
+		_ = p.Close()
+	})
 	const bufferSize = 48000 * 8 / 50
 	p.SetBufferSize(bufferSize)
 	p.Play()
@@ -118,14 +146,18 @@ func TestPacedReadsKeepASmallPlayerBufferPlaying(t *testing.T) {
 	// Read as soon as there is room, a player buffering 20 ms runs dry: the
 	// reads after a burst come faster than it refills. This shows the test
 	// meets the case.
-	m := newWorkingPlayer(t)
-	if silent, total := readLikeAndroid(m, m.ReadFloat32s, time.Second); silent == 0 {
-		t.Fatalf("unpaced reads: %d of %d samples silent; want some, as the player runs dry", silent, total)
+	m := newWorkingMux(t)
+	if got := readLikeAndroid(m.ReadFloat32s, time.Second); got.silent == 0 {
+		t.Fatalf("unpaced reads: %d of %d samples silent; want some, as the player runs dry", got.silent, got.total)
 	}
 
-	m = newWorkingPlayer(t)
-	pacer := mux.NewPacer(m)
-	if silent, total := readLikeAndroid(m, pacer.ReadFloat32s, time.Second); silent != 0 || total == 0 {
-		t.Errorf("paced reads: %d of %d samples silent; want none", silent, total)
+	m = newWorkingMux(t)
+	p := newPacer(m.ReadFloat32s, 48000, 2)
+	got := readLikeAndroid(p.Read, time.Second)
+	if got.silent != 0 || got.total == 0 {
+		t.Errorf("paced reads: %d of %d samples silent; want none", got.silent, got.total)
+	}
+	if got.short != 0 {
+		t.Errorf("paced reads: the device found too little queued %d times; want none", got.short)
 	}
 }
