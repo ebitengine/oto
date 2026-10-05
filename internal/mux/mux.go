@@ -57,6 +57,10 @@ type Mux struct {
 	playersMu sync.Mutex
 	players   map[*playerImpl]struct{}
 	cond      *sync.Cond
+
+	// stopped says Stop was called, and the loop filling the players' buffers
+	// returns. It is guarded by cond.L.
+	stopped bool
 }
 
 // New creates a new Mux.
@@ -80,15 +84,20 @@ func (m *Mux) shouldWait(players []*playerImpl) bool {
 	return true
 }
 
-func (m *Mux) wait(players []*playerImpl) []*playerImpl {
+// wait waits until a player can read from its source, and returns the players.
+// It reports false once the mux is stopped.
+func (m *Mux) wait(players []*playerImpl) ([]*playerImpl, bool) {
 	m.cond.L.Lock()
 	defer m.cond.L.Unlock()
 
 	for {
+		if m.stopped {
+			return players, false
+		}
 		clear(players)
 		players = m.appendPlayers(players[:0])
 		if !m.shouldWait(players) {
-			return players
+			return players, true
 		}
 		m.cond.Wait()
 	}
@@ -97,7 +106,11 @@ func (m *Mux) wait(players []*playerImpl) []*playerImpl {
 func (m *Mux) loop() {
 	var players []*playerImpl
 	for {
-		players = m.wait(players)
+		var ok bool
+		players, ok = m.wait(players)
+		if !ok {
+			return
+		}
 
 		allZero := true
 		for _, p := range players {
@@ -140,6 +153,17 @@ func (m *Mux) removePlayer(player *playerImpl) {
 	defer m.playersMu.Unlock()
 
 	delete(m.players, player)
+}
+
+// Stop ends the goroutine that New starts to fill the players' buffers from
+// their sources. A stopped Mux reads nothing more from the sources. It lets a
+// test end with no goroutine of the Mux left running.
+func (m *Mux) Stop() {
+	m.cond.L.Lock()
+	defer m.cond.L.Unlock()
+
+	m.stopped = true
+	m.cond.Broadcast()
 }
 
 func (m *Mux) signal() {

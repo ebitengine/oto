@@ -19,6 +19,7 @@ import (
 	"math"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/ebitengine/oto/v3/internal/mux"
@@ -121,6 +122,7 @@ func newWorkingMux(t *testing.T) *mux.Mux {
 	t.Helper()
 
 	m := mux.New(48000, 2, mux.FormatFloat32LE)
+	t.Cleanup(m.Stop)
 	p := m.NewPlayer(&workingReader{work: 2 * time.Millisecond})
 	t.Cleanup(func() {
 		_ = p.Close()
@@ -139,11 +141,14 @@ func newWorkingMux(t *testing.T) *mux.Mux {
 }
 
 // Issue #308
+//
+// The test runs in a synctest bubble, whose time is virtual, so its result
+// depends on no machine's scheduler.
 func TestPacedReadsKeepASmallPlayerBufferPlaying(t *testing.T) {
-	if testing.Short() {
-		t.Skip("plays in real time")
-	}
+	synctest.Test(t, testPacedReads)
+}
 
+func testPacedReads(t *testing.T) {
 	// Read as soon as there is room, a player buffering 20 ms runs dry: the
 	// reads after a burst come faster than it refills. This shows the test
 	// meets the case.
