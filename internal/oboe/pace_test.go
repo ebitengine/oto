@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package oboe
+package oboe_test
 
 import (
 	"encoding/binary"
@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/ebitengine/oto/v3/internal/mux"
+	"github.com/ebitengine/oto/v3/internal/oboe"
 )
 
 // workingReader is a source that always has sound, a sample of 1 after
@@ -152,7 +153,7 @@ func TestPacedReadsKeepASmallPlayerBufferPlaying(t *testing.T) {
 	}
 
 	m = newWorkingMux(t)
-	p := newPacer(m.ReadFloat32s, 48000, 2)
+	p := oboe.NewPacer(m.ReadFloat32s, 48000, 2)
 	got := readLikeAndroid(p.Read, time.Second)
 	if got.silent != 0 || got.total == 0 {
 		t.Errorf("paced reads: %d of %d samples silent; want none", got.silent, got.total)
