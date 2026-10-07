@@ -193,10 +193,10 @@ private:
   //
   // These are made once and are never resized, so that onAudioReady and
   // LoopRead can read them without locking. A stream opened again after a
-  // disconnection reuses them. read_frames_ and tmp_ are sized from the first
-  // stream. fifo_ holds one second at the context's sample rate, more than any
-  // device's queue, and how much of it LoopRead fills follows the stream
-  // playing: target_frames_ and min_wait_us_ below.
+  // disconnection reuses them. A read is 10 ms at the context's sample rate,
+  // and fifo_ holds one second, more than any device's queue. How much of it
+  // LoopRead fills follows the stream playing: target_frames_ and min_wait_us_
+  // below.
   //
   // All the member variables other than the threads must be initialized before
   // read_thread_.
@@ -208,8 +208,9 @@ private:
   // stream playing, and min_wait_us_ the shortest it sleeps between reads, in
   // microseconds. They are set as each stream opens, as devices differ: a
   // Bluetooth headset's bursts can be twenty times a phone speaker's.
-  // max_callback_ is the most frames a callback has asked for since, which
-  // LoopRead also keeps queued, for a device whose callbacks outgrow its bursts.
+  // max_callback_ is the most frames a callback has asked for since. LoopRead
+  // keeps two of those and a read queued, for a device whose callbacks outgrow
+  // its bursts.
   std::atomic<int> target_frames_{0};
   std::atomic<int64_t> min_wait_us_{1000};
   std::atomic<int> max_callback_{0};
@@ -268,14 +269,9 @@ void Stream::CloseLocked() {
 // PrepareBuffersLocked creates the buffers and the read thread that fills them
 // from the stream that is open.
 void Stream::PrepareBuffersLocked() {
-  int num_frames = stream_->getBufferSizeInFrames();
-  // The multiplier is an empirical margin for low-end devices
-  // (hajimehoshi/ebiten@4276e296). A read is at most 10 milliseconds, though:
-  // a player hands over only what it has buffered, and the rest of a read is
-  // silence, so a read must not outgrow a player's buffer. A stream's buffer can
-  // be far larger than that, as a Bluetooth headset's of hundreds of
-  // milliseconds is, whose reads would be mostly silence.
-  read_frames_ = std::min(num_frames * 3, sample_rate_ / 100);
+  // A player hands over only what it has buffered, and the rest of a read is
+  // silence, so a read must stay small next to a player's buffer.
+  read_frames_ = sample_rate_ / 100;
   tmp_.resize(read_frames_ * channel_num_);
   // One second of sound is more than any device's queue.
   fifo_ = std::make_unique<oboe::FifoBuffer>(channel_num_ * sizeof(float),
@@ -283,15 +279,16 @@ void Stream::PrepareBuffersLocked() {
   read_thread_ = std::make_unique<std::thread>([this]() { LoopRead(); });
 }
 
-// SetTargetLocked sets how LoopRead fills fifo_ for the stream just opened. A
-// stream keeps six times its buffer queued, at most 80 ms, and at least two
-// bursts and a read, so that a whole burst stays queued after any callback.
+// SetTargetLocked sets how LoopRead fills fifo_ for the stream just opened.
+// Before each read, a stream keeps queued three times its buffer, at most
+// 40 ms, and at least two bursts, so that a whole burst stays queued after any
+// callback. The target is that and one read on top.
 void Stream::SetTargetLocked() {
   int num_frames = stream_->getBufferSizeInFrames();
   int burst = stream_->getFramesPerBurst();
-  int margin = std::min(num_frames * 3, sample_rate_ / 25) * 2;
+  int low = std::max(std::min(num_frames * 3, sample_rate_ / 25), 2 * burst);
   max_callback_.store(0);
-  target_frames_.store(std::max(margin, 2 * burst + read_frames_));
+  target_frames_.store(low + read_frames_);
   // Half a burst, so the queue is topped up well before the next callback.
   min_wait_us_.store(std::max<int64_t>(
       static_cast<int64_t>(burst) * 1000000 / sample_rate_ / 2, 1000));
