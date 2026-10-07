@@ -20,13 +20,8 @@ import "time"
 // the driver catches up after a device takes a large burst at once.
 const paceRate = 2
 
-// A pacer spaces the driver's reads, so that each player refills its buffer
-// from its source between them. A player hands over only what it has buffered,
-// and the rest of a read is silence. After a device takes a large burst at once,
-// LoopRead tops the fifo up with several reads, which back to back would ask a
-// player for more than a small buffer holds.
-//
-// A pacer is for one reader at a time.
+// A pacer spaces reads, so that they come at most paceRate times faster than
+// real time. It is for one reader at a time.
 type pacer struct {
 	read         func(buf []float32)
 	sampleRate   int
@@ -37,7 +32,11 @@ type pacer struct {
 // newPacer returns a pacer reading with read, from a source of sampleRate
 // frames a second and channelCount channels.
 func newPacer(read func(buf []float32), sampleRate, channelCount int) *pacer {
-	return &pacer{read: read, sampleRate: sampleRate, channelCount: channelCount}
+	return &pacer{
+		read:         read,
+		sampleRate:   sampleRate,
+		channelCount: channelCount,
+	}
 }
 
 // Read waits until the read is due, and reads buf. A read is due once the last

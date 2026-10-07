@@ -50,14 +50,14 @@ type played struct {
 
 // readLikeAndroid plays m as the Android driver reads it for a Bluetooth
 // headset, for d: the device takes a burst of 1,920 frames every 40 ms, and
-// read tops a queue of 3,840 frames up, 480 frames at a time, as soon as there
-// is room. It counts what is heard after the first fifth of d.
+// read tops a queue of two bursts and a read up, 480 frames at a time, as soon
+// as there is room. It counts what is heard after the first fifth of d.
 func readLikeAndroid(read func([]float32), d time.Duration) played {
 	const (
 		rate   = 48000
 		burst  = 1920
-		target = 3840
 		chunk  = 480
+		target = 2*burst + chunk
 	)
 	var queued atomic.Int64
 	var short atomic.Int64
@@ -122,6 +122,7 @@ func newWorkingMux(t *testing.T) *mux.Mux {
 	t.Helper()
 
 	m := mux.New(48000, 2, mux.FormatFloat32LE)
+	// The mux's loop must end before the synctest bubble does.
 	t.Cleanup(m.Stop)
 	p := m.NewPlayer(&workingReader{work: 2 * time.Millisecond})
 	t.Cleanup(func() {

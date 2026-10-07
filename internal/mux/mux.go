@@ -155,9 +155,7 @@ func (m *Mux) removePlayer(player *playerImpl) {
 	delete(m.players, player)
 }
 
-// Stop ends the goroutine that New starts to fill the players' buffers from
-// their sources. A stopped Mux reads nothing more from the sources. It lets a
-// test end with no goroutine of the Mux left running.
+// Stop stops the Mux from reading the players' sources.
 func (m *Mux) Stop() {
 	m.cond.L.Lock()
 	defer m.cond.L.Unlock()

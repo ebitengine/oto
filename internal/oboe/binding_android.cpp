@@ -191,11 +191,12 @@ private:
   // read_frames_ is the number of frames read from Go at once, and tmp_ is the
   // buffer for one such read.
   //
-  // These are sized from the first stream and are never resized, so that
-  // onAudioReady and LoopRead can read them without locking. A stream opened again
-  // after a disconnection reuses them. fifo_ is made large enough for any
-  // device, and how much of it LoopRead fills follows the stream playing:
-  // target_frames_ and min_wait_us_ below.
+  // These are made once and are never resized, so that onAudioReady and
+  // LoopRead can read them without locking. A stream opened again after a
+  // disconnection reuses them. read_frames_ and tmp_ are sized from the first
+  // stream. fifo_ holds one second at the context's sample rate, more than any
+  // device's queue, and how much of it LoopRead fills follows the stream
+  // playing: target_frames_ and min_wait_us_ below.
   //
   // All the member variables other than the threads must be initialized before
   // read_thread_.
@@ -283,16 +284,16 @@ void Stream::PrepareBuffersLocked() {
 }
 
 // SetTargetLocked sets how LoopRead fills fifo_ for the stream just opened. A
-// stream of small bursts keeps as much queued as twice its buffer three times
-// over, as the queue always did, and a stream of large bursts keeps a burst and
-// a read on top.
+// stream keeps queued twice its buffer three times over, as the queue did
+// before, capped at 80 ms, so a stream whose buffer is longer than about 13 ms
+// keeps less than before. Any stream keeps at least two bursts and a read, so a
+// whole burst stays queued after any callback.
 void Stream::SetTargetLocked() {
   int num_frames = stream_->getBufferSizeInFrames();
   int burst = stream_->getFramesPerBurst();
   int margin = std::min(num_frames * 3, sample_rate_ / 25) * 2;
-  int target = std::max(margin, burst + read_frames_);
   max_callback_.store(0);
-  target_frames_.store(std::min(target, sample_rate_ - read_frames_));
+  target_frames_.store(std::max(margin, 2 * burst + read_frames_));
   // Half a burst, so the queue is topped up well before the next callback.
   min_wait_us_.store(std::max<int64_t>(
       static_cast<int64_t>(burst) * 1000000 / sample_rate_ / 2, 1000));
@@ -512,11 +513,15 @@ Stream::Stream() = default;
 
 void Stream::LoopRead() {
   for (;;) {
+    // The queue holds the target, and two callbacks as large as any seen yet
+    // and a read on top, for a device whose callbacks outgrow its bursts, all
+    // within the fifo less one read.
     int target = std::max(target_frames_.load(),
-                          max_callback_.load(std::memory_order_relaxed) +
+                          2 * max_callback_.load(std::memory_order_relaxed) +
                               read_frames_);
     target = std::min(target,
-                      static_cast<int>(fifo_->getBufferCapacityInFrames()));
+                      static_cast<int>(fifo_->getBufferCapacityInFrames()) -
+                          read_frames_);
     int full_frames = static_cast<int>(fifo_->getFullFramesAvailable());
     if (full_frames + read_frames_ > target) {
       // Wait for onAudioReady to consume enough frames for one whole read.
