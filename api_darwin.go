@@ -39,7 +39,7 @@ const (
 )
 
 const (
-	kAudioFormatLinearPCM = 0x6C70636D //'lpcm'
+	kAudioFormatLinearPCM = 0x6C70636D // 'lpcm'
 )
 
 const (
