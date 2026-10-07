@@ -146,7 +146,7 @@ private:
   Status OpenLocked();
   void CloseLocked();
   void PrepareBuffersLocked();
-  void SetTargetLocked();
+  void ConfigureRefillLocked();
   Status EnsureStreamLocked();
   Status StartLocked();
   Status StartOrDeferLocked();
@@ -195,8 +195,8 @@ private:
   // LoopRead can read them without locking. A stream opened again after a
   // disconnection reuses them. A read is 10 ms at the context's sample rate,
   // and fifo_ holds one second, more than any device's queue. How much of it
-  // LoopRead fills follows the stream playing: target_frames_ and min_wait_us_
-  // below.
+  // LoopRead fills follows the stream playing: fill_target_frames_ and
+  // min_wait_us_ below.
   //
   // All the member variables other than the threads must be initialized before
   // read_thread_.
@@ -204,14 +204,14 @@ private:
   std::vector<float> tmp_;
   int read_frames_ = 0;
 
-  // target_frames_ is how many frames LoopRead keeps queued in fifo_ for the
-  // stream playing, and min_wait_us_ the shortest it sleeps between reads, in
-  // microseconds. They are set as each stream opens, as devices differ: a
+  // fill_target_frames_ is how many frames LoopRead keeps queued in fifo_ for
+  // the stream playing, and min_wait_us_ the shortest it sleeps between reads,
+  // in microseconds. They are set as each stream opens, as devices differ: a
   // Bluetooth headset's bursts can be twenty times a phone speaker's.
   // max_callback_ is the most frames a callback has asked for since. LoopRead
   // keeps two of those and a read queued, for a device whose callbacks outgrow
   // its bursts.
-  std::atomic<int> target_frames_{0};
+  std::atomic<int> fill_target_frames_{0};
   std::atomic<int64_t> min_wait_us_{1000};
   std::atomic<int> max_callback_{0};
 
@@ -266,8 +266,8 @@ void Stream::CloseLocked() {
   stream_.reset();
 }
 
-// PrepareBuffersLocked creates the buffers and the read thread that fills them
-// from the stream that is open.
+// PrepareBuffersLocked creates the buffers, which depend only on the sample
+// rate.
 void Stream::PrepareBuffersLocked() {
   // A player hands over only what it has buffered, and the rest of a read is
   // silence, so a read must stay small next to a player's buffer.
@@ -276,20 +276,24 @@ void Stream::PrepareBuffersLocked() {
   // One second of sound is more than any device's queue.
   fifo_ = std::make_unique<oboe::FifoBuffer>(channel_num_ * sizeof(float),
                                              sample_rate_);
-  read_thread_ = std::make_unique<std::thread>([this]() { LoopRead(); });
 }
 
-// SetTargetLocked sets how LoopRead fills fifo_ for the stream just opened.
-// Before each read, a stream keeps queued at least 25 ms, the margin found for
-// low-end devices (hajimehoshi/ebiten@4276e296), and at least two bursts, so
-// that a whole burst stays queued after any callback. The target is that and
-// one read on top.
-void Stream::SetTargetLocked() {
+// ConfigureRefillLocked sets how LoopRead refills fifo_ for the stream just
+// opened:
+//
+//   - The fill target. Before each read, a stream keeps queued at least 25 ms,
+//     the margin found for low-end devices (hajimehoshi/ebiten@4276e296), and
+//     at least two bursts, so that a whole burst stays queued after any
+//     callback. The target is that and one read on top.
+//   - The shortest wait between reads: half a burst, so the queue is topped up
+//     well before the next callback.
+//   - The largest callback seen so far is forgotten, as it belonged to the
+//     stream before.
+void Stream::ConfigureRefillLocked() {
   int burst = stream_->getFramesPerBurst();
   int low = std::max(sample_rate_ / 40, 2 * burst);
+  fill_target_frames_.store(low + read_frames_);
   max_callback_.store(0);
-  target_frames_.store(low + read_frames_);
-  // Half a burst, so the queue is topped up well before the next callback.
   min_wait_us_.store(std::max<int64_t>(
       static_cast<int64_t>(burst) * 1000000 / sample_rate_ / 2, 1000));
 }
@@ -304,10 +308,12 @@ Status Stream::EnsureStreamLocked() {
   }
   if (!fifo_) {
     PrepareBuffersLocked();
-    SetTargetLocked();
+    ConfigureRefillLocked();
+    // The read thread starts once all it reads is set.
+    read_thread_ = std::make_unique<std::thread>([this]() { LoopRead(); });
     return Status{};
   }
-  SetTargetLocked();
+  ConfigureRefillLocked();
   // No callback can run before the stream is started, so the fifo can be
   // emptied here. Its contents were mixed for the device that went away and
   // would otherwise be played late on the new one.
@@ -511,7 +517,7 @@ void Stream::LoopRead() {
     // The queue is kept at the larger of the target and two of the largest
     // callbacks so far plus a read, for a device whose callbacks outgrow its
     // bursts, and at most the fifo's capacity less one read.
-    int target = std::max(target_frames_.load(),
+    int target = std::max(fill_target_frames_.load(),
                           2 * max_callback_.load(std::memory_order_relaxed) +
                               read_frames_);
     target = std::min(target,
