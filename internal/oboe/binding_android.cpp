@@ -280,13 +280,13 @@ void Stream::PrepareBuffersLocked() {
 }
 
 // SetTargetLocked sets how LoopRead fills fifo_ for the stream just opened.
-// Before each read, a stream keeps queued three times its buffer, at most
-// 40 ms, and at least two bursts, so that a whole burst stays queued after any
-// callback. The target is that and one read on top.
+// Before each read, a stream keeps queued at least 25 ms, the margin found for
+// low-end devices (hajimehoshi/ebiten@4276e296), and at least two bursts, so
+// that a whole burst stays queued after any callback. The target is that and
+// one read on top.
 void Stream::SetTargetLocked() {
-  int num_frames = stream_->getBufferSizeInFrames();
   int burst = stream_->getFramesPerBurst();
-  int low = std::max(std::min(num_frames * 3, sample_rate_ / 25), 2 * burst);
+  int low = std::max(sample_rate_ / 40, 2 * burst);
   max_callback_.store(0);
   target_frames_.store(low + read_frames_);
   // Half a burst, so the queue is topped up well before the next callback.
