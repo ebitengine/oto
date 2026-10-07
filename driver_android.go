@@ -64,7 +64,7 @@ func (c *context) Resume() error {
 	return oboe.Resume()
 }
 
-func (c *context) outputLatency() (time.Duration, bool) {
+func (c *context) OutputLatency() (time.Duration, bool) {
 	n, ok := oboe.Latency()
 	if !ok {
 		return 0, false

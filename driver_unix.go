@@ -18,6 +18,7 @@ package oto
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/ebitengine/oto/v3/internal/mux"
 )
@@ -107,4 +108,8 @@ func (c *context) Err() error {
 		return c.backend.Err()
 	}
 	return nil
+}
+
+func (c *context) OutputLatency() (time.Duration, bool) {
+	return 0, false
 }

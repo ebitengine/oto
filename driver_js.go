@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"runtime"
 	"syscall/js"
+	"time"
 	"unsafe"
 
 	"github.com/ebitengine/oto/v3/internal/mux"
@@ -249,6 +250,10 @@ func (c *context) Resume() error {
 
 func (c *context) Err() error {
 	return c.err.Load()
+}
+
+func (c *context) OutputLatency() (time.Duration, bool) {
+	return 0, false
 }
 
 func float32SliceToTypedArray(s []float32) js.Value {

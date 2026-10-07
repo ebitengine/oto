@@ -485,6 +485,10 @@ func (c *context) Err() error {
 	return c.err.Load()
 }
 
+func (c *context) OutputLatency() (time.Duration, bool) {
+	return 0, false
+}
+
 func render(inUserData unsafe.Pointer, inAQ _AudioQueueRef, inBuffer _AudioQueueBufferRef) {
 	theContext.cond.L.Lock()
 	defer theContext.cond.L.Unlock()

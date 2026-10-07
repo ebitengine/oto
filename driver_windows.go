@@ -125,6 +125,10 @@ func (c *context) Err() error {
 	return nil
 }
 
+func (c *context) OutputLatency() (time.Duration, bool) {
+	return 0, false
+}
+
 type nullContext struct {
 	suspended atomic.Bool
 }

@@ -526,9 +526,8 @@ Stream::Stream() = default;
 constexpr std::chrono::milliseconds kLatencyEvery{100};
 
 // Latency returns how many frames read from Go are still to be heard: those
-// queued in fifo_, and those the stream holds, which on Android includes a
-// Bluetooth headset's own delay where the headset reports it. It returns -1
-// while the stream has not said yet.
+// queued in fifo_, and those the stream holds. It returns -1 while the stream
+// has not said yet.
 int64_t Stream::Latency() {
   if (!buffers_ready_.load()) {
     return -1;
@@ -543,7 +542,8 @@ int64_t Stream::Latency() {
 void Stream::LoopRead() {
   auto measured = std::chrono::steady_clock::now();
   for (;;) {
-    if (auto now = std::chrono::steady_clock::now(); now - measured >= kLatencyEvery) {
+    if (auto now = std::chrono::steady_clock::now();
+        now - measured >= kLatencyEvery) {
       measured = now;
       // The stream is reached under mutex_, which Pause and Resume hold only
       // briefly; a measurement is skipped rather than waited for.

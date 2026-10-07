@@ -48,6 +48,16 @@ func TestEmptyPlayer(t *testing.T) {
 	}
 }
 
+func TestOutputLatency(t *testing.T) {
+	d, ok := theContext.OutputLatency()
+	if ok && d < 0 {
+		t.Errorf("OutputLatency() = %v, true; want a duration of zero or more", d)
+	}
+	if !ok && d != 0 {
+		t.Errorf("OutputLatency() = %v, false; want zero with false", d)
+	}
+}
+
 // Issue #258
 func TestSetBufferSize(t *testing.T) {
 	for range 10 {

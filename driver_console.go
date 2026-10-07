@@ -29,6 +29,8 @@ package oto
 // }
 import "C"
 
+import "time"
+
 import (
 	"unsafe"
 
@@ -71,4 +73,8 @@ func (c *context) Resume() error {
 
 func (c *context) Err() error {
 	return nil
+}
+
+func (c *context) OutputLatency() (time.Duration, bool) {
+	return 0, false
 }
