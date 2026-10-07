@@ -279,21 +279,19 @@ void Stream::PrepareBuffersLocked() {
 }
 
 // ConfigureRefillLocked sets how LoopRead refills fifo_ for the stream just
-// opened:
-//
-//   - The fill target. Before each read, a stream keeps queued at least 25 ms,
-//     the margin found for low-end devices (hajimehoshi/ebiten@4276e296), and
-//     at least two bursts, so that a whole burst stays queued after any
-//     callback. The target is that and one read on top.
-//   - The shortest wait between reads: half a burst, so the queue is topped up
-//     well before the next callback.
-//   - The largest callback seen so far is forgotten, as it belonged to the
-//     stream before.
+// opened: how much it keeps queued and how long it sleeps at least between
+// reads, and it forgets the largest callback seen so far.
 void Stream::ConfigureRefillLocked() {
   int burst = stream_->getFramesPerBurst();
+  // Before each read, at least two bursts stay queued, so that a whole burst
+  // remains after any callback, and at least 25 ms: about three 384-frame
+  // OpenSL ES buffers at 48 kHz, the queue that stopped occasional noises on a
+  // low-end device where two were not enough (hajimehoshi/ebiten@4276e296).
   int low = std::max(sample_rate_ / 40, 2 * burst);
+  // The fill target is that and one read on top.
   fill_target_frames_.store(low + read_frames_);
   max_callback_.store(0);
+  // Half a burst, so the queue is topped up well before the next callback.
   min_wait_us_.store(std::max<int64_t>(
       static_cast<int64_t>(burst) * 1000000 / sample_rate_ / 2, 1000));
 }
