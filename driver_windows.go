@@ -126,6 +126,9 @@ func (c *context) Err() error {
 }
 
 func (c *context) OutputLatency() (time.Duration, bool) {
+	// TODO: Report the latency: on WASAPI, the frames written less the position
+	// IAudioClock reports, and GetStreamLatency; on WinMM, the frames written
+	// less the position waveOutGetPosition reports.
 	return 0, false
 }
 

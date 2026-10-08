@@ -76,5 +76,6 @@ func (c *context) Err() error {
 }
 
 func (c *context) OutputLatency() (time.Duration, bool) {
+	// TODO: Report the latency where the console's audio API gives it.
 	return 0, false
 }

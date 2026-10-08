@@ -486,6 +486,9 @@ func (c *context) Err() error {
 }
 
 func (c *context) OutputLatency() (time.Duration, bool) {
+	// TODO: Report the latency: the frames enqueued less the queue's position
+	// from AudioQueueGetCurrentTime, plus the device's latency, which on iOS
+	// AVAudioSession's outputLatency gives.
 	return 0, false
 }
 

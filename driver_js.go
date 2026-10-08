@@ -253,6 +253,8 @@ func (c *context) Err() error {
 }
 
 func (c *context) OutputLatency() (time.Duration, bool) {
+	// TODO: Report the latency: the AudioContext's outputLatency and
+	// baseLatency, plus what is scheduled and not yet played.
 	return 0, false
 }
 

@@ -111,5 +111,8 @@ func (c *context) Err() error {
 }
 
 func (c *context) OutputLatency() (time.Duration, bool) {
+	// TODO: Report the latency: from PulseAudio's latency query for its stream,
+	// and from snd_pcm_delay on ALSA, plus what the driver has read and not
+	// yet written.
 	return 0, false
 }
