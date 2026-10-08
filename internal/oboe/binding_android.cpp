@@ -20,6 +20,7 @@
 #include <android/api-level.h>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
@@ -145,6 +146,7 @@ private:
   Status OpenLocked();
   void CloseLocked();
   void PrepareBuffersLocked();
+  void ConfigureRefillLocked();
   Status EnsureStreamLocked();
   Status StartLocked();
   Status StartOrDeferLocked();
@@ -189,17 +191,29 @@ private:
   // read_frames_ is the number of frames read from Go at once, and tmp_ is the
   // buffer for one such read.
   //
-  // These are sized from the first stream and are never resized, so that
-  // onAudioReady and LoopRead can read them without locking. A stream opened again
-  // after a disconnection reuses them, and fifo_ absorbs a device whose burst
-  // size differs.
+  // These are made once and are never resized, so that onAudioReady and
+  // LoopRead can read them without locking. A stream opened again after a
+  // disconnection reuses them. A read is 10 ms at the context's sample rate,
+  // and fifo_ holds one second, more than any device's queue. How much of it
+  // LoopRead fills follows the stream playing: fill_target_frames_ and
+  // min_wait_us_ below.
   //
   // All the member variables other than the threads must be initialized before
   // read_thread_.
   std::unique_ptr<oboe::FifoBuffer> fifo_;
   std::vector<float> tmp_;
   int read_frames_ = 0;
-  std::chrono::microseconds min_wait_{0};
+
+  // fill_target_frames_ is how many frames LoopRead keeps queued in fifo_ for
+  // the stream playing, and min_wait_us_ the shortest it sleeps between reads,
+  // in microseconds. They are set as each stream opens, as devices differ: a
+  // Bluetooth headset's bursts can be twenty times a phone speaker's.
+  // max_callback_ is the most frames a callback has asked for since. LoopRead
+  // keeps two of those and a read queued, for a device whose callbacks outgrow
+  // its bursts.
+  std::atomic<int> fill_target_frames_{0};
+  std::atomic<int64_t> min_wait_us_{1000};
+  std::atomic<int> max_callback_{0};
 
   // read_thread_ runs LoopRead, which reads from Go into fifo_.
   std::unique_ptr<std::thread> read_thread_;
@@ -252,23 +266,34 @@ void Stream::CloseLocked() {
   stream_.reset();
 }
 
-// PrepareBuffersLocked creates the buffers and the read thread that fills them
-// from the stream that is open.
+// PrepareBuffersLocked creates the buffers, which depend only on the sample
+// rate.
 void Stream::PrepareBuffersLocked() {
-  int num_frames = stream_->getBufferSizeInFrames();
-  // The multiplier is an empirical margin for low-end devices
-  // (hajimehoshi/ebiten@4276e296).
-  read_frames_ = num_frames * 3;
+  // A player hands over only what it has buffered, and the rest of a read is
+  // silence, so a read must stay small next to a player's buffer.
+  read_frames_ = sample_rate_ / 100;
   tmp_.resize(read_frames_ * channel_num_);
-  // The fifo frees space only when onAudioReady runs, so waiting for less than
-  // one callback cannot make more space available.
-  min_wait_ = std::chrono::microseconds(std::max<int64_t>(
-      static_cast<int64_t>(num_frames) * 1000000 / sample_rate_, 1000));
-  // The capacity leaves room for one whole read on top of one whole read that
-  // is still queued.
+  // One second of sound is more than any device's queue.
   fifo_ = std::make_unique<oboe::FifoBuffer>(channel_num_ * sizeof(float),
-                                             read_frames_ * 2);
-  read_thread_ = std::make_unique<std::thread>([this]() { LoopRead(); });
+                                             sample_rate_);
+}
+
+// ConfigureRefillLocked sets how LoopRead refills fifo_ for the stream just
+// opened: how much it keeps queued and how long it sleeps at least between
+// reads, and it forgets the largest callback seen so far.
+void Stream::ConfigureRefillLocked() {
+  int burst = stream_->getFramesPerBurst();
+  // Before each read, at least two bursts stay queued, so that a whole burst
+  // remains after any callback, and at least 25 ms: about three 384-frame
+  // OpenSL ES buffers at 48 kHz, the queue that stopped occasional noises on a
+  // low-end device where two were not enough (hajimehoshi/ebiten@4276e296).
+  int low = std::max(sample_rate_ / 40, 2 * burst);
+  // The fill target is that and one read on top.
+  fill_target_frames_.store(low + read_frames_);
+  max_callback_.store(0);
+  // Half a burst, so the queue is topped up well before the next callback.
+  min_wait_us_.store(std::max<int64_t>(
+      static_cast<int64_t>(burst) * 1000000 / sample_rate_ / 2, 1000));
 }
 
 // EnsureStreamLocked opens a stream unless there already is one.
@@ -281,8 +306,12 @@ Status Stream::EnsureStreamLocked() {
   }
   if (!fifo_) {
     PrepareBuffersLocked();
+    ConfigureRefillLocked();
+    // The read thread starts once all it reads is set.
+    read_thread_ = std::make_unique<std::thread>([this]() { LoopRead(); });
     return Status{};
   }
+  ConfigureRefillLocked();
   // No callback can run before the stream is started, so the fifo can be
   // emptied here. Its contents were mixed for the device that went away and
   // would otherwise be played late on the new one.
@@ -472,6 +501,9 @@ oboe::DataCallbackResult Stream::onAudioReady(oboe::AudioStream *oboe_stream,
   // glitch the audio or time the stream out. readNow fills the remainder with
   // silence when the read thread has not kept up.
   // https://google.github.io/oboe/reference/classoboe_1_1_audio_stream_data_callback.html#ad8a3a9f609df5fd3a5d885cbe1b2204d
+  if (num_frames > max_callback_.load(std::memory_order_relaxed)) {
+    max_callback_.store(num_frames, std::memory_order_relaxed);
+  }
   fifo_->readNow(audio_data, num_frames);
   return oboe::DataCallbackResult::Continue;
 }
@@ -480,15 +512,24 @@ Stream::Stream() = default;
 
 void Stream::LoopRead() {
   for (;;) {
-    int empty_frames = static_cast<int>(fifo_->getBufferCapacityInFrames() -
-                                        fifo_->getFullFramesAvailable());
-    if (empty_frames < read_frames_) {
+    // The queue is kept at the larger of the target and two of the largest
+    // callbacks so far plus a read, for a device whose callbacks outgrow its
+    // bursts, and at most the fifo's capacity less one read.
+    int target = std::max(fill_target_frames_.load(),
+                          2 * max_callback_.load(std::memory_order_relaxed) +
+                              read_frames_);
+    target = std::min(target,
+                      static_cast<int>(fifo_->getBufferCapacityInFrames()) -
+                          read_frames_);
+    int full_frames = static_cast<int>(fifo_->getFullFramesAvailable());
+    if (full_frames + read_frames_ > target) {
       // Wait for onAudioReady to consume enough frames for one whole read.
       // Sleeping here is fine: only onAudioReady must avoid blocking.
       std::chrono::microseconds wait{
-          static_cast<int64_t>(read_frames_ - empty_frames) * 1000000 /
+          static_cast<int64_t>(full_frames + read_frames_ - target) * 1000000 /
           sample_rate_};
-      std::this_thread::sleep_for(std::max(wait, min_wait_));
+      std::this_thread::sleep_for(
+          std::max(wait, std::chrono::microseconds(min_wait_us_.load())));
       continue;
     }
     oto_oboe_read(&tmp_[0], tmp_.size());
