@@ -233,6 +233,10 @@ registerProcessor('oto-worklet-processor', OtoWorkletProcessor);
 	for _, event := range events {
 		js.Global().Get("document").Call("addEventListener", event, onEventFired)
 	}
+	if d.audioContext.Get("state").String() == "running" {
+		resumed = true
+		finishInitialization()
+	}
 
 	return d, ready, nil
 }
