@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"runtime"
 	"syscall/js"
-	"time"
 	"unsafe"
 
 	"github.com/ebitengine/oto/v3/internal/mux"
@@ -51,6 +50,8 @@ func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeI
 		audioContext: class.New(options),
 		mux:          mux.New(sampleRate, channelCount, format),
 	}
+	// TODO: Report the delay with d.mux.SetDelayFunc: the AudioContext's
+	// outputLatency and baseLatency, plus what is scheduled and not yet played.
 
 	if bufferSizeInBytes == 0 {
 		// 4096 was not great at least on Safari 15.
@@ -250,12 +251,6 @@ func (c *context) Resume() error {
 
 func (c *context) Err() error {
 	return c.err.Load()
-}
-
-func (c *context) OutputLatency() (time.Duration, bool) {
-	// TODO: Report the latency: the AudioContext's outputLatency and
-	// baseLatency, plus what is scheduled and not yet played.
-	return 0, false
 }
 
 func float32SliceToTypedArray(s []float32) js.Value {

@@ -16,15 +16,13 @@ package oto
 
 import (
 	"sync"
-	"time"
 
 	"github.com/ebitengine/oto/v3/internal/mux"
 	"github.com/ebitengine/oto/v3/internal/oboe"
 )
 
 type context struct {
-	mux        *mux.Mux
-	sampleRate int
+	mux *mux.Mux
 
 	err atomicError
 
@@ -35,9 +33,9 @@ func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeI
 	ready := make(chan struct{})
 
 	c := &context{
-		mux:        mux.New(sampleRate, channelCount, format),
-		sampleRate: sampleRate,
+		mux: mux.New(sampleRate, channelCount, format),
 	}
+	c.mux.SetDelayFunc(oboe.Delay)
 	go func() {
 		// The ready channel must close even if Play fails, or callers waiting on it block forever.
 		defer close(ready)
@@ -62,14 +60,6 @@ func (c *context) Resume() error {
 	c.m.Lock()
 	defer c.m.Unlock()
 	return oboe.Resume()
-}
-
-func (c *context) OutputLatency() (time.Duration, bool) {
-	n, ok := oboe.Latency()
-	if !ok {
-		return 0, false
-	}
-	return time.Duration(n) * time.Second / time.Duration(c.sampleRate), true
 }
 
 func (c *context) Err() error {

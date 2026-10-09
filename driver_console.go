@@ -29,8 +29,6 @@ package oto
 // }
 import "C"
 
-import "time"
-
 import (
 	"unsafe"
 
@@ -55,6 +53,8 @@ func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeI
 	c := &context{
 		mux: mux.New(sampleRate, channelCount, format),
 	}
+	// TODO: Report the delay with c.mux.SetDelayFunc, where the console's audio
+	// API gives it.
 	theContext = c
 	C.oto_OpenAudioProxy(C.int(sampleRate), C.int(channelCount), C.int(bufferSizeInBytes))
 
@@ -73,9 +73,4 @@ func (c *context) Resume() error {
 
 func (c *context) Err() error {
 	return nil
-}
-
-func (c *context) OutputLatency() (time.Duration, bool) {
-	// TODO: Report the latency where the console's audio API gives it.
-	return 0, false
 }

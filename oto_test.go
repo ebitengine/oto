@@ -48,13 +48,17 @@ func TestEmptyPlayer(t *testing.T) {
 	}
 }
 
-func TestOutputLatency(t *testing.T) {
-	d, ok := theContext.OutputLatency()
-	if ok && d < 0 {
-		t.Errorf("OutputLatency() = %v, true; want a duration of zero or more", d)
+func TestUnplayedSize(t *testing.T) {
+	p := theContext.NewPlayer(bytes.NewReader(make([]byte, 4800*8)))
+	p.Play()
+	for p.IsPlaying() {
+		if u, b := p.UnplayedSize(), p.BufferedSize(); u < b {
+			t.Fatalf("UnplayedSize() = %d, less than BufferedSize(), %d", u, b)
+		}
+		time.Sleep(time.Millisecond)
 	}
-	if !ok && d != 0 {
-		t.Errorf("OutputLatency() = %v, false; want zero with false", d)
+	if u := p.UnplayedSize(); u < 0 {
+		t.Fatalf("UnplayedSize() = %d after the source ends; want 0 or more", u)
 	}
 }
 

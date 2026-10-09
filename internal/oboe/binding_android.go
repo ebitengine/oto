@@ -63,10 +63,10 @@ func Resume() error {
 	return nil
 }
 
-// Latency returns how many frames read from the read function are still to be
-// heard, and whether the device has said yet.
-func Latency() (int64, bool) {
-	n := int64(C.oto_oboe_Latency())
+// Delay returns how many of the frames read with the read function are not
+// heard yet, and whether the device reports it.
+func Delay() (int64, bool) {
+	n := int64(C.oto_oboe_Delay())
 	return n, n >= 0
 }
 

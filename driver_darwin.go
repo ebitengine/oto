@@ -160,6 +160,9 @@ func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeI
 		channelCount:         channelCount,
 		oneBufferSizeInBytes: oneBufferSizeInBytes,
 	}
+	// TODO: Report the delay with c.mux.SetDelayFunc: the frames enqueued less
+	// the queue's position from AudioQueueGetCurrentTime, plus the device's
+	// latency, which on iOS AVAudioSession's outputLatency gives.
 	theContext = c
 
 	if err := initializeAPI(); err != nil {
@@ -483,13 +486,6 @@ func (c *context) rebuildAudioQueue() error {
 
 func (c *context) Err() error {
 	return c.err.Load()
-}
-
-func (c *context) OutputLatency() (time.Duration, bool) {
-	// TODO: Report the latency: the frames enqueued less the queue's position
-	// from AudioQueueGetCurrentTime, plus the device's latency, which on iOS
-	// AVAudioSession's outputLatency gives.
-	return 0, false
 }
 
 func render(inUserData unsafe.Pointer, inAQ _AudioQueueRef, inBuffer _AudioQueueBufferRef) {

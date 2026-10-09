@@ -207,16 +207,6 @@ func (c *Context) Err() error {
 	return c.context.Err()
 }
 
-// OutputLatency returns how long the sound the context has read from its
-// players takes to be heard, and whether the device reports it. It counts what
-// the context queues and what the device holds, and leaves out what each
-// player buffers: see Player.BufferedSize. Only Android reports it so far.
-//
-// OutputLatency is concurrent-safe.
-func (c *Context) OutputLatency() (time.Duration, bool) {
-	return c.context.OutputLatency()
-}
-
 type atomicError struct {
 	err error
 	m   sync.Mutex
