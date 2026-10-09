@@ -407,6 +407,9 @@ func (i *_IAudioRenderClient) GetBuffer(numFramesRequested uint32) (*byte, error
 		if isAudclntErr(uint32(r)) {
 			return nil, fmt.Errorf("oto: IAudioRenderClient::GetBuffer failed: %w", _AUDCLNT_ERR(r))
 		}
+		if isWin32Err(uint32(r)) {
+			return nil, fmt.Errorf("oto: IAudioRenderClient::GetBuffer failed: %w", _WIN32_ERR(r))
+		}
 		return nil, fmt.Errorf("oto: IAudioRenderClient::GetBuffer failed: HRESULT(%d)", uint32(r))
 	}
 	return data, nil
