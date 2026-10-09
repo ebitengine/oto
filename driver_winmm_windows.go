@@ -204,7 +204,9 @@ var waveOutOpenCallback = windows.NewCallback(func(hwo, uMsg, dwInstance, dwPara
 	if uMsg != womDone {
 		return 0
 	}
+	theWinMMContext.cond.L.Lock()
 	theWinMMContext.cond.Signal()
+	theWinMMContext.cond.L.Unlock()
 	return 0
 })
 
