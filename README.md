@@ -194,11 +194,10 @@ func main() {
 }
 ```
 
-The only thing to note about streaming is that the *file* object must be kept alive, otherwise
-you might just play static.
-
-To keep it alive not only must you be careful about when you close it, but you might need to keep a reference
-to the original file object alive (by for example keeping it in a struct).
+Keep the player reachable for as long as it should keep playing. The player retains its reader, so
+the MP3 decoder in this example keeps the file reachable without a separate reference to the file.
+Do not close the file while the player is still reading it. To stop reading before closing the file,
+call the player's `PauseAndStopReading` method.
 
 ### Advanced usage
 
