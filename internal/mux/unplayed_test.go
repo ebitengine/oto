@@ -17,6 +17,7 @@ package mux_test
 import (
 	"bytes"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/ebitengine/oto/v3/internal/mux"
@@ -27,11 +28,21 @@ const bytesPerFrame = 8
 
 // newDelayedMux returns a mux whose driver reports delay frames as not heard
 // yet, where known is true.
+//
+// The tests run in synctest bubbles, and wait for the mux's loop to fill the
+// players' buffers with synctest.Wait, so their results depend on no
+// machine's scheduler.
 func newDelayedMux(t *testing.T, delay int64, known bool) *mux.Mux {
 	t.Helper()
 
 	m := mux.New(48000, 2, mux.FormatFloat32LE)
-	t.Cleanup(m.Stop)
+	// The mux's loop must end before the synctest bubble does. It sees Stop
+	// the next time it waits, which can be after it sleeps a moment, as it
+	// does once a source has ended; in the bubble the sleep takes no time.
+	t.Cleanup(func() {
+		m.Stop()
+		time.Sleep(time.Second)
+	})
 	if known {
 		m.SetDelayFunc(func() (int64, bool) {
 			return delay, true
@@ -41,19 +52,16 @@ func newDelayedMux(t *testing.T, delay int64, known bool) *mux.Mux {
 }
 
 // newBufferedPlayer plays frames frames of sound on m, once the player has
-// read all of them from its source.
+// read all of them from its source. It is called in a synctest bubble.
 func newBufferedPlayer(t *testing.T, m *mux.Mux, frames int) *mux.Player {
 	t.Helper()
 
 	p := newPlayer(t, m, bytes.NewReader(bytes.Repeat([]byte{0, 0, 0x80, 0x3f}, frames*2)))
 	p.SetBufferSize(frames * bytesPerFrame)
 	p.Play()
-	deadline := time.Now().Add(time.Second)
-	for p.BufferedSize() < frames*bytesPerFrame {
-		if time.Now().After(deadline) {
-			t.Fatalf("the player buffered %d bytes of %d", p.BufferedSize(), frames*bytesPerFrame)
-		}
-		time.Sleep(time.Millisecond)
+	synctest.Wait()
+	if got, want := p.BufferedSize(), frames*bytesPerFrame; got != want {
+		t.Fatalf("the player buffered %d bytes; want %d", got, want)
 	}
 	return p
 }
@@ -64,6 +72,10 @@ func readFrames(m *mux.Mux, frames int) {
 }
 
 func TestUnplayedSizeIsBufferedSizeWithoutADelay(t *testing.T) {
+	synctest.Test(t, testUnplayedSizeIsBufferedSizeWithoutADelay)
+}
+
+func testUnplayedSizeIsBufferedSizeWithoutADelay(t *testing.T) {
 	m := newDelayedMux(t, 0, false)
 	p := newBufferedPlayer(t, m, 4800)
 	readFrames(m, 480)
@@ -73,6 +85,10 @@ func TestUnplayedSizeIsBufferedSizeWithoutADelay(t *testing.T) {
 }
 
 func TestUnplayedSizeCountsWhatIsNotHeardYet(t *testing.T) {
+	synctest.Test(t, testUnplayedSizeCountsWhatIsNotHeardYet)
+}
+
+func testUnplayedSizeCountsWhatIsNotHeardYet(t *testing.T) {
 	const delay = 1000
 	m := newDelayedMux(t, delay, true)
 	p := newBufferedPlayer(t, m, 4800)
@@ -96,6 +112,10 @@ func TestUnplayedSizeCountsWhatIsNotHeardYet(t *testing.T) {
 }
 
 func TestUnplayedSizeCountsWhatIsSentBeforePause(t *testing.T) {
+	synctest.Test(t, testUnplayedSizeCountsWhatIsSentBeforePause)
+}
+
+func testUnplayedSizeCountsWhatIsSentBeforePause(t *testing.T) {
 	const delay = 1000
 	m := newDelayedMux(t, delay, true)
 	p := newBufferedPlayer(t, m, 4800)
@@ -118,17 +138,18 @@ func TestUnplayedSizeCountsWhatIsSentBeforePause(t *testing.T) {
 }
 
 func TestUnplayedSizeCountsTheEndOfTheSourceUntilItIsHeard(t *testing.T) {
+	synctest.Test(t, testUnplayedSizeCountsTheEndOfTheSourceUntilItIsHeard)
+}
+
+func testUnplayedSizeCountsTheEndOfTheSourceUntilItIsHeard(t *testing.T) {
 	const delay = 1000
 	m := newDelayedMux(t, delay, true)
 	p := newBufferedPlayer(t, m, 960)
 	readFrames(m, 960)
 	// The mux finds the source's end on its next read from it.
-	deadline := time.Now().Add(time.Second)
-	for p.IsPlaying() {
-		if time.Now().After(deadline) {
-			t.Fatal("the player plays on after its source is mixed")
-		}
-		time.Sleep(time.Millisecond)
+	synctest.Wait()
+	if p.IsPlaying() {
+		t.Fatal("the player plays on after its source is mixed")
 	}
 	if got, want := p.UnplayedSize(), 960*bytesPerFrame; got != want {
 		t.Fatalf("as the source ends: UnplayedSize() = %d; want %d", got, want)
@@ -140,6 +161,10 @@ func TestUnplayedSizeCountsTheEndOfTheSourceUntilItIsHeard(t *testing.T) {
 }
 
 func TestUnplayedSizeForgetsWhatIsSentBeforeSeek(t *testing.T) {
+	synctest.Test(t, testUnplayedSizeForgetsWhatIsSentBeforeSeek)
+}
+
+func testUnplayedSizeForgetsWhatIsSentBeforeSeek(t *testing.T) {
 	const delay = 1000
 	m := newDelayedMux(t, delay, true)
 	p := newBufferedPlayer(t, m, 4800)

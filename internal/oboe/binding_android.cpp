@@ -533,8 +533,7 @@ Stream::Stream() = default;
 // kDelayEvery is how often LoopRead measures the delay.
 constexpr std::chrono::milliseconds kDelayEvery{100};
 
-// ForgetDelayLocked forgets the delay measured, as the stream it was measured
-// on is dropped, paused or replaced.
+// ForgetDelayLocked forgets the delay measured.
 void Stream::ForgetDelayLocked() {
   std::lock_guard<std::mutex> lock{delay_mutex_};
   delay_gen_++;
@@ -559,7 +558,8 @@ void Stream::MeasureDelay() {
   // The stream is asked outside mutex_, as asking it can wait on the device.
   // Only this thread writes to fifo_, and a callback reads from it as the
   // stream takes frames, so a measurement is kept only if no callback ran
-  // meanwhile.
+  // meanwhile. A callback is short and rare next to a measurement, so a few
+  // tries are enough, and the next measurement comes kDelayEvery later.
   for (int i = 0; i < 3; i++) {
     int64_t read = fifo_->getReadCounter();
     double ms;

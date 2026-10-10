@@ -73,8 +73,7 @@ type Mux struct {
 }
 
 // maxSentSpans is the most spans of the mix a player remembers its data went
-// into while they may be unheard. Spans the player fills back to back merge,
-// so a player that plays on keeps one.
+// into while they may be unheard.
 const maxSentSpans = 256
 
 // New creates a new Mux.
@@ -282,7 +281,7 @@ type playerImpl struct {
 }
 
 // A sentSpan is a span of the mix, from sample start to end, that a player's
-// data went into, a sample of its data each.
+// data went into, one sample of the data to each sample of the mix.
 type sentSpan struct {
 	start int64
 	end   int64
@@ -577,6 +576,8 @@ func (p *playerImpl) forgetHeard(heard int64) {
 //
 // When recordSent is called, the mutex m must be locked.
 func (p *playerImpl) recordSent(start, end int64) {
+	// A span that follows on from the last merges with it, so a player that
+	// plays on keeps one.
 	if last := len(p.sent) - 1; last >= 0 && p.sent[last].end == start {
 		p.sent[last].end = end
 		return
@@ -584,7 +585,10 @@ func (p *playerImpl) recordSent(start, end int64) {
 	if len(p.sent) == maxSentSpans {
 		p.sent = append(p.sent[:0], p.sent[1:]...)
 	}
-	p.sent = append(p.sent, sentSpan{start: start, end: end})
+	p.sent = append(p.sent, sentSpan{
+		start: start,
+		end:   end,
+	})
 }
 
 func (p *Player) Close() error {
