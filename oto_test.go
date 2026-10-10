@@ -48,6 +48,20 @@ func TestEmptyPlayer(t *testing.T) {
 	}
 }
 
+func TestUnplayedSize(t *testing.T) {
+	p := theContext.NewPlayer(bytes.NewReader(make([]byte, 4800*8)))
+	p.Play()
+	for p.IsPlaying() {
+		if u, b := p.UnplayedSize(), p.BufferedSize(); u < b {
+			t.Fatalf("UnplayedSize() = %d, less than BufferedSize(), %d", u, b)
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if u := p.UnplayedSize(); u < 0 {
+		t.Fatalf("UnplayedSize() = %d after the source ends; want 0 or more", u)
+	}
+}
+
 // Issue #258
 func TestSetBufferSize(t *testing.T) {
 	for range 10 {

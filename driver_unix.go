@@ -47,6 +47,9 @@ func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeI
 		mux:   mux.New(sampleRate, channelCount, format),
 		ready: make(chan struct{}),
 	}
+	// TODO: Report the delay with ctx.mux.SetDelayFunc: from PulseAudio's latency
+	// query for its stream, and from snd_pcm_delay on ALSA, plus what the driver
+	// has read and not yet written.
 
 	// Initializing a driver might take some time, so do it asynchronously.
 	// PulseAudio is the default; if no server is reachable, fall back to ALSA.

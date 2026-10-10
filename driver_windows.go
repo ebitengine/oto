@@ -46,6 +46,9 @@ func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeI
 		mux:          mux.New(sampleRate, channelCount, format),
 		ready:        make(chan struct{}),
 	}
+	// TODO: Report the delay with ctx.mux.SetDelayFunc: on WASAPI, the frames
+	// written less the position IAudioClock reports; on WinMM, the frames written
+	// less the position waveOutGetPosition reports.
 
 	// Initializing drivers might take some time. Do this asynchronously.
 	go func() {

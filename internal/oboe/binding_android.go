@@ -63,6 +63,13 @@ func Resume() error {
 	return nil
 }
 
+// Delay returns how many of the frames read with the read function are not
+// heard yet, and whether the device reports it.
+func Delay() (int64, bool) {
+	n := int64(C.oto_oboe_Delay())
+	return n, n >= 0
+}
+
 //export oto_oboe_read
 func oto_oboe_read(buf *C.float, len C.size_t) {
 	theReadFunc(unsafe.Slice((*float32)(unsafe.Pointer(buf)), len))

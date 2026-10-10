@@ -23,6 +23,7 @@ import (
 	"math"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -61,7 +62,19 @@ type Mux struct {
 	// stopped says Stop was called, and the loop filling the players' buffers
 	// returns. It is guarded by cond.L.
 	stopped bool
+
+	// mixed counts the samples ReadFloat32s has mixed.
+	mixed atomic.Int64
+
+	// delay is the driver's report of how many of the frames ReadFloat32s has
+	// mixed are not heard yet, and whether it knows, or nil where the driver
+	// reports nothing.
+	delay func() (int64, bool)
 }
+
+// maxSentSpans is the most spans of the mix a player remembers its data went
+// into while they may be unheard.
+const maxSentSpans = 256
 
 // New creates a new Mux.
 func New(sampleRate int, channelCount int, format Format) *Mux {
@@ -155,6 +168,27 @@ func (m *Mux) removePlayer(player *playerImpl) {
 	delete(m.players, player)
 }
 
+// SetDelayFunc sets how the driver reports its delay: f returns how many of the
+// frames ReadFloat32s has mixed are not heard yet, and whether it knows. It is
+// set before the players play.
+func (m *Mux) SetDelayFunc(f func() (int64, bool)) {
+	m.delay = f
+}
+
+// heard returns how many of the samples mixed have been heard, and whether the
+// driver reports it.
+func (m *Mux) heard() (int64, bool) {
+	if m.delay == nil {
+		return 0, false
+	}
+	mixed := m.mixed.Load()
+	d, ok := m.delay()
+	if !ok {
+		return 0, false
+	}
+	return mixed - max(d, 0)*int64(m.channelCount), true
+}
+
 // Stop stops the Mux from reading the players' sources.
 func (m *Mux) Stop() {
 	m.cond.L.Lock()
@@ -180,9 +214,11 @@ func (m *Mux) ReadFloat32s(buf []float32) {
 	for i := range buf {
 		buf[i] = 0
 	}
+	start := m.mixed.Load()
 	for _, p := range players {
-		p.readBufferAndAdd(buf)
+		p.readBufferAndAdd(buf, start)
 	}
+	m.mixed.Add(int64(len(buf)))
 	m.signal()
 }
 
@@ -237,7 +273,18 @@ type playerImpl struct {
 	// The result of a read that started at an older generation is stale and must be discarded.
 	srcGen int
 
+	// sent holds the spans of the mix this player's data went into, oldest
+	// first, while they may be unheard.
+	sent []sentSpan
+
 	m sync.Mutex
+}
+
+// A sentSpan is a span of the mix, from sample start to end, that a player's
+// data went into, one sample of the data to each sample of the mix.
+type sentSpan struct {
+	start int64
+	end   int64
 }
 
 func (m *Mux) NewPlayer(src io.Reader) *Player {
@@ -406,6 +453,8 @@ func (p *playerImpl) Seek(offset int64, whence int) (int64, error) {
 		p.readPos = 0
 		p.eof = false
 		p.srcGen++
+		// The data sent before is from the old position.
+		p.sent = p.sent[:0]
 
 		// Wait until an ongoing read from the source finishes.
 		// Otherwise the source would be sought while it is being read.
@@ -433,6 +482,7 @@ func (p *playerImpl) Reset() {
 	p.buf = p.buf[:0]
 	p.readPos = 0
 	p.eof = false
+	p.sent = p.sent[:0]
 
 	// The buffered data is discarded, so a pending source error is reported now.
 	p.reportSourceErrorIfDrainedImpl()
@@ -489,6 +539,58 @@ func (p *playerImpl) BufferedSize() int {
 	return p.buffered()
 }
 
+func (p *Player) UnplayedSize() int {
+	return p.p.UnplayedSize()
+}
+
+func (p *playerImpl) UnplayedSize() int {
+	p.m.Lock()
+	defer p.m.Unlock()
+
+	n := p.buffered()
+	heard, ok := p.mux.heard()
+	if !ok {
+		p.sent = p.sent[:0]
+		return n
+	}
+	p.forgetHeard(heard)
+	for _, s := range p.sent {
+		n += int(s.end-max(s.start, heard)) * p.mux.format.ByteLength()
+	}
+	return n
+}
+
+// forgetHeard drops the spans sent that end by sample heard of the mix.
+//
+// When forgetHeard is called, the mutex m must be locked.
+func (p *playerImpl) forgetHeard(heard int64) {
+	i := 0
+	for i < len(p.sent) && p.sent[i].end <= heard {
+		i++
+	}
+	p.sent = append(p.sent[:0], p.sent[i:]...)
+}
+
+// recordSent records that the player's data went into samples start to end of
+// the mix.
+//
+// When recordSent is called, the mutex m must be locked.
+func (p *playerImpl) recordSent(start, end int64) {
+	// A span that follows on from the last merges with it, so a player that
+	// plays on keeps one.
+	if last := len(p.sent) - 1; last >= 0 && p.sent[last].end == start {
+		p.sent[last].end = end
+		return
+	}
+	if len(p.sent) == maxSentSpans {
+		p.sent = append(p.sent[:0], p.sent[1:]...)
+	}
+	p.sent = append(p.sent, sentSpan{
+		start: start,
+		end:   end,
+	})
+}
+
 func (p *Player) Close() error {
 	p.cleanup.Stop()
 	return p.p.Close()
@@ -527,7 +629,9 @@ func (p *playerImpl) drained() bool {
 	return p.eof && p.buffered() < p.mux.format.ByteLength()
 }
 
-func (p *playerImpl) readBufferAndAdd(buf []float32) int {
+// readBufferAndAdd adds the player's buffered data to buf, which goes into the
+// mix from sample start.
+func (p *playerImpl) readBufferAndAdd(buf []float32, start int64) int {
 	p.m.Lock()
 	defer p.m.Unlock()
 
@@ -586,6 +690,10 @@ func (p *playerImpl) readBufferAndAdd(buf []float32) int {
 	}
 
 	p.prevVolume = p.volume
+
+	if n > 0 {
+		p.recordSent(start, start+int64(n))
+	}
 
 	// The consumed region is compacted lazily when the buffer is refilled.
 	p.readPos += n * bitDepthInBytes

@@ -35,6 +35,7 @@ func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeI
 	c := &context{
 		mux: mux.New(sampleRate, channelCount, format),
 	}
+	c.mux.SetDelayFunc(oboe.Delay)
 	go func() {
 		// The ready channel must close even if Play fails, or callers waiting on it block forever.
 		defer close(ready)
