@@ -292,13 +292,13 @@ func (i *_IAudioClient2) GetService(riid *windows.GUID) (unsafe.Pointer, error) 
 func (i *_IAudioClient2) Initialize(shareMode _AUDCLNT_SHAREMODE, streamFlags uint32, hnsBufferDuration _REFERENCE_TIME, hnsPeriodicity _REFERENCE_TIME, pFormat *_WAVEFORMATEXTENSIBLE, audioSessionGuid *windows.GUID) error {
 	var r uintptr
 	if unsafe.Sizeof(uintptr(0)) == 8 {
-		// 64bits
+		// 64-bit
 		r, _, _ = syscall.Syscall9(i.vtbl.Initialize, 7, uintptr(unsafe.Pointer(i)),
 			uintptr(shareMode), uintptr(streamFlags), uintptr(hnsBufferDuration),
 			uintptr(hnsPeriodicity), uintptr(unsafe.Pointer(pFormat)), uintptr(unsafe.Pointer(audioSessionGuid)),
 			0, 0)
 	} else {
-		// 32bits
+		// 32-bit
 		r, _, _ = syscall.Syscall9(i.vtbl.Initialize, 9, uintptr(unsafe.Pointer(i)),
 			uintptr(shareMode), uintptr(streamFlags), uintptr(hnsBufferDuration),
 			uintptr(hnsBufferDuration>>32), uintptr(hnsPeriodicity), uintptr(hnsPeriodicity>>32),
