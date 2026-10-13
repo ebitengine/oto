@@ -79,6 +79,8 @@ type winmmContext struct {
 	err       atomicError
 	loopEndCh chan error
 
+	// cond synchronizes completion notifications with entering Wait.
+	// Its lock must not be held across WinMM calls, which can wait for the callback.
 	cond *sync.Cond
 
 	suspended     bool
@@ -241,9 +243,6 @@ func (c *winmmContext) loop() {
 }
 
 func (c *winmmContext) closeLoop() (ferr error) {
-	c.cond.L.Lock()
-	defer c.cond.L.Unlock()
-
 	defer func() {
 		if c.loopEndCh != nil {
 			if ferr != nil {
@@ -270,9 +269,6 @@ func (c *winmmContext) closeLoop() (ferr error) {
 }
 
 func (c *winmmContext) appendBuffers() {
-	c.cond.L.Lock()
-	defer c.cond.L.Unlock()
-
 	if c.err.Load() != nil {
 		return
 	}
