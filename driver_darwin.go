@@ -50,8 +50,8 @@ func newAudioQueue(sampleRate, channelCount int, oneBufferSizeInBytes int) (_Aud
 		&desc,
 		render,
 		nil,
-		0, //CFRunLoopRef
-		0, //CFStringRef
+		0, // CFRunLoopRef
+		0, // CFStringRef
 		0,
 		&audioQueue); osstatus != noErr {
 		return 0, nil, fmt.Errorf("oto: AudioQueueNewOutput failed: %d", osstatus)
