@@ -138,7 +138,7 @@ func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeI
 	// defaultOneBufferSizeInBytes is the default buffer size in bytes.
 	//
 	// 12288 seems necessary at least on iPod touch (7th) and MacBook Pro 2020.
-	// With 48000[Hz] stereo, the maximum delay is (12288*4[buffers] / 4 / 2)[samples] / 48000 [Hz] = 128[ms].
+	// With 48000[Hz] stereo, the maximum delay is (12288*4[buffers] / 4 / 2)[frames] / 48000 [Hz] = 128[ms].
 	// '4' is float32 size in bytes. '2' is a number of channels for stereo.
 	const defaultOneBufferSizeInBytes = 12288
 
