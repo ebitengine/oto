@@ -73,7 +73,8 @@ type winmmContext struct {
 	waveOut uintptr
 	headers []*header
 
-	buf32 []float32
+	buf32        []float32
+	buf32Pending bool
 
 	mux       *mux.Mux
 	err       atomicError
@@ -273,7 +274,10 @@ func (c *winmmContext) appendBuffers() {
 		return
 	}
 
-	c.mux.ReadFloat32s(c.buf32)
+	if !c.buf32Pending {
+		c.mux.ReadFloat32s(c.buf32)
+		c.buf32Pending = true
+	}
 
 	for _, h := range c.headers {
 		if h.IsQueued() {
@@ -293,7 +297,14 @@ func (c *winmmContext) appendBuffers() {
 				// TODO: Retry later.
 			}
 			c.err.Join(fmt.Errorf("oto: Queueing the header failed: %v", err))
+			return
 		}
+		c.buf32Pending = false
 		return
 	}
+
+	// Keep the same samples until a header accepts them, and avoid spinning
+	// when every available header rejects the write with MMSYSERR_NOMEM.
+	sleep := time.Duration(float64(time.Second) * float64(len(c.buf32)) / float64(c.channelCount) / float64(c.sampleRate))
+	time.Sleep(sleep)
 }
