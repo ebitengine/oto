@@ -131,7 +131,6 @@ public:
   const char *Resume();
   const char *Close();
   const char *AppendBuffer(float *buf, size_t len);
-  int64_t Delay();
 
   oboe::DataCallbackResult onAudioReady(oboe::AudioStream *oboe_stream,
                                         void *audio_data,
@@ -219,16 +218,13 @@ private:
   std::atomic<int64_t> min_wait_us_{1000};
   std::atomic<int> max_callback_{0};
 
-  // The delay. Every kDelayEvery, LoopRead measures when the frame written to
-  // fifo_ next will be heard: delay_written_ is the write counter then, and
-  // delay_heard_at_ the time, while delay_known_ is set. delay_gen_ counts the
-  // streams dropped, paused and opened, so that a measurement of a stream that
-  // changed meanwhile is dropped. delay_mutex_ guards these, and is taken after
-  // mutex_ where both are.
+  // Every kDelayEvery, LoopRead measures when the frame written to fifo_ next
+  // will be heard, and reports it to Go. delay_gen_ counts the streams
+  // dropped, paused and opened, so that a measurement of a stream that changed
+  // meanwhile is dropped. delay_mutex_ guards it, and is held while reporting
+  // to Go, so that reports reach Go in order. It is taken after mutex_ where
+  // both are.
   std::mutex delay_mutex_;
-  bool delay_known_ = false;
-  int64_t delay_written_ = 0;
-  std::chrono::steady_clock::time_point delay_heard_at_;
   int delay_gen_ = 0;
 
   // read_thread_ runs LoopRead, which reads from Go into fifo_.
@@ -533,14 +529,15 @@ Stream::Stream() = default;
 // kDelayEvery is how often LoopRead measures the delay.
 constexpr std::chrono::milliseconds kDelayEvery{100};
 
-// ForgetDelayLocked forgets the delay measured.
+// ForgetDelayLocked forgets the delay measured, in Go too.
 void Stream::ForgetDelayLocked() {
   std::lock_guard<std::mutex> lock{delay_mutex_};
   delay_gen_++;
-  delay_known_ = false;
+  oto_oboe_forgetHeard();
 }
 
-// MeasureDelay measures when the frame written to fifo_ next will be heard.
+// MeasureDelay measures when the frame written to fifo_ next will be heard, and
+// reports it to Go.
 void Stream::MeasureDelay() {
   std::shared_ptr<oboe::AudioStream> stream;
   int gen;
@@ -587,27 +584,14 @@ void Stream::MeasureDelay() {
     if (delay_gen_ != gen) {
       return;
     }
-    delay_known_ = true;
-    delay_written_ = written;
-    delay_heard_at_ = heard_at;
+    // fifo_ is written only with what is read from Go, so its write counter
+    // counts the frames read from Go.
+    oto_oboe_setHeard(written,
+                      std::chrono::duration_cast<std::chrono::nanoseconds>(
+                          heard_at - std::chrono::steady_clock::now())
+                          .count());
     return;
   }
-}
-
-// Delay returns how many of the frames read from Go are not heard yet, or -1
-// while the stream has not been measured.
-int64_t Stream::Delay() {
-  std::lock_guard<std::mutex> lock{delay_mutex_};
-  if (!delay_known_) {
-    return -1;
-  }
-  // The frame written next at the measurement is heard at delay_heard_at_, and
-  // the frames written since after it.
-  std::chrono::duration<double> until =
-      delay_heard_at_ - std::chrono::steady_clock::now();
-  int64_t frames = fifo_->getWriteCounter() - delay_written_ +
-                   std::llround(until.count() * sample_rate_);
-  return std::max<int64_t>(frames, 0);
 }
 
 void Stream::LoopRead() {
@@ -682,7 +666,5 @@ const char *oto_oboe_Play(int sample_rate, int channel_num,
 const char *oto_oboe_Suspend() { return Stream::GetInstance().Pause(); }
 
 const char *oto_oboe_Resume() { return Stream::GetInstance().Resume(); }
-
-int64_t oto_oboe_Delay() { return Stream::GetInstance().Delay(); }
 
 } // extern "C"

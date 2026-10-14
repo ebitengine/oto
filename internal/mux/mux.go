@@ -66,15 +66,25 @@ type Mux struct {
 	// mixed counts the samples ReadFloat32s has mixed.
 	mixed atomic.Int64
 
-	// delay is the driver's report of how many of the frames ReadFloat32s has
-	// mixed are not heard yet, and whether it knows, or nil where the driver
-	// reports nothing.
-	delay func() (int64, bool)
+	// heardMu guards the driver's last report: frame heardFrame of the mix is
+	// heard at heardAt, reported at reportedAt, while heardKnown is set.
+	heardMu    sync.Mutex
+	heardKnown bool
+	heardFrame int64
+	heardAt    time.Time
+	reportedAt time.Time
 }
 
 // maxSentSpans is the most spans of the mix a player remembers its data went
 // into while they may be unheard.
 const maxSentSpans = 256
+
+// reportLifetime is how long a report of when a frame is heard holds.
+const reportLifetime = time.Second
+
+// maxReportedDelay is the longest a report can put a frame's being heard after
+// the report.
+const maxReportedDelay = 2 * time.Second
 
 // New creates a new Mux.
 func New(sampleRate int, channelCount int, format Format) *Mux {
@@ -168,25 +178,52 @@ func (m *Mux) removePlayer(player *playerImpl) {
 	delete(m.players, player)
 }
 
-// SetDelayFunc sets how the driver reports its delay: f returns how many of the
-// frames ReadFloat32s has mixed are not heard yet, and whether it knows. It is
-// set before the players play.
-func (m *Mux) SetDelayFunc(f func() (int64, bool)) {
-	m.delay = f
+// SetHeard reports that frame of the mix is heard at time at, where frame 0 is
+// the first frame ReadFloat32s mixed. A driver that reports calls SetHeard at
+// least once every reportLifetime while playing. A report holds for
+// reportLifetime, and one with at more than maxReportedDelay away is taken as
+// unknown.
+func (m *Mux) SetHeard(frame int64, at time.Time) {
+	now := time.Now()
+
+	m.heardMu.Lock()
+	defer m.heardMu.Unlock()
+
+	if at.Sub(now) > maxReportedDelay {
+		m.heardKnown = false
+		return
+	}
+	m.heardKnown = true
+	m.heardFrame = frame
+	m.heardAt = at
+	m.reportedAt = now
+}
+
+// ClearHeard forgets the driver's last report.
+func (m *Mux) ClearHeard() {
+	m.heardMu.Lock()
+	defer m.heardMu.Unlock()
+
+	m.heardKnown = false
 }
 
 // heard returns how many of the samples mixed have been heard, and whether the
 // driver reports it.
 func (m *Mux) heard() (int64, bool) {
-	if m.delay == nil {
+	now := time.Now()
+
+	m.heardMu.Lock()
+	known, frame, at, reportedAt := m.heardKnown, m.heardFrame, m.heardAt, m.reportedAt
+	m.heardMu.Unlock()
+
+	if !known || now.Sub(reportedAt) > reportLifetime {
 		return 0, false
 	}
-	mixed := m.mixed.Load()
-	d, ok := m.delay()
-	if !ok {
-		return 0, false
-	}
-	return mixed - max(d, 0)*int64(m.channelCount), true
+	// The frames around the one reported are heard at the sample rate.
+	frame += int64(now.Sub(at)) * int64(m.sampleRate) / int64(time.Second)
+	// No more than is mixed has been heard, as when the device has run dry
+	// since the report.
+	return min(frame*int64(m.channelCount), m.mixed.Load()), true
 }
 
 // Stop stops the Mux from reading the players' sources.
@@ -550,7 +587,8 @@ func (p *playerImpl) UnplayedSize() int {
 	n := p.buffered()
 	heard, ok := p.mux.heard()
 	if !ok {
-		p.sent = p.sent[:0]
+		// What is sent stays, as it may be heard once the driver reports again,
+		// as after Resume.
 		return n
 	}
 	p.forgetHeard(heard)

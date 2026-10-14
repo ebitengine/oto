@@ -22,24 +22,31 @@ import "C"
 
 import (
 	"fmt"
+	"time"
 	"unsafe"
 )
 
 var (
-	theReadFunc  func(buf []float32)
-	theErrorFunc func(err error)
+	theReadFunc   func(buf []float32)
+	theHeardFunc  func(frame int64, at time.Time)
+	theForgetFunc func()
+	theErrorFunc  func(err error)
 )
 
 // Play starts playing. Playing starts as soon as an audio device is available,
-// which can be after Play returns. errorFunc is called when playing stops for a
-// reason that cannot be recovered from, which can happen at any time after Play
-// returns.
-func Play(sampleRate int, channelCount int, readFunc func(buf []float32), errorFunc func(err error), bufferSizeInBytes int) error {
+// which can be after Play returns. heardFunc is called about every 100 ms while
+// playing with when a frame is heard, where frame 0 is the first frame read with
+// readFunc. forgetFunc is called when the last of those no longer holds.
+// errorFunc is called when playing stops for a reason that cannot be recovered
+// from, which can happen at any time after Play returns.
+func Play(sampleRate int, channelCount int, readFunc func(buf []float32), heardFunc func(frame int64, at time.Time), forgetFunc func(), errorFunc func(err error), bufferSizeInBytes int) error {
 	// Play can invoke the callbacks. Set the callbacks before Play.
 	//
 	// Reads are paced: after the device takes a large burst, reads made as
 	// fast as there is room would outrun the players' buffers.
 	theReadFunc = newPacer(readFunc, sampleRate, channelCount).Read
+	theHeardFunc = heardFunc
+	theForgetFunc = forgetFunc
 	theErrorFunc = errorFunc
 	if msg := C.oto_oboe_Play(C.int(sampleRate), C.int(channelCount), C.int(bufferSizeInBytes)); msg != nil {
 		return fmt.Errorf("oboe: Play failed: %s", C.GoString(msg))
@@ -63,16 +70,19 @@ func Resume() error {
 	return nil
 }
 
-// Delay returns how many of the frames read with the read function are not
-// heard yet, and whether the device reports it.
-func Delay() (int64, bool) {
-	n := int64(C.oto_oboe_Delay())
-	return n, n >= 0
-}
-
 //export oto_oboe_read
 func oto_oboe_read(buf *C.float, len C.size_t) {
 	theReadFunc(unsafe.Slice((*float32)(unsafe.Pointer(buf)), len))
+}
+
+//export oto_oboe_setHeard
+func oto_oboe_setHeard(frame C.int64_t, inNanoseconds C.int64_t) {
+	theHeardFunc(int64(frame), time.Now().Add(time.Duration(inNanoseconds)))
+}
+
+//export oto_oboe_forgetHeard
+func oto_oboe_forgetHeard() {
+	theForgetFunc()
 }
 
 //export oto_oboe_error
