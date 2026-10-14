@@ -181,15 +181,15 @@ func (m *Mux) removePlayer(player *playerImpl) {
 // SetHeard reports that frame of the mix is heard at time at, where frame 0 is
 // the first frame ReadFloat32s mixed. A driver that reports calls SetHeard at
 // least once every reportLifetime while playing. A report holds for
-// reportLifetime, and one with at more than maxReportedDelay away is taken as
-// unknown.
+// reportLifetime, and one with at more than maxReportedDelay after the report,
+// or more than reportLifetime before it, is taken as unknown.
 func (m *Mux) SetHeard(frame int64, at time.Time) {
 	now := time.Now()
 
 	m.heardMu.Lock()
 	defer m.heardMu.Unlock()
 
-	if at.Sub(now) > maxReportedDelay {
+	if at.Sub(now) > maxReportedDelay || now.Sub(at) > reportLifetime {
 		m.heardKnown = false
 		return
 	}

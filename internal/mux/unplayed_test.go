@@ -172,7 +172,7 @@ func testUnplayedSizeForgetsAnOldReport(t *testing.T) {
 	m := newMux(t)
 	p := newBufferedPlayer(t, m, 4800)
 	readFrames(m, reportedFrame)
-	// The last frame mixed is heard in 1.5 seconds.
+	// Frame 1,440, the next one mixed, is heard in 1.5 seconds.
 	m.SetHeard(reportedFrame, time.Now().Add(1500*time.Millisecond))
 
 	time.Sleep(time.Second)

@@ -221,9 +221,8 @@ private:
   // Every kDelayEvery, LoopRead measures when the frame written to fifo_ next
   // will be heard, and reports it to Go. delay_gen_ counts the streams
   // dropped, paused and opened, so that a measurement of a stream that changed
-  // meanwhile is dropped. delay_mutex_ guards it, and is held while reporting
-  // to Go, so that reports reach Go in order. It is taken after mutex_ where
-  // both are.
+  // meanwhile is dropped. delay_mutex_ guards it, and is taken after mutex_
+  // where both are.
   std::mutex delay_mutex_;
   int delay_gen_ = 0;
 
@@ -533,6 +532,9 @@ constexpr std::chrono::milliseconds kDelayEvery{100};
 void Stream::ForgetDelayLocked() {
   std::lock_guard<std::mutex> lock{delay_mutex_};
   delay_gen_++;
+  // Go is told under delay_mutex_, so that no report of the stream measured
+  // before lands after this. The Go side takes only a lock of its own, which
+  // calls nothing while held.
   oto_oboe_forgetHeard();
 }
 
@@ -585,7 +587,8 @@ void Stream::MeasureDelay() {
       return;
     }
     // fifo_ is written only with what is read from Go, so its write counter
-    // counts the frames read from Go.
+    // counts the frames read from Go. Go is told under delay_mutex_, so that
+    // reports and forgetting reach it in order.
     oto_oboe_setHeard(written,
                       std::chrono::duration_cast<std::chrono::nanoseconds>(
                           heard_at - std::chrono::steady_clock::now())
