@@ -183,7 +183,7 @@ func (c *winmmContext) Resume() (ferr error) {
 
 func (c *winmmContext) Err() error {
 	if err := c.err.Load(); err != nil {
-		return err.(error)
+		return err
 	}
 	return nil
 }
