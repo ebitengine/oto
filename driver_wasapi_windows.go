@@ -189,6 +189,11 @@ func (c *wasapiContext) isDeviceSwitched() (bool, error) {
 	c.comThread.Run(func() {
 		device, err := c.enumerator.GetDefaultAudioEndpoint(eRender, eConsole)
 		if err != nil {
+			if errors.Is(err, _E_NOTFOUND) {
+				// No default endpoint can be temporary while devices are switching.
+				cerr = errDeviceSwitched
+				return
+			}
 			cerr = err
 			return
 		}
