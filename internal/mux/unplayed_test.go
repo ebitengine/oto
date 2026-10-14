@@ -164,11 +164,11 @@ func testUnplayedSizeKeepsWhatIsSentWhileUnreported(t *testing.T) {
 	}
 }
 
-func TestUnplayedSizeForgetsAnOldReport(t *testing.T) {
-	synctest.Test(t, testUnplayedSizeForgetsAnOldReport)
+func TestUnplayedSizeIgnoresAnOldReport(t *testing.T) {
+	synctest.Test(t, testUnplayedSizeIgnoresAnOldReport)
 }
 
-func testUnplayedSizeForgetsAnOldReport(t *testing.T) {
+func testUnplayedSizeIgnoresAnOldReport(t *testing.T) {
 	m := newMux(t)
 	p := newBufferedPlayer(t, m, 4800)
 	readFrames(m, reportedFrame)
@@ -225,11 +225,11 @@ func testUnplayedSizeCountsTheEndOfTheSourceUntilItIsHeard(t *testing.T) {
 	}
 }
 
-func TestUnplayedSizeForgetsWhatIsSentBeforeSeek(t *testing.T) {
-	synctest.Test(t, testUnplayedSizeForgetsWhatIsSentBeforeSeek)
+func TestUnplayedSizeDiscardsWhatIsSentBeforeSeek(t *testing.T) {
+	synctest.Test(t, testUnplayedSizeDiscardsWhatIsSentBeforeSeek)
 }
 
-func testUnplayedSizeForgetsWhatIsSentBeforeSeek(t *testing.T) {
+func testUnplayedSizeDiscardsWhatIsSentBeforeSeek(t *testing.T) {
 	m := newMux(t)
 	p := newBufferedPlayer(t, m, 4800)
 	readFrames(m, reportedFrame)

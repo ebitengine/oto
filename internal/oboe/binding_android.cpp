@@ -146,7 +146,7 @@ private:
   // The Locked functions must be called with mutex_ held.
   Status OpenLocked();
   void CloseLocked();
-  void ForgetDelayLocked();
+  void ResetDelayLocked();
   void MeasureDelay();
   void PrepareBuffersLocked();
   void ConfigureRefillLocked();
@@ -270,7 +270,7 @@ Status Stream::OpenLocked() {
 // running stream, and its result is of no interest: the stream is not used
 // again either way.
 void Stream::CloseLocked() {
-  ForgetDelayLocked();
+  ResetDelayLocked();
   if (!stream_) {
     return;
   }
@@ -429,7 +429,7 @@ void Stream::onErrorAfterClose(oboe::AudioStream *oboe_stream,
     }
     // Oboe stopped and closed the stream before calling this, so the only way
     // to keep playing is to open a new one.
-    ForgetDelayLocked();
+    ResetDelayLocked();
     stream_.reset();
     state_ = State::kStopped;
     // A stream that goes away while suspended stays closed until Resume, so
@@ -453,7 +453,7 @@ void Stream::onErrorAfterClose(oboe::AudioStream *oboe_stream,
 const char *Stream::Pause() {
   std::lock_guard<std::mutex> lock{mutex_};
   suspended_ = true;
-  ForgetDelayLocked();
+  ResetDelayLocked();
   if (state_ == State::kStartDeferred) {
     // Nothing may start playing while the caller wants silence. Resume attempts
     // it again.
@@ -504,7 +504,7 @@ const char *Stream::Close() {
   if (oboe::Result result = stream_->close(); result != oboe::Result::OK) {
     return oboe::convertToText(result);
   }
-  ForgetDelayLocked();
+  ResetDelayLocked();
   stream_.reset();
   return nullptr;
 }
@@ -528,14 +528,14 @@ Stream::Stream() = default;
 // kDelayEvery is how often LoopRead measures the delay.
 constexpr std::chrono::milliseconds kDelayEvery{100};
 
-// ForgetDelayLocked forgets the delay measured, in Go too.
-void Stream::ForgetDelayLocked() {
+// ResetDelayLocked discards the delay measured, in Go too.
+void Stream::ResetDelayLocked() {
   std::lock_guard<std::mutex> lock{delay_mutex_};
   delay_gen_++;
   // Go is told under delay_mutex_, so that no report of the stream measured
   // before lands after this. The Go side takes only a lock of its own, which
   // calls nothing while held.
-  oto_oboe_forgetHeard();
+  oto_oboe_clearHeard();
 }
 
 // MeasureDelay measures when the frame written to fifo_ next will be heard, and
@@ -588,7 +588,7 @@ void Stream::MeasureDelay() {
     }
     // fifo_ is written only with what is read from Go, so its write counter
     // counts the frames read from Go. Go is told under delay_mutex_, so that
-    // reports and forgetting reach it in order.
+    // reports and resets reach it in order.
     oto_oboe_setHeard(written,
                       std::chrono::duration_cast<std::chrono::nanoseconds>(
                           heard_at - std::chrono::steady_clock::now())

@@ -27,26 +27,26 @@ import (
 )
 
 var (
-	theReadFunc   func(buf []float32)
-	theHeardFunc  func(frame int64, at time.Time)
-	theForgetFunc func()
-	theErrorFunc  func(err error)
+	theReadFunc  func(buf []float32)
+	theHeardFunc func(frame int64, at time.Time)
+	theClearFunc func()
+	theErrorFunc func(err error)
 )
 
 // Play starts playing. Playing starts as soon as an audio device is available,
 // which can be after Play returns. heardFunc is called about every 100 ms while
 // playing with when a frame is heard, where frame 0 is the first frame read with
-// readFunc. forgetFunc is called when the last of those no longer holds.
+// readFunc. clearFunc is called when the last of those no longer holds.
 // errorFunc is called when playing stops for a reason that cannot be recovered
 // from, which can happen at any time after Play returns.
-func Play(sampleRate int, channelCount int, readFunc func(buf []float32), heardFunc func(frame int64, at time.Time), forgetFunc func(), errorFunc func(err error), bufferSizeInBytes int) error {
+func Play(sampleRate int, channelCount int, readFunc func(buf []float32), heardFunc func(frame int64, at time.Time), clearFunc func(), errorFunc func(err error), bufferSizeInBytes int) error {
 	// Play can invoke the callbacks. Set the callbacks before Play.
 	//
 	// Reads are paced: after the device takes a large burst, reads made as
 	// fast as there is room would outrun the players' buffers.
 	theReadFunc = newPacer(readFunc, sampleRate, channelCount).Read
 	theHeardFunc = heardFunc
-	theForgetFunc = forgetFunc
+	theClearFunc = clearFunc
 	theErrorFunc = errorFunc
 	if msg := C.oto_oboe_Play(C.int(sampleRate), C.int(channelCount), C.int(bufferSizeInBytes)); msg != nil {
 		return fmt.Errorf("oboe: Play failed: %s", C.GoString(msg))
@@ -80,9 +80,9 @@ func oto_oboe_setHeard(frame C.int64_t, inNanoseconds C.int64_t) {
 	theHeardFunc(int64(frame), time.Now().Add(time.Duration(inNanoseconds)))
 }
 
-//export oto_oboe_forgetHeard
-func oto_oboe_forgetHeard() {
-	theForgetFunc()
+//export oto_oboe_clearHeard
+func oto_oboe_clearHeard() {
+	theClearFunc()
 }
 
 //export oto_oboe_error

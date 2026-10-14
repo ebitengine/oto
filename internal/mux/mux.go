@@ -199,7 +199,7 @@ func (m *Mux) SetHeard(frame int64, at time.Time) {
 	m.reportedAt = now
 }
 
-// ClearHeard forgets the driver's last report.
+// ClearHeard clears the driver's last report.
 func (m *Mux) ClearHeard() {
 	m.heardMu.Lock()
 	defer m.heardMu.Unlock()
@@ -591,17 +591,17 @@ func (p *playerImpl) UnplayedSize() int {
 		// as after Resume.
 		return n
 	}
-	p.forgetHeard(heard)
+	p.dropHeard(heard)
 	for _, s := range p.sent {
 		n += int(s.end-max(s.start, heard)) * p.mux.format.ByteLength()
 	}
 	return n
 }
 
-// forgetHeard drops the spans sent that end by sample heard of the mix.
+// dropHeard drops the spans sent that end by sample heard of the mix.
 //
-// When forgetHeard is called, the mutex m must be locked.
-func (p *playerImpl) forgetHeard(heard int64) {
+// When dropHeard is called, the mutex m must be locked.
+func (p *playerImpl) dropHeard(heard int64) {
 	i := 0
 	for i < len(p.sent) && p.sent[i].end <= heard {
 		i++
