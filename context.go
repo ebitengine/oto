@@ -167,6 +167,8 @@ func durationToBufferSize(duration time.Duration, sampleRate, channelCount int) 
 // If you want to stop using r (e.g. you want to close r), call the player's PauseAndStopReading function.
 //
 // You cannot share r by multiple players.
+// Reads from players' sources are performed sequentially. A Read that blocks
+// can prevent other players in the same Context from receiving more data.
 //
 // The returned player is a *Player, which has functions like SetBufferSize and Seek.
 // You can modify the buffer size of a player by the SetBufferSize function.
