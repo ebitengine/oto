@@ -289,8 +289,7 @@ func (c *winmmContext) appendBuffers() {
 			case errors.Is(err, _MMSYSERR_NOMEM):
 				continue
 			case errors.Is(err, _MMSYSERR_NODRIVER):
-				sleep := time.Duration(float64(time.Second) * float64(len(c.buf32)) / float64(c.channelCount) / float64(c.sampleRate))
-				time.Sleep(sleep)
+				time.Sleep(time.Millisecond)
 				return
 			case errors.Is(err, windows.ERROR_NOT_FOUND):
 				// This error can happen when e.g. a new HDMI connection is detected (#51).
@@ -305,6 +304,5 @@ func (c *winmmContext) appendBuffers() {
 
 	// Keep the same samples until a header accepts them, and avoid spinning
 	// when every available header rejects the write with MMSYSERR_NOMEM.
-	sleep := time.Duration(float64(time.Second) * float64(len(c.buf32)) / float64(c.channelCount) / float64(c.sampleRate))
-	time.Sleep(sleep)
+	time.Sleep(time.Millisecond)
 }
