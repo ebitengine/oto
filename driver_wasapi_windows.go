@@ -439,16 +439,20 @@ func (c *wasapiContext) loopOnRenderThread() error {
 		}
 		c.suspendedCond.L.Unlock()
 
-		evt, err := windows.WaitForSingleObject(c.sampleReadyEvent, windows.INFINITE)
+		// Keep checking suspension and device changes even if the endpoint stops
+		// signaling its sample-ready event.
+		evt, err := windows.WaitForSingleObject(c.sampleReadyEvent, 500)
 		if err != nil {
 			return err
 		}
-		if evt != windows.WAIT_OBJECT_0 {
+		if evt != windows.WAIT_OBJECT_0 && evt != uint32(windows.WAIT_TIMEOUT) {
 			return fmt.Errorf("oto: WaitForSingleObject failed: returned value: %d", evt)
 		}
 
-		if err := c.writeOnRenderThread(); err != nil {
-			return err
+		if evt == windows.WAIT_OBJECT_0 {
+			if err := c.writeOnRenderThread(); err != nil {
+				return err
+			}
 		}
 
 		// Checking the current default audio device might be an expensive operation.
