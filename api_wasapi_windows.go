@@ -498,7 +498,7 @@ func (i *_IMMDeviceEnumerator) GetDefaultAudioEndpoint(dataFlow _EDataFlow, role
 		uintptr(dataFlow), uintptr(role), uintptr(unsafe.Pointer(&endPoint)), 0, 0)
 	if uint32(r) != uint32(windows.S_OK) {
 		if isWin32Err(uint32(r)) {
-			return nil, fmt.Errorf("oto: IMMDeviceEnumerator::GetDefaultAudioEndpoint failed: %w", _E_NOTFOUND)
+			return nil, fmt.Errorf("oto: IMMDeviceEnumerator::GetDefaultAudioEndpoint failed: %w", _WIN32_ERR(r))
 		}
 		if isRPCErr(uint32(r)) {
 			return nil, fmt.Errorf("oto: IMMDeviceEnumerator::GetDefaultAudioEndpoint failed: %w", _RPC_ERR(r))
