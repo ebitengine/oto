@@ -453,6 +453,9 @@ func (i *_IMMDevice) Activate(iid *windows.GUID, dwClsCtx uint32, pActivationPar
 	runtime.KeepAlive(iid)
 	runtime.KeepAlive(pActivationParams)
 	if uint32(r) != uint32(windows.S_OK) {
+		if isAudclntErr(uint32(r)) {
+			return nil, fmt.Errorf("oto: IMMDevice::Activate failed: %w", _AUDCLNT_ERR(r))
+		}
 		return nil, fmt.Errorf("oto: IMMDevice::Activate failed: HRESULT(%d)", uint32(r))
 	}
 	return v, nil
