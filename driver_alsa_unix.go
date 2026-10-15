@@ -213,8 +213,14 @@ func (c *alsaContext) alsaPCMHwParams(sampleRate, channelCount int, bufferSize, 
 		return alsaError("snd_pcm_hw_params_set_rate_resample", err)
 	}
 	sr := uint32(sampleRate)
+	if uint64(sr) != uint64(sampleRate) {
+		return fmt.Errorf("oto: ALSA sample rate is out of range: %d", sampleRate)
+	}
 	if err := _snd_pcm_hw_params_set_rate_near(c.handle, params, &sr, nil); err < 0 {
 		return alsaError("snd_pcm_hw_params_set_rate_near", err)
+	}
+	if sr != uint32(sampleRate) {
+		return fmt.Errorf("oto: ALSA device uses sample rate %d instead of %d", sr, sampleRate)
 	}
 	if err := _snd_pcm_hw_params_set_buffer_size_near(c.handle, params, bufferSize); err < 0 {
 		return alsaError("snd_pcm_hw_params_set_buffer_size_near", err)
