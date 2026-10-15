@@ -534,8 +534,11 @@ void Stream::ResetDelayLocked() {
   delay_gen_++;
   // Go is told under delay_mutex_, so that no report of the stream measured
   // before lands after this. The Go side takes only a lock of its own, which
-  // calls nothing while held.
-  oto_oboe_clearHeard();
+  // calls nothing while held. Before Play, nothing is reported, and Go has no
+  // function to call.
+  if (play_called_) {
+    oto_oboe_clearHeard();
+  }
 }
 
 // MeasureDelay measures when the frame written to fifo_ next will be heard, and
