@@ -288,12 +288,9 @@ func (c *winmmContext) appendBuffers() {
 			switch {
 			case errors.Is(err, _MMSYSERR_NOMEM):
 				continue
-			case errors.Is(err, _MMSYSERR_NODRIVER):
+			case errors.Is(err, _MMSYSERR_NODRIVER), errors.Is(err, windows.ERROR_NOT_FOUND):
 				c.waitBeforeRetry()
 				return
-			case errors.Is(err, windows.ERROR_NOT_FOUND):
-				// This error can happen when e.g. a new HDMI connection is detected (#51).
-				// TODO: Retry later.
 			}
 			c.err.Join(fmt.Errorf("oto: Queueing the header failed: %v", err))
 			return
