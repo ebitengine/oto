@@ -53,6 +53,8 @@ func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeI
 	c := &context{
 		mux: mux.New(sampleRate, channelCount, format),
 	}
+	// TODO: Report when the frames are heard with c.mux.SetHeard, where the
+	// console's audio API gives it.
 	theContext = c
 	C.oto_OpenAudioProxy(C.int(sampleRate), C.int(channelCount), C.int(bufferSizeInBytes))
 
