@@ -214,7 +214,7 @@ func (c *alsaContext) alsaPCMHwParams(sampleRate, channelCount int, bufferSize, 
 	}
 	sr := uint32(sampleRate)
 	if uint64(sr) != uint64(sampleRate) {
-		return fmt.Errorf("oto: ALSA sample rate is out of range: %d", sampleRate)
+		return fmt.Errorf("oto: sample rate cannot be represented as uint32: %d", sampleRate)
 	}
 	if err := _snd_pcm_hw_params_set_rate_near(c.handle, params, &sr, nil); err < 0 {
 		return alsaError("snd_pcm_hw_params_set_rate_near", err)
