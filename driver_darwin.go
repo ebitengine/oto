@@ -15,6 +15,7 @@
 package oto
 
 import (
+	"errors"
 	"fmt"
 	"runtime"
 	"sync"
@@ -32,6 +33,14 @@ const (
 
 	noErr = 0
 )
+
+// audioQueueNewOutputError retains the status so a rebuild can distinguish
+// temporary audio-session failures from failures allocating or disposing buffers.
+type audioQueueNewOutputError uintptr
+
+func (e audioQueueNewOutputError) Error() string {
+	return fmt.Sprintf("oto: AudioQueueNewOutput failed: %d", uintptr(e))
+}
 
 func newAudioQueue(sampleRate, channelCount int, oneBufferSizeInBytes int) (_AudioQueueRef, []_AudioQueueBufferRef, error) {
 	desc := _AudioStreamBasicDescription{
@@ -54,7 +63,7 @@ func newAudioQueue(sampleRate, channelCount int, oneBufferSizeInBytes int) (_Aud
 		0, // CFStringRef
 		0,
 		&audioQueue); osstatus != noErr {
-		return 0, nil, fmt.Errorf("oto: AudioQueueNewOutput failed: %d", osstatus)
+		return 0, nil, audioQueueNewOutputError(osstatus)
 	}
 
 	bufs := make([]_AudioQueueBufferRef, 0, bufferCount)
@@ -218,7 +227,7 @@ func (c *context) wait() bool {
 // The caller must hold c.cond.L.
 func (c *context) idle() bool {
 	if c.toRebuildQueue {
-		return false
+		return c.state == queueStateStartDeferred
 	}
 	if c.toSuspend.Load() {
 		return c.state != queueStateRunning
@@ -252,7 +261,15 @@ func (c *context) step(buf32 []float32) {
 	}
 
 	if c.toRebuildQueue {
+		if c.state == queueStateStartDeferred {
+			return
+		}
 		if err := c.rebuildAudioQueue(); err != nil {
+			var creationError audioQueueNewOutputError
+			if errors.As(err, &creationError) && temporaryAudioSessionError(uintptr(creationError)) {
+				c.deferStart()
+				return
+			}
 			c.err.Join(err)
 			return
 		}
@@ -368,23 +385,34 @@ func (c *context) start() {
 		return
 	}
 
-	switch osstatus {
-	case kAudioQueueErr_QueueInvalidated:
+	switch {
+	case osstatus == kAudioQueueErr_QueueInvalidated:
 		// The queue died (typically a mediaserverd reset). Recreate it before the next
 		// attempt.
 		c.toRebuildQueue = true
 		c.deferStart()
-	case avAudioSessionErrorCodeCannotStartPlaying,
-		avAudioSessionErrorCodeCannotInterruptOthers,
-		avAudioSessionErrorCodeSiriIsRecording,
-		avAudioSessionErrorCodeUnspecified,
-		kAudioHardwareIllegalOperationError:
+	case temporaryAudioSessionError(osstatus):
 		// The audio session cannot be activated now. This state can last arbitrarily
 		// long (e.g. as long as the application stays in the background), so no retry
 		// limit applies.
 		c.deferStart()
 	default:
 		c.err.Join(fmt.Errorf("oto: AudioQueueStart failed: %d", osstatus))
+	}
+}
+
+// temporaryAudioSessionError reports statuses already treated as retryable when
+// starting playback. These can also prevent creating a replacement queue.
+func temporaryAudioSessionError(status uintptr) bool {
+	switch status {
+	case avAudioSessionErrorCodeCannotStartPlaying,
+		avAudioSessionErrorCodeCannotInterruptOthers,
+		avAudioSessionErrorCodeSiriIsRecording,
+		avAudioSessionErrorCodeUnspecified,
+		kAudioHardwareIllegalOperationError:
+		return true
+	default:
+		return false
 	}
 }
 
