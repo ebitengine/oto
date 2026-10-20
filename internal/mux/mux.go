@@ -229,8 +229,9 @@ type playerImpl struct {
 	srcErr error
 
 	// reading reports whether a read from the source is in flight.
-	// readCond is signaled when reading becomes false.
+	// readCond is signaled when reading or seeking becomes false.
 	reading  bool
+	seeking  bool
 	readCond *sync.Cond
 
 	// srcGen is a generation counter of the source position.
@@ -278,6 +279,8 @@ func (p *playerImpl) Play() {
 
 	p.m.Lock()
 	defer p.m.Unlock()
+
+	p.waitForSeekImpl()
 
 	p.playImpl()
 }
@@ -342,6 +345,8 @@ func (p *playerImpl) Pause() {
 	p.m.Lock()
 	defer p.m.Unlock()
 
+	p.waitForSeekImpl()
+
 	if p.state != playerPlay {
 		return
 	}
@@ -355,6 +360,8 @@ func (p *Player) PauseAndStopReading() {
 func (p *playerImpl) PauseAndStopReading() {
 	p.m.Lock()
 	defer p.m.Unlock()
+
+	p.waitForSeekImpl()
 
 	p.pauseAndStopReadingImpl()
 }
@@ -382,6 +389,14 @@ func (p *Player) Seek(offset int64, whence int) (int64, error) {
 	return p.p.Seek(offset, whence)
 }
 
+// waitForSeekImpl preserves the ordering of player controls while Seek releases m.
+// When waitForSeekImpl is called, the mutex m must be locked.
+func (p *playerImpl) waitForSeekImpl() {
+	for p.seeking {
+		p.readCond.Wait()
+	}
+}
+
 func (p *playerImpl) Seek(offset int64, whence int) (int64, error) {
 	// Check if the source implements io.Seeker.
 	s, ok := p.src.(io.Seeker)
@@ -392,12 +407,10 @@ func (p *playerImpl) Seek(offset int64, whence int) (int64, error) {
 	defer p.mux.signal()
 
 	p.m.Lock()
-	defer p.m.Unlock()
-
-	// If a player is playing, keep playing even after this seeking.
-	if p.state == playerPlay {
-		defer p.playImpl()
-	}
+	p.waitForSeekImpl()
+	// Prevent new reads and other seeks, including while waiting for an ongoing read.
+	p.seeking = true
+	playing := p.state == playerPlay
 
 	// Reset the internal buffer.
 	// The result of an ongoing read, if any, is data at the old position and must be discarded.
@@ -414,7 +427,18 @@ func (p *playerImpl) Seek(offset int64, whence int) (int64, error) {
 		// The buffered data is discarded, so a pending source error is reported now.
 		p.reportSourceErrorIfDrainedImpl()
 	}
+	p.m.Unlock()
 
+	// A source may block in Seek. Do not hold the player lock needed by the mixer.
+	defer func() {
+		p.m.Lock()
+		defer p.m.Unlock()
+		if playing {
+			p.playImpl()
+		}
+		p.seeking = false
+		p.readCond.Broadcast()
+	}()
 	return s.Seek(offset, whence)
 }
 
@@ -425,6 +449,8 @@ func (p *Player) Reset() {
 func (p *playerImpl) Reset() {
 	p.m.Lock()
 	defer p.m.Unlock()
+
+	p.waitForSeekImpl()
 
 	p.pauseAndStopReadingImpl()
 
@@ -497,6 +523,8 @@ func (p *Player) Close() error {
 func (p *playerImpl) Close() error {
 	p.m.Lock()
 	defer p.m.Unlock()
+
+	p.waitForSeekImpl()
 	return p.closeImpl()
 }
 
@@ -609,7 +637,7 @@ func (p *playerImpl) canReadSourceToBuffer() bool {
 	p.m.Lock()
 	defer p.m.Unlock()
 
-	if p.state == playerClosed || p.state == playerPausedAndStopReading {
+	if p.seeking || p.state == playerClosed || p.state == playerPausedAndStopReading {
 		return false
 	}
 	if p.eof || p.srcErr != nil {
@@ -633,7 +661,7 @@ func (p *playerImpl) prepareSourceRead() (*[]byte, int) {
 	p.m.Lock()
 	defer p.m.Unlock()
 
-	if p.err != nil || p.srcErr != nil || p.state == playerClosed || p.state == playerPausedAndStopReading {
+	if p.seeking || p.err != nil || p.srcErr != nil || p.state == playerClosed || p.state == playerPausedAndStopReading {
 		return nil, 0
 	}
 	if p.buffered() >= p.bufferSize {
