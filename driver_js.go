@@ -88,7 +88,7 @@ class OtoWorkletProcessor extends AudioWorkletProcessor {
 		if (this.buf_.length < output[0].length*this.channelCount_) {
 			if (!this.waitRecv_) {
 				this.waitRecv_ = true;
-				this.port.postMessage(null);
+				this.port.postMessage(output[0].length);
 			}
 			for (let i = 0; i < output.length; i++) {
 				output[i].fill(0);
@@ -97,9 +97,9 @@ class OtoWorkletProcessor extends AudioWorkletProcessor {
 		}
 
 		// If the buffer is short, request more data.
-		if (this.buf_.length < this.bufferSize_*this.channelCount_ / 2 && !this.waitRecv_) {
+		if (this.buf_.length <= Math.max(this.bufferSize_*this.channelCount_ / 2, output[0].length*this.channelCount_) && !this.waitRecv_) {
 			this.waitRecv_ = true;
-			this.port.postMessage(null);
+			this.port.postMessage(output[0].length);
 		}
 
 		for (let i = 0; i < this.channelCount_; i++) {
@@ -129,6 +129,11 @@ registerProcessor('oto-worklet-processor', OtoWorkletProcessor);
 			port := node.Get("port")
 			// When the worklet processor requests more data, send the request to the worklet.
 			port.Set("onmessage", js.FuncOf(func(this js.Value, arguments []js.Value) any {
+				// A transfer must cover at least one render quantum, even when the
+				// requested context buffer is smaller than the worklet's output.
+				if size := arguments[0].Get("data").Int() * channelCount; len(buf32) < size {
+					buf32 = make([]float32, size)
+				}
 				d.mux.ReadFloat32s(buf32)
 				buf := float32SliceToTypedArray(buf32)
 				port.Call("postMessage", buf, map[string]any{
