@@ -640,7 +640,7 @@ func (p *playerImpl) prepareSourceRead() (*[]byte, int) {
 		return nil, 0
 	}
 
-	buf := getBufferFromPool(p.bufferSize)
+	buf := getBufferFromPool(p.bufferSize - p.buffered())
 	p.reading = true
 	return buf, p.srcGen
 }
