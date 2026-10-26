@@ -1330,3 +1330,20 @@ func TestSeekSerializesControlsWhileWaitingForRead(t *testing.T) {
 		t.Error("source Read and Seek overlapped")
 	}
 }
+
+func TestSourceReadRespectsRemainingBufferSize(t *testing.T) {
+	const bufferSize = 64
+	m := mux.New(48000, 1, mux.FormatUnsignedInt8)
+	defer m.Stop()
+	p := newPlayer(t, m, &constReader{value: 128})
+	p.SetBufferSize(bufferSize)
+	p.Play()
+	waitForBufferedSize(t, p, bufferSize)
+	for _, consumed := range []int{1, 3, 17} {
+		m.ReadFloat32s(make([]float32, consumed))
+		waitForBufferedSize(t, p, bufferSize)
+		if got := p.BufferedSize(); got != bufferSize {
+			t.Fatalf("buffer size after consuming %d bytes: got %d; want %d", consumed, got, bufferSize)
+		}
+	}
+}
