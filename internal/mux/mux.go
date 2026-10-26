@@ -406,7 +406,25 @@ func (p *playerImpl) Seek(offset int64, whence int) (int64, error) {
 
 	defer p.mux.signal()
 
+	playing := p.prepareSeek()
+
+	// A source may block in Seek. Do not hold the player lock needed by the mixer.
+	defer func() {
+		p.m.Lock()
+		defer p.m.Unlock()
+		if playing {
+			p.playImpl()
+		}
+		p.seeking = false
+		p.readCond.Broadcast()
+	}()
+	return s.Seek(offset, whence)
+}
+
+func (p *playerImpl) prepareSeek() bool {
 	p.m.Lock()
+	defer p.m.Unlock()
+
 	p.waitForSeekImpl()
 	// Prevent new reads and other seeks, including while waiting for an ongoing read.
 	p.seeking = true
@@ -427,19 +445,8 @@ func (p *playerImpl) Seek(offset int64, whence int) (int64, error) {
 		// The buffered data is discarded, so a pending source error is reported now.
 		p.reportSourceErrorIfDrainedImpl()
 	}
-	p.m.Unlock()
 
-	// A source may block in Seek. Do not hold the player lock needed by the mixer.
-	defer func() {
-		p.m.Lock()
-		defer p.m.Unlock()
-		if playing {
-			p.playImpl()
-		}
-		p.seeking = false
-		p.readCond.Broadcast()
-	}()
-	return s.Seek(offset, whence)
+	return playing
 }
 
 func (p *Player) Reset() {
