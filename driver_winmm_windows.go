@@ -138,13 +138,15 @@ func (c *winmmContext) start() error {
 		return err
 	}
 
+	const headerCount = 6
 	headerBufferSize := defaultHeaderBufferSize
 	if c.bufferSizeInBytes != 0 {
-		headerBufferSize = c.bufferSizeInBytes
+		bytesPerFrame := c.channelCount * 4
+		headerBufferSize = max(c.bufferSizeInBytes/headerCount/bytesPerFrame, 1) * bytesPerFrame
 	}
 
 	c.waveOut = w
-	c.headers = make([]*header, 0, 6)
+	c.headers = make([]*header, 0, headerCount)
 	for len(c.headers) < cap(c.headers) {
 		h, err := newHeader(c.waveOut, headerBufferSize)
 		if err != nil {
