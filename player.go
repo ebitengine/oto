@@ -102,6 +102,8 @@ func (p *Player) SetBufferSize(bufferSize int) {
 //
 // Seek returns an error when the underlying source doesn't implement io.Seeker.
 // If the underlying source implements io.Seeker, Seek blocks until an ongoing read from the source finishes, if any.
+// Calls to [Player.Play], [Player.Pause], [Player.PauseAndStopReading], [Player.Reset],
+// and [Player.Seek] wait for an in-flight Seek to finish.
 func (p *Player) Seek(offset int64, whence int) (int64, error) {
 	return p.player.Seek(offset, whence)
 }
