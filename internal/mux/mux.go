@@ -229,9 +229,14 @@ type playerImpl struct {
 	srcErr error
 
 	// reading reports whether a read from the source is in flight.
+	reading bool
+
+	// seeking suppresses source reads and mixing until the source Seek finishes,
+	// including while waiting for an ongoing Read. Play/pause controls and other
+	// seeks wait for it to finish.
+	seeking bool
+
 	// readCond is signaled when reading or seeking becomes false.
-	reading  bool
-	seeking  bool
 	readCond *sync.Cond
 
 	// srcGen is a generation counter of the source position.
@@ -406,29 +411,22 @@ func (p *playerImpl) Seek(offset int64, whence int) (int64, error) {
 
 	defer p.mux.signal()
 
-	playing := p.prepareSeek()
+	p.prepareSeek()
+	defer p.finishSeek()
 
 	// A source may block in Seek. Do not hold the player lock needed by the mixer.
-	defer func() {
-		p.m.Lock()
-		defer p.m.Unlock()
-		if playing {
-			p.playImpl()
-		}
-		p.seeking = false
-		p.readCond.Broadcast()
-	}()
 	return s.Seek(offset, whence)
 }
 
-func (p *playerImpl) prepareSeek() bool {
+// prepareSeek discards buffered data and waits for an ongoing Read without
+// changing a playing player's state. The seeking flag excludes new reads.
+func (p *playerImpl) prepareSeek() {
 	p.m.Lock()
 	defer p.m.Unlock()
 
 	p.waitForSeekImpl()
 	// Prevent new reads and other seeks, including while waiting for an ongoing read.
 	p.seeking = true
-	playing := p.state == playerPlay
 
 	// Reset the internal buffer.
 	// The result of an ongoing read, if any, is data at the old position and must be discarded.
@@ -438,15 +436,29 @@ func (p *playerImpl) prepareSeek() bool {
 		p.eof = false
 		p.srcGen++
 
+		// A paused player stays stopped after seeking, as before. A playing player
+		// keeps its state so queries and volume changes do not observe a pause.
+		if p.state != playerPlay {
+			p.state = playerPausedAndStopReading
+			p.mux.removePlayer(p)
+		}
 		// Wait until an ongoing read from the source finishes.
 		// Otherwise the source would be sought while it is being read.
-		p.pauseAndStopReadingImpl()
+		for p.reading {
+			p.readCond.Wait()
+		}
 
 		// The buffered data is discarded, so a pending source error is reported now.
 		p.reportSourceErrorIfDrainedImpl()
 	}
+}
 
-	return playing
+func (p *playerImpl) finishSeek() {
+	p.m.Lock()
+	defer p.m.Unlock()
+
+	p.seeking = false
+	p.readCond.Broadcast()
 }
 
 func (p *Player) Reset() {
@@ -566,7 +578,8 @@ func (p *playerImpl) readBufferAndAdd(buf []float32) int {
 	p.m.Lock()
 	defer p.m.Unlock()
 
-	if p.state != playerPlay {
+	// Do not advance the volume ramp while seeking has discarded the buffer.
+	if p.seeking || p.state != playerPlay {
 		return 0
 	}
 

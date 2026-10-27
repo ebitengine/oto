@@ -436,13 +436,14 @@ func TestSeekDiscardsOngoingReadResult(t *testing.T) {
 }
 
 // seekingReader is a source that reports whether Seek was called while Read was in flight.
-// Read does not return until gate is closed.
+// Read blocks until gate is closed, except for the optional initial read.
 type seekingReader struct {
-	seekBegan chan struct{}
-	seekGate  chan struct{}
-	gate      chan struct{}
-	began     chan struct{}
-	beganOnce sync.Once
+	readBeforeBlocking bool
+	seekBegan          chan struct{}
+	seekGate           chan struct{}
+	gate               chan struct{}
+	began              chan struct{}
+	beganOnce          sync.Once
 
 	reading    atomic.Bool
 	overlapped atomic.Bool
@@ -452,10 +453,14 @@ func (r *seekingReader) Read(buf []byte) (int, error) {
 	r.reading.Store(true)
 	defer r.reading.Store(false)
 
-	r.beganOnce.Do(func() {
-		close(r.began)
-	})
-	<-r.gate
+	if r.readBeforeBlocking {
+		r.readBeforeBlocking = false
+	} else {
+		r.beganOnce.Do(func() {
+			close(r.began)
+		})
+		<-r.gate
+	}
 
 	for i := range buf {
 		buf[i] = 0
@@ -1073,6 +1078,7 @@ func TestSeekNonSeekerPreservesBuffer(t *testing.T) {
 
 // blockedSeeker lets tests hold a source Seek without holding the player lock.
 type blockedSeeker struct {
+	value      byte
 	entered    chan struct{}
 	release    chan struct{}
 	reads      atomic.Int64
@@ -1086,7 +1092,9 @@ func (s *blockedSeeker) Read(buf []byte) (int, error) {
 		s.overlapped.Store(true)
 	}
 	s.reads.Add(1)
-	clear(buf)
+	for i := range buf {
+		buf[i] = s.value
+	}
 	return len(buf), nil
 }
 
@@ -1102,7 +1110,10 @@ func (s *blockedSeeker) Seek(int64, int) (int64, error) {
 }
 
 func TestSeekDoesNotBlockMixerOrGetters(t *testing.T) {
-	src := &blockedSeeker{entered: make(chan struct{}, 2), release: make(chan struct{})}
+	src := &blockedSeeker{
+		entered: make(chan struct{}, 2),
+		release: make(chan struct{}),
+	}
 	m := mux.New(48000, 2, mux.FormatSignedInt16LE)
 	defer m.Stop()
 	p := newPlayer(t, m, src)
@@ -1152,7 +1163,10 @@ func TestSeekDoesNotBlockMixerOrGetters(t *testing.T) {
 func TestSeekSerializesPlayerControls(t *testing.T) {
 	for _, name := range []string{"Play", "Pause", "PauseAndStopReading", "Reset", "Close", "Seek"} {
 		t.Run(name, func(t *testing.T) {
-			src := &blockedSeeker{entered: make(chan struct{}, 2), release: make(chan struct{})}
+			src := &blockedSeeker{
+				entered: make(chan struct{}, 2),
+				release: make(chan struct{}),
+			}
 			m := mux.New(48000, 2, mux.FormatSignedInt16LE)
 			defer m.Stop()
 			p := newPlayer(t, m, src)
@@ -1240,7 +1254,9 @@ func TestSeekFailureReleasesPlayer(t *testing.T) {
 		t.Run(fmt.Sprintf("panic=%v", panicOnSeek), func(t *testing.T) {
 			m := mux.New(48000, 2, mux.FormatSignedInt16LE)
 			defer m.Stop()
-			p := newPlayer(t, m, &failingSeeker{panicOnSeek: panicOnSeek})
+			p := newPlayer(t, m, &failingSeeker{
+				panicOnSeek: panicOnSeek,
+			})
 			p.Play()
 			func() {
 				defer func() {
@@ -1253,7 +1269,7 @@ func TestSeekFailureReleasesPlayer(t *testing.T) {
 				}
 			}()
 			if !p.IsPlaying() {
-				t.Error("Seek failure did not restore playing state")
+				t.Error("Seek failure changed playing state")
 			}
 			done := make(chan struct{})
 			go func() {
@@ -1271,8 +1287,11 @@ func TestSeekFailureReleasesPlayer(t *testing.T) {
 
 func TestSeekSerializesControlsWhileWaitingForRead(t *testing.T) {
 	src := &seekingReader{
-		gate: make(chan struct{}), began: make(chan struct{}),
-		seekBegan: make(chan struct{}), seekGate: make(chan struct{}),
+		readBeforeBlocking: true,
+		gate:               make(chan struct{}),
+		began:              make(chan struct{}),
+		seekBegan:          make(chan struct{}),
+		seekGate:           make(chan struct{}),
 	}
 	m := mux.New(48000, 2, mux.FormatSignedInt16LE)
 	defer m.Stop()
@@ -1282,7 +1301,10 @@ func TestSeekSerializesControlsWhileWaitingForRead(t *testing.T) {
 	unblockSeek := func() { seekRelease.Do(func() { close(src.seekGate) }) }
 	defer unblockSeek()
 	defer unblockRead()
+	p.SetBufferSize(64)
 	p.Play()
+	waitForBufferedSize(t, p, 64)
+	m.ReadFloat32s(make([]float32, 2))
 	<-src.began
 	seekDone := make(chan struct{})
 	go func() {
@@ -1291,13 +1313,16 @@ func TestSeekSerializesControlsWhileWaitingForRead(t *testing.T) {
 			t.Error(err)
 		}
 	}()
-	// Seek pauses the player before waiting for the in-flight Read.
+	// Seek discards the remaining buffer before waiting for the in-flight Read.
 	deadline := time.Now().Add(time.Second)
-	for p.IsPlaying() {
+	for p.BufferedSize() != 0 {
 		if time.Now().After(deadline) {
 			t.Fatal("Seek did not wait for Read")
 		}
 		time.Sleep(time.Millisecond)
+	}
+	if !p.IsPlaying() {
+		t.Error("Seek exposed a paused state while waiting for Read")
 	}
 	paused := make(chan struct{})
 	go func() { defer close(paused); p.Pause() }()
@@ -1345,5 +1370,113 @@ func TestSourceReadRespectsRemainingBufferSize(t *testing.T) {
 		if got := p.BufferedSize(); got != bufferSize {
 			t.Fatalf("buffer size after consuming %d bytes: got %d; want %d", consumed, got, bufferSize)
 		}
+	}
+}
+
+func TestSeekPreservesPlayingState(t *testing.T) {
+	for _, playing := range []bool{false, true} {
+		t.Run(fmt.Sprintf("playing=%v", playing), func(t *testing.T) {
+			src := &blockedSeeker{
+				entered: make(chan struct{}, 2),
+				release: make(chan struct{}),
+			}
+			m := mux.New(48000, 1, mux.FormatUnsignedInt8)
+			defer m.Stop()
+			p := newPlayer(t, m, src)
+			var release sync.Once
+			unblock := func() { release.Do(func() { close(src.release) }) }
+			defer unblock()
+			p.SetBufferSize(16)
+			p.Play()
+			waitForBufferedSize(t, p, 16)
+			if !playing {
+				p.Pause()
+			}
+			reads := src.reads.Load()
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				if _, err := p.Seek(0, io.SeekStart); err != nil {
+					t.Error(err)
+				}
+			}()
+			<-src.entered
+			if got := p.IsPlaying(); got != playing {
+				t.Errorf("IsPlaying during Seek: got %v; want %v", got, playing)
+			}
+			unblock()
+			select {
+			case <-done:
+			case <-time.After(time.Second):
+				t.Fatal("Seek did not finish after the source was released")
+			}
+			if got := p.IsPlaying(); got != playing {
+				t.Errorf("IsPlaying after Seek: got %v; want %v", got, playing)
+			}
+			if !playing {
+				m.ReadFloat32s(make([]float32, 4))
+				time.Sleep(20 * time.Millisecond)
+				if got := src.reads.Load(); got != reads {
+					t.Errorf("paused source was read after Seek: got %d reads; want %d", got, reads)
+				}
+				p.Play()
+				waitForBufferedSize(t, p, 16)
+			}
+		})
+	}
+}
+
+func TestSeekPreservesVolumeRamp(t *testing.T) {
+	for _, mixDuringSeek := range []bool{false, true} {
+		t.Run(fmt.Sprintf("mixDuringSeek=%v", mixDuringSeek), func(t *testing.T) {
+			src := &blockedSeeker{
+				value:   192, // 0.5 in unsigned 8-bit PCM.
+				entered: make(chan struct{}, 2),
+				release: make(chan struct{}),
+			}
+			m := mux.New(48000, 1, mux.FormatUnsignedInt8)
+			defer m.Stop()
+			p := newPlayer(t, m, src)
+			p.SetBufferSize(16)
+			p.SetVolume(0.25)
+			var release sync.Once
+			unblock := func() { release.Do(func() { close(src.release) }) }
+			defer unblock()
+			p.Play()
+			waitForBufferedSize(t, p, 16)
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				if _, err := p.Seek(0, io.SeekStart); err != nil {
+					t.Error(err)
+				}
+			}()
+			<-src.entered
+			p.SetVolume(0.75)
+			if mixDuringSeek {
+				buf := make([]float32, 4)
+				m.ReadFloat32s(buf)
+				for i, got := range buf {
+					if got != 0 {
+						t.Errorf("sample %d during Seek: got %v; want silence", i, got)
+					}
+				}
+			}
+			unblock()
+			select {
+			case <-done:
+			case <-time.After(time.Second):
+				t.Fatal("Seek did not finish after the source was released")
+			}
+			waitForBufferedSize(t, p, 16)
+			buf := make([]float32, 4)
+			m.ReadFloat32s(buf)
+			for i, got := range buf {
+				want := float32(0.5 * (0.25 + 0.5*float64(i)/float64(len(buf))))
+				if got != want {
+					t.Errorf("sample %d after Seek: got %v; want ramped %v", i, got, want)
+				}
+			}
+		})
 	}
 }
