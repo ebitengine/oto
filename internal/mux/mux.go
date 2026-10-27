@@ -385,6 +385,12 @@ func (p *playerImpl) pauseAndStopReadingImpl() {
 
 	// Wait until an ongoing read from the source finishes.
 	// The source must not be read after this returns (#288).
+	p.waitForReadImpl()
+}
+
+// waitForReadImpl waits for an in-flight source Read to finish.
+// When waitForReadImpl is called, the mutex m must be locked.
+func (p *playerImpl) waitForReadImpl() {
 	for p.reading {
 		p.readCond.Wait()
 	}
@@ -419,7 +425,7 @@ func (p *playerImpl) Seek(offset int64, whence int) (int64, error) {
 }
 
 // prepareSeek discards buffered data and waits for an ongoing Read without
-// changing a playing player's state. The seeking flag excludes new reads.
+// changing a playing player's state.
 func (p *playerImpl) prepareSeek() {
 	p.m.Lock()
 	defer p.m.Unlock()
@@ -436,7 +442,7 @@ func (p *playerImpl) prepareSeek() {
 		p.eof = false
 		p.srcGen++
 
-		// A paused player stays stopped after seeking, as before. A playing player
+		// A paused player stops reading the source after seeking. A playing player
 		// keeps its state so queries and volume changes do not observe a pause.
 		if p.state != playerPlay {
 			p.state = playerPausedAndStopReading
@@ -444,9 +450,7 @@ func (p *playerImpl) prepareSeek() {
 		}
 		// Wait until an ongoing read from the source finishes.
 		// Otherwise the source would be sought while it is being read.
-		for p.reading {
-			p.readCond.Wait()
-		}
+		p.waitForReadImpl()
 
 		// The buffered data is discarded, so a pending source error is reported now.
 		p.reportSourceErrorIfDrainedImpl()
