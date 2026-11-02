@@ -229,8 +229,14 @@ type playerImpl struct {
 	srcErr error
 
 	// reading reports whether a read from the source is in flight.
-	// readCond is signaled when reading becomes false.
-	reading  bool
+	reading bool
+
+	// seeking suppresses source reads and mixing until the source Seek finishes,
+	// including while waiting for an ongoing Read. Play/pause controls and other
+	// seeks wait for it to finish.
+	seeking bool
+
+	// readCond is signaled when reading or seeking becomes false.
 	readCond *sync.Cond
 
 	// srcGen is a generation counter of the source position.
@@ -278,6 +284,8 @@ func (p *playerImpl) Play() {
 
 	p.m.Lock()
 	defer p.m.Unlock()
+
+	p.waitForSeekImpl()
 
 	p.playImpl()
 }
@@ -342,6 +350,8 @@ func (p *playerImpl) Pause() {
 	p.m.Lock()
 	defer p.m.Unlock()
 
+	p.waitForSeekImpl()
+
 	if p.state != playerPlay {
 		return
 	}
@@ -355,6 +365,8 @@ func (p *Player) PauseAndStopReading() {
 func (p *playerImpl) PauseAndStopReading() {
 	p.m.Lock()
 	defer p.m.Unlock()
+
+	p.waitForSeekImpl()
 
 	p.pauseAndStopReadingImpl()
 }
@@ -373,6 +385,12 @@ func (p *playerImpl) pauseAndStopReadingImpl() {
 
 	// Wait until an ongoing read from the source finishes.
 	// The source must not be read after this returns (#288).
+	p.waitForReadImpl()
+}
+
+// waitForReadImpl waits for an in-flight source Read to finish.
+// When waitForReadImpl is called, the mutex m must be locked.
+func (p *playerImpl) waitForReadImpl() {
 	for p.reading {
 		p.readCond.Wait()
 	}
@@ -380,6 +398,14 @@ func (p *playerImpl) pauseAndStopReadingImpl() {
 
 func (p *Player) Seek(offset int64, whence int) (int64, error) {
 	return p.p.Seek(offset, whence)
+}
+
+// waitForSeekImpl preserves the ordering of player controls while Seek releases m.
+// When waitForSeekImpl is called, the mutex m must be locked.
+func (p *playerImpl) waitForSeekImpl() {
+	for p.seeking {
+		p.readCond.Wait()
+	}
 }
 
 func (p *playerImpl) Seek(offset int64, whence int) (int64, error) {
@@ -391,13 +417,22 @@ func (p *playerImpl) Seek(offset int64, whence int) (int64, error) {
 
 	defer p.mux.signal()
 
+	p.prepareSeek()
+	defer p.finishSeek()
+
+	// A source may block in Seek. Do not hold the player lock needed by the mixer.
+	return s.Seek(offset, whence)
+}
+
+// prepareSeek discards buffered data and waits for an ongoing Read without
+// changing a playing player's state.
+func (p *playerImpl) prepareSeek() {
 	p.m.Lock()
 	defer p.m.Unlock()
 
-	// If a player is playing, keep playing even after this seeking.
-	if p.state == playerPlay {
-		defer p.playImpl()
-	}
+	p.waitForSeekImpl()
+	// Prevent new reads and other seeks, including while waiting for an ongoing read.
+	p.seeking = true
 
 	// Reset the internal buffer.
 	// The result of an ongoing read, if any, is data at the old position and must be discarded.
@@ -407,15 +442,27 @@ func (p *playerImpl) Seek(offset int64, whence int) (int64, error) {
 		p.eof = false
 		p.srcGen++
 
+		// A paused player stops reading the source after seeking. A playing player
+		// keeps its state so queries and volume changes do not observe a pause.
+		if p.state != playerPlay {
+			p.state = playerPausedAndStopReading
+			p.mux.removePlayer(p)
+		}
 		// Wait until an ongoing read from the source finishes.
 		// Otherwise the source would be sought while it is being read.
-		p.pauseAndStopReadingImpl()
+		p.waitForReadImpl()
 
 		// The buffered data is discarded, so a pending source error is reported now.
 		p.reportSourceErrorIfDrainedImpl()
 	}
+}
 
-	return s.Seek(offset, whence)
+func (p *playerImpl) finishSeek() {
+	p.m.Lock()
+	defer p.m.Unlock()
+
+	p.seeking = false
+	p.readCond.Broadcast()
 }
 
 func (p *Player) Reset() {
@@ -425,6 +472,8 @@ func (p *Player) Reset() {
 func (p *playerImpl) Reset() {
 	p.m.Lock()
 	defer p.m.Unlock()
+
+	p.waitForSeekImpl()
 
 	p.pauseAndStopReadingImpl()
 
@@ -497,6 +546,8 @@ func (p *Player) Close() error {
 func (p *playerImpl) Close() error {
 	p.m.Lock()
 	defer p.m.Unlock()
+
+	p.waitForSeekImpl()
 	return p.closeImpl()
 }
 
@@ -531,7 +582,8 @@ func (p *playerImpl) readBufferAndAdd(buf []float32) int {
 	p.m.Lock()
 	defer p.m.Unlock()
 
-	if p.state != playerPlay {
+	// Do not advance the volume ramp while seeking has discarded the buffer.
+	if p.seeking || p.state != playerPlay {
 		return 0
 	}
 
@@ -609,7 +661,7 @@ func (p *playerImpl) canReadSourceToBuffer() bool {
 	p.m.Lock()
 	defer p.m.Unlock()
 
-	if p.state == playerClosed || p.state == playerPausedAndStopReading {
+	if p.seeking || p.state == playerClosed || p.state == playerPausedAndStopReading {
 		return false
 	}
 	if p.eof || p.srcErr != nil {
@@ -633,7 +685,7 @@ func (p *playerImpl) prepareSourceRead() (*[]byte, int) {
 	p.m.Lock()
 	defer p.m.Unlock()
 
-	if p.err != nil || p.srcErr != nil || p.state == playerClosed || p.state == playerPausedAndStopReading {
+	if p.seeking || p.err != nil || p.srcErr != nil || p.state == playerClosed || p.state == playerPausedAndStopReading {
 		return nil, 0
 	}
 	if p.buffered() >= p.bufferSize {
