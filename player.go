@@ -83,8 +83,6 @@ func (p *Player) BufferedSize() int {
 // the data sent to the audio hardware that it has not played yet, also after Pause and after the end of the source.
 // Where the platform does not report how long the audio hardware takes to play, UnplayedSize returns the same as
 // BufferedSize. Seek and Reset discard the data already sent.
-//
-// So the part of the source being heard now is the bytes read from it less UnplayedSize.
 func (p *Player) UnplayedSize() int {
 	return p.player.UnplayedSize()
 }
