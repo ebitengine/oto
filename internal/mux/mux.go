@@ -82,8 +82,8 @@ const maxSentSpans = 256
 // reportLifetime is how long a report of when a frame is heard holds.
 const reportLifetime = time.Second
 
-// maxReportedDelay is the longest a report can put a frame's being heard after
-// the report.
+// maxReportedDelay is the furthest after a report that the frame it reports
+// can be heard.
 const maxReportedDelay = 2 * time.Second
 
 // New creates a new Mux.

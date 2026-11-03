@@ -34,8 +34,8 @@ var (
 )
 
 // Play starts playing. Playing starts as soon as an audio device is available,
-// which can be after Play returns. heardFunc is called about every 100 ms while
-// playing with when a frame is heard, where frame 0 is the first frame read with
+// which can be after Play returns. heardFunc is called while playing with a
+// frame and when it is heard, where frame 0 is the first frame read with
 // readFunc. clearFunc is called when the last of those no longer holds.
 // errorFunc is called when playing stops for a reason that cannot be recovered
 // from, which can happen at any time after Play returns.
