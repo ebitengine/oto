@@ -50,6 +50,10 @@ func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeI
 		audioContext: class.New(options),
 		mux:          mux.New(sampleRate, channelCount, format),
 	}
+	// TODO: Report when the frames are heard with d.mux.SetHeard: the
+	// AudioContext's getOutputTimestamp gives the context time of the frame
+	// heard now, and the frames queued in the worklet or the script processor
+	// are heard after it.
 
 	if bufferSizeInBytes == 0 {
 		// 4096 was not great at least on Safari 15.

@@ -79,6 +79,14 @@ func (p *Player) BufferedSize() int {
 	return p.player.BufferedSize()
 }
 
+// UnplayedSize returns the byte size of the data read from the source that is not heard yet: the buffered data, and
+// the data sent to the audio hardware that it has not played yet, also after Pause and after the end of the source.
+// While the platform does not report how long the audio hardware takes to play, UnplayedSize returns the same as
+// BufferedSize. After Seek or Reset, the data sent before it is not counted.
+func (p *Player) UnplayedSize() int {
+	return p.player.UnplayedSize()
+}
+
 // Err returns an error that occurred while reading the source.
 // Reaching the end of the source (io.EOF) is not treated as an error.
 // An error is reported after the data read before it is played or discarded.
