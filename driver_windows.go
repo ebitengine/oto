@@ -46,7 +46,7 @@ func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeI
 		mux:          mux.New(sampleRate, channelCount, format),
 		ready:        make(chan struct{}),
 	}
-	// TODO: Report when the frames are heard with ctx.mux.SetHeard, from the
+	// TODO: Report when the frames are played with ctx.mux.SetPlayed, from the
 	// delay: on WASAPI, the frames written less the position IAudioClock reports;
 	// on WinMM, the frames written less the position waveOutGetPosition reports.
 

@@ -70,15 +70,15 @@ func frameTime(frames int) time.Duration {
 	return time.Duration(frames) * time.Second / 48000
 }
 
-// The tests' driver reports that frame 1,440 of the mix is heard 960 frames,
+// The tests' driver reports that frame 1,440 of the mix is played 960 frames,
 // 20 ms, from now.
 const (
 	reportedFrame = 1440
 	delay         = 960
 )
 
-func reportHeard(m *mux.Mux) {
-	m.SetHeard(reportedFrame, time.Now().Add(frameTime(delay)))
+func reportPlayed(m *mux.Mux) {
+	m.SetPlayed(reportedFrame, time.Now().Add(frameTime(delay)))
 }
 
 func TestUnplayedSizeIsBufferedSizeWithoutAReport(t *testing.T) {
@@ -94,26 +94,26 @@ func testUnplayedSizeIsBufferedSizeWithoutAReport(t *testing.T) {
 	}
 }
 
-func TestUnplayedSizeCountsWhatIsNotHeardYet(t *testing.T) {
-	synctest.Test(t, testUnplayedSizeCountsWhatIsNotHeardYet)
+func TestUnplayedSizeCountsWhatIsNotPlayedYet(t *testing.T) {
+	synctest.Test(t, testUnplayedSizeCountsWhatIsNotPlayedYet)
 }
 
-func testUnplayedSizeCountsWhatIsNotHeardYet(t *testing.T) {
+func testUnplayedSizeCountsWhatIsNotPlayedYet(t *testing.T) {
 	m := newMux(t)
 	p := newBufferedPlayer(t, m, 4800)
 	readFrames(m, reportedFrame)
-	reportHeard(m)
+	reportPlayed(m)
 
-	// The delay's worth of what is sent is not heard yet.
+	// The delay's worth of what is sent is not played yet.
 	if got, want := p.UnplayedSize(), p.BufferedSize()+delay*bytesPerFrame; got != want {
 		t.Errorf("at the report: UnplayedSize() = %d; want BufferedSize() and the delay, %d", got, want)
 	}
-	// It is heard as the clock moves on.
+	// It is played as the clock moves on.
 	time.Sleep(frameTime(400))
 	if got, want := p.UnplayedSize(), p.BufferedSize()+(delay-400)*bytesPerFrame; got != want {
 		t.Errorf("400 frames after the report: UnplayedSize() = %d; want %d", got, want)
 	}
-	// No more than is mixed is heard, however long the device goes without a
+	// No more than is mixed is played, however long the device goes without a
 	// read.
 	time.Sleep(frameTime(800))
 	if got, want := p.UnplayedSize(), p.BufferedSize(); got != want {
@@ -129,10 +129,10 @@ func testUnplayedSizeCountsWhatIsSentBeforePause(t *testing.T) {
 	m := newMux(t)
 	p := newBufferedPlayer(t, m, 4800)
 	readFrames(m, reportedFrame)
-	reportHeard(m)
+	reportPlayed(m)
 	p.Pause()
 
-	// What was sent before Pause is still to be heard, and is heard as the
+	// What was sent before Pause is still to be played, and is played as the
 	// device plays on.
 	if got, want := p.UnplayedSize(), p.BufferedSize()+delay*bytesPerFrame; got != want {
 		t.Errorf("right after Pause: UnplayedSize() = %d; want %d", got, want)
@@ -151,14 +151,14 @@ func testUnplayedSizeKeepsWhatIsSentWhileUnreported(t *testing.T) {
 	m := newMux(t)
 	p := newBufferedPlayer(t, m, 4800)
 	readFrames(m, reportedFrame)
-	reportHeard(m)
+	reportPlayed(m)
 
 	// As when the device is suspended, and resumed.
-	m.ClearHeard()
+	m.ClearPlayed()
 	if got, want := p.UnplayedSize(), p.BufferedSize(); got != want {
-		t.Errorf("after ClearHeard: UnplayedSize() = %d; want BufferedSize(), %d", got, want)
+		t.Errorf("after ClearPlayed: UnplayedSize() = %d; want BufferedSize(), %d", got, want)
 	}
-	reportHeard(m)
+	reportPlayed(m)
 	if got, want := p.UnplayedSize(), p.BufferedSize()+delay*bytesPerFrame; got != want {
 		t.Errorf("reported again: UnplayedSize() = %d; want BufferedSize() and the delay, %d", got, want)
 	}
@@ -172,8 +172,8 @@ func testUnplayedSizeIgnoresAnOldReport(t *testing.T) {
 	m := newMux(t)
 	p := newBufferedPlayer(t, m, 4800)
 	readFrames(m, reportedFrame)
-	// Frame 1,440, the next one mixed, is heard in 1.5 seconds.
-	m.SetHeard(reportedFrame, time.Now().Add(1500*time.Millisecond))
+	// Frame 1,440, the next one mixed, is played in 1.5 seconds.
+	m.SetPlayed(reportedFrame, time.Now().Add(1500*time.Millisecond))
 
 	time.Sleep(time.Second)
 	if got, want := p.UnplayedSize(), p.BufferedSize()+reportedFrame*bytesPerFrame; got != want {
@@ -193,20 +193,20 @@ func testUnplayedSizeIgnoresAFarReport(t *testing.T) {
 	m := newMux(t)
 	p := newBufferedPlayer(t, m, 4800)
 	readFrames(m, reportedFrame)
-	reportHeard(m)
+	reportPlayed(m)
 
 	// A report puts the frame over 2 seconds away.
-	m.SetHeard(reportedFrame, time.Now().Add(2*time.Second+time.Millisecond))
+	m.SetPlayed(reportedFrame, time.Now().Add(2*time.Second+time.Millisecond))
 	if got, want := p.UnplayedSize(), p.BufferedSize(); got != want {
 		t.Errorf("after the far report: UnplayedSize() = %d; want BufferedSize(), %d", got, want)
 	}
 }
 
-func TestUnplayedSizeCountsTheEndOfTheSourceUntilItIsHeard(t *testing.T) {
-	synctest.Test(t, testUnplayedSizeCountsTheEndOfTheSourceUntilItIsHeard)
+func TestUnplayedSizeCountsTheEndOfTheSourceUntilItIsPlayed(t *testing.T) {
+	synctest.Test(t, testUnplayedSizeCountsTheEndOfTheSourceUntilItIsPlayed)
 }
 
-func testUnplayedSizeCountsTheEndOfTheSourceUntilItIsHeard(t *testing.T) {
+func testUnplayedSizeCountsTheEndOfTheSourceUntilItIsPlayed(t *testing.T) {
 	m := newMux(t)
 	p := newBufferedPlayer(t, m, reportedFrame)
 	readFrames(m, reportedFrame)
@@ -215,7 +215,7 @@ func testUnplayedSizeCountsTheEndOfTheSourceUntilItIsHeard(t *testing.T) {
 	if p.IsPlaying() {
 		t.Fatal("the player plays on after its source is mixed")
 	}
-	reportHeard(m)
+	reportPlayed(m)
 	if got, want := p.UnplayedSize(), delay*bytesPerFrame; got != want {
 		t.Errorf("as the source ends: UnplayedSize() = %d; want %d", got, want)
 	}
@@ -233,7 +233,7 @@ func testUnplayedSizeDiscardsWhatIsSentBeforeSeek(t *testing.T) {
 	m := newMux(t)
 	p := newBufferedPlayer(t, m, 4800)
 	readFrames(m, reportedFrame)
-	reportHeard(m)
+	reportPlayed(m)
 	if _, err := p.Seek(0, 0); err != nil {
 		t.Fatal(err)
 	}

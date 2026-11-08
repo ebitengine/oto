@@ -160,7 +160,7 @@ func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeI
 		channelCount:         channelCount,
 		oneBufferSizeInBytes: oneBufferSizeInBytes,
 	}
-	// TODO: Report when the frames are heard with c.mux.SetHeard, from the delay:
+	// TODO: Report when the frames are played with c.mux.SetPlayed, from the delay:
 	// the frames enqueued less the queue's position from
 	// AudioQueueGetCurrentTime, plus the device's latency, which on iOS
 	// AVAudioSession's outputLatency gives.

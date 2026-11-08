@@ -66,24 +66,24 @@ type Mux struct {
 	// mixed counts the samples ReadFloat32s has mixed.
 	mixed atomic.Int64
 
-	// heardMu guards the driver's last report: frame heardFrame of the mix is
-	// heard at heardAt, reported at reportedAt, while heardKnown is set.
-	heardMu    sync.Mutex
-	heardKnown bool
-	heardFrame int64
-	heardAt    time.Time
-	reportedAt time.Time
+	// playedMu guards the driver's last report: frame playedFrame of the mix is
+	// played at playedAt, reported at reportedAt, while playedKnown is set.
+	playedMu    sync.Mutex
+	playedKnown bool
+	playedFrame int64
+	playedAt    time.Time
+	reportedAt  time.Time
 }
 
 // maxSentSpans is the most spans of the mix a player remembers its data went
-// into while they may be unheard.
+// into while they may be unplayed.
 const maxSentSpans = 256
 
-// reportLifetime is how long a report of when a frame is heard holds.
+// reportLifetime is how long a report of when a frame is played holds.
 const reportLifetime = time.Second
 
 // maxReportedDelay is the furthest after a report that the frame it reports
-// can be heard.
+// can be played.
 const maxReportedDelay = 2 * time.Second
 
 // New creates a new Mux.
@@ -178,50 +178,50 @@ func (m *Mux) removePlayer(player *playerImpl) {
 	delete(m.players, player)
 }
 
-// SetHeard reports that frame of the mix is heard at time at, where frame 0 is
-// the first frame ReadFloat32s mixed. A driver that reports calls SetHeard at
+// SetPlayed reports that frame of the mix is played at time at, where frame 0 is
+// the first frame ReadFloat32s mixed. A driver that reports calls SetPlayed at
 // least once every reportLifetime while playing. A report holds for
 // reportLifetime, and one with at more than maxReportedDelay after the report,
 // or more than reportLifetime before it, is taken as unknown.
-func (m *Mux) SetHeard(frame int64, at time.Time) {
+func (m *Mux) SetPlayed(frame int64, at time.Time) {
 	now := time.Now()
 
-	m.heardMu.Lock()
-	defer m.heardMu.Unlock()
+	m.playedMu.Lock()
+	defer m.playedMu.Unlock()
 
 	if at.Sub(now) > maxReportedDelay || now.Sub(at) > reportLifetime {
-		m.heardKnown = false
+		m.playedKnown = false
 		return
 	}
-	m.heardKnown = true
-	m.heardFrame = frame
-	m.heardAt = at
+	m.playedKnown = true
+	m.playedFrame = frame
+	m.playedAt = at
 	m.reportedAt = now
 }
 
-// ClearHeard clears the driver's last report.
-func (m *Mux) ClearHeard() {
-	m.heardMu.Lock()
-	defer m.heardMu.Unlock()
+// ClearPlayed clears the driver's last report.
+func (m *Mux) ClearPlayed() {
+	m.playedMu.Lock()
+	defer m.playedMu.Unlock()
 
-	m.heardKnown = false
+	m.playedKnown = false
 }
 
-// heard returns how many of the samples mixed have been heard, and whether the
+// played returns how many of the samples mixed have been played, and whether the
 // driver reports it.
-func (m *Mux) heard() (int64, bool) {
+func (m *Mux) played() (int64, bool) {
 	now := time.Now()
 
-	m.heardMu.Lock()
-	known, frame, at, reportedAt := m.heardKnown, m.heardFrame, m.heardAt, m.reportedAt
-	m.heardMu.Unlock()
+	m.playedMu.Lock()
+	known, frame, at, reportedAt := m.playedKnown, m.playedFrame, m.playedAt, m.reportedAt
+	m.playedMu.Unlock()
 
 	if !known || now.Sub(reportedAt) > reportLifetime {
 		return 0, false
 	}
-	// The frames around the one reported are heard at the sample rate.
+	// The frames around the one reported are played at the sample rate.
 	frame += int64(now.Sub(at)) * int64(m.sampleRate) / int64(time.Second)
-	// No more than is mixed has been heard, as when the device has run dry
+	// No more than is mixed has been played, as when the device has run dry
 	// since the report.
 	return min(frame*int64(m.channelCount), m.mixed.Load()), true
 }
@@ -298,7 +298,7 @@ type playerImpl struct {
 	err error
 
 	// srcErr is an error from the source that is not reported by err yet.
-	// It is moved to err after the data read before it is played or discarded.
+	// It is moved to err after the data read before it is mixed or discarded.
 	srcErr error
 
 	// reading reports whether a read from the source is in flight.
@@ -311,7 +311,7 @@ type playerImpl struct {
 	srcGen int
 
 	// sent holds the spans of the mix this player's data went into, oldest
-	// first, while they may be unheard.
+	// first, while they may be unplayed.
 	sent []sentSpan
 
 	m sync.Mutex
@@ -585,25 +585,25 @@ func (p *playerImpl) UnplayedSize() int {
 	defer p.m.Unlock()
 
 	n := p.buffered()
-	heard, ok := p.mux.heard()
+	played, ok := p.mux.played()
 	if !ok {
-		// What is sent stays, as it may be heard once the driver reports again,
+		// What is sent stays, as it may be played once the driver reports again,
 		// as after Resume.
 		return n
 	}
-	p.dropHeard(heard)
+	p.dropPlayed(played)
 	for _, s := range p.sent {
-		n += int(s.end-max(s.start, heard)) * p.mux.format.ByteLength()
+		n += int(s.end-max(s.start, played)) * p.mux.format.ByteLength()
 	}
 	return n
 }
 
-// dropHeard drops the spans sent that end by sample heard of the mix.
+// dropPlayed drops the spans sent that end by sample played of the mix.
 //
-// When dropHeard is called, the mutex m must be locked.
-func (p *playerImpl) dropHeard(heard int64) {
+// When dropPlayed is called, the mutex m must be locked.
+func (p *playerImpl) dropPlayed(played int64) {
 	i := 0
-	for i < len(p.sent) && p.sent[i].end <= heard {
+	for i < len(p.sent) && p.sent[i].end <= played {
 		i++
 	}
 	p.sent = append(p.sent[:0], p.sent[i:]...)
@@ -829,7 +829,7 @@ func (p *playerImpl) finishSourceRead(buf *[]byte, gen, n int, err error) int {
 			p.mux.removePlayer(p)
 		}
 	case err != nil:
-		// The data read before the error, including the data returned together with it, is played first.
+		// The data read before the error, including the data returned together with it, is mixed first.
 		p.srcErr = err
 		p.reportSourceErrorIfDrainedImpl()
 	}

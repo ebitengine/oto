@@ -219,7 +219,7 @@ private:
   std::atomic<int> max_callback_{0};
 
   // Every kDelayEvery, LoopRead measures when the frame written to fifo_ next
-  // will be heard, and reports it to Go. delay_gen_ counts the streams
+  // will be played, and reports it to Go. delay_gen_ counts the streams
   // dropped, paused and opened, so that a measurement of a stream that changed
   // meanwhile is dropped. delay_mutex_ guards it, and is taken after mutex_
   // where both are.
@@ -537,11 +537,11 @@ void Stream::ResetDelayLocked() {
   // calls nothing while held. Before Play, nothing is reported, and Go has no
   // function to call.
   if (play_called_) {
-    oto_oboe_clearHeard();
+    oto_oboe_clearPlayed();
   }
 }
 
-// MeasureDelay measures when the frame written to fifo_ next will be heard, and
+// MeasureDelay measures when the frame written to fifo_ next will be played, and
 // reports it to Go.
 void Stream::MeasureDelay() {
   std::shared_ptr<oboe::AudioStream> stream;
@@ -566,7 +566,7 @@ void Stream::MeasureDelay() {
     int64_t read = fifo_->getReadCounter();
     double ms;
     if (auto result = stream->calculateLatencyMillis(); result) {
-      // The next frame the stream takes is heard this long from now. It can
+      // The next frame the stream takes is played this long from now. It can
       // come out negative, as around an underrun.
       ms = std::max(0.0, result.value());
     } else if (result.error() == oboe::Result::ErrorUnimplemented) {
@@ -581,8 +581,8 @@ void Stream::MeasureDelay() {
       continue;
     }
     int64_t written = fifo_->getWriteCounter();
-    // The frames queued in fifo_ are heard before the frame written next.
-    auto heard_at =
+    // The frames queued in fifo_ are played before the frame written next.
+    auto played_at =
         now + std::chrono::microseconds(std::llround(
                   ms * 1000 + (written - read) * 1e6 / sample_rate_));
     std::lock_guard<std::mutex> lock{delay_mutex_};
@@ -592,9 +592,9 @@ void Stream::MeasureDelay() {
     // fifo_ is written only with what is read from Go, so its write counter
     // counts the frames read from Go. Go is told under delay_mutex_, so that
     // reports and resets reach it in order.
-    oto_oboe_setHeard(written,
+    oto_oboe_setPlayed(written,
                       std::chrono::duration_cast<std::chrono::nanoseconds>(
-                          heard_at - std::chrono::steady_clock::now())
+                          played_at - std::chrono::steady_clock::now())
                           .count());
     return;
   }
