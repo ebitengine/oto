@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"runtime"
 	"syscall/js"
+	"time"
 	"unsafe"
 
 	"github.com/ebitengine/oto/v3/internal/mux"
@@ -29,6 +30,9 @@ type context struct {
 	scriptProcessor         js.Value
 	scriptProcessorCallback js.Func
 	err                     atomicError
+
+	// outputTimestamp reports whether the AudioContext has getOutputTimestamp.
+	outputTimestamp bool
 
 	mux *mux.Mux
 }
@@ -50,10 +54,7 @@ func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeI
 		audioContext: class.New(options),
 		mux:          mux.New(sampleRate, channelCount, format),
 	}
-	// TODO: Report when the frames are played with d.mux.SetPlayed: the
-	// AudioContext's getOutputTimestamp gives the context time of the frame
-	// played now, and the frames queued in the worklet or the script processor
-	// are played after it.
+	d.outputTimestamp = d.audioContext.Get("getOutputTimestamp").Truthy()
 
 	if bufferSizeInBytes == 0 {
 		// 4096 was not great at least on Safari 15.
@@ -73,6 +74,10 @@ class OtoWorkletProcessor extends AudioWorkletProcessor {
 		this.channelCount_ = %[2]d;
 		this.buf_ = new Float32Array();
 		this.waitRecv_ = false;
+		// frames_ counts the frames of the mix output so far.
+		this.frames_ = 0;
+		// reportedTime_ is the context time of the last report to the main thread.
+		this.reportedTime_ = -Infinity;
 
 		// Receive data from the main thread.
 		this.port.onmessage = (event) => {
@@ -97,7 +102,18 @@ class OtoWorkletProcessor extends AudioWorkletProcessor {
 			for (let i = 0; i < output.length; i++) {
 				output[i].fill(0);
 			}
+			// The silence delays the frames of the mix after it, so the last report no longer holds.
+			if (this.reportedTime_ !== -Infinity) {
+				this.reportedTime_ = -Infinity;
+				this.port.postMessage({clear: true});
+			}
 			return true;
+		}
+
+		// Report which frame of the mix is output at which context time.
+		if (currentTime - this.reportedTime_ >= %[3]g) {
+			this.reportedTime_ = currentTime;
+			this.port.postMessage({frame: this.frames_, time: currentTime});
 		}
 
 		// If the buffer is short, request more data.
@@ -112,11 +128,12 @@ class OtoWorkletProcessor extends AudioWorkletProcessor {
 			}
 		}
 		this.buf_ = this.buf_.slice(output[0].length*this.channelCount_);
+		this.frames_ += output[0].length;
 		return true;
 	}
 }
 registerProcessor('oto-worklet-processor', OtoWorkletProcessor);
-`, bufferSizeInBytes/4/channelCount, channelCount)
+`, bufferSizeInBytes/4/channelCount, channelCount, workletReportInterval.Seconds())
 		scriptURL := newScriptURL(script)
 		var onAddModuleSuccess, onAddModuleFailure js.Func
 		release := func() {
@@ -131,11 +148,22 @@ registerProcessor('oto-worklet-processor', OtoWorkletProcessor);
 				"outputChannelCount": []any{channelCount},
 			})
 			port := node.Get("port")
-			// When the worklet processor requests more data, send the request to the worklet.
+			// The worklet processor sends reports of the frame it outputs, and requests for more data.
 			port.Set("onmessage", js.FuncOf(func(this js.Value, arguments []js.Value) any {
+				data := arguments[0].Get("data")
+				if data.Type() == js.TypeObject {
+					if data.Get("clear").Truthy() {
+						d.mux.ClearPlayed()
+						return nil
+					}
+					d.reportPlayed(int64(data.Get("frame").Float()), data.Get("time").Float())
+					return nil
+				}
+
+				// When the worklet processor requests more data, send the data to the worklet.
 				// A transfer must cover at least one render quantum, even when the
 				// requested context buffer is smaller than the worklet's output.
-				if size := arguments[0].Get("data").Int() * channelCount; len(buf32) < size {
+				if size := data.Int() * channelCount; len(buf32) < size {
 					buf32 = make([]float32, size)
 				}
 				d.mux.ReadFloat32s(buf32)
@@ -166,9 +194,17 @@ registerProcessor('oto-worklet-processor', OtoWorkletProcessor);
 			chBuf32[i] = make([]float32, len(buf32)/channelCount)
 		}
 
+		// frames counts the frames of the mix read so far.
+		var frames int64
+
 		sp := d.audioContext.Call("createScriptProcessor", bufferSizeInBytes/4/channelCount, 0, channelCount)
 		f := js.FuncOf(func(this js.Value, arguments []js.Value) any {
+			// The buffer filled now is output at the context time playbackTime.
+			if t := arguments[0].Get("playbackTime"); t.Type() == js.TypeNumber {
+				d.reportPlayed(frames, t.Float())
+			}
 			d.mux.ReadFloat32s(buf32)
+			frames += int64(len(buf32) / channelCount)
 			for i := 0; i < channelCount; i++ {
 				for j := range chBuf32[i] {
 					chBuf32[i][j] = buf32[j*channelCount+i]
@@ -252,6 +288,7 @@ registerProcessor('oto-worklet-processor', OtoWorkletProcessor);
 
 func (c *context) Suspend() error {
 	c.audioContext.Call("suspend")
+	c.mux.ClearPlayed()
 	return nil
 }
 
@@ -262,6 +299,28 @@ func (c *context) Resume() error {
 
 func (c *context) Err() error {
 	return c.err.Load()
+}
+
+// workletReportInterval is how often, in context time, the worklet reports which
+// frame of the mix it outputs.
+const workletReportInterval = 100 * time.Millisecond
+
+// reportPlayed reports to the mux that frame of the mix is output at the context
+// time contextTime, in seconds.
+func (c *context) reportPlayed(frame int64, contextTime float64) {
+	if !c.outputTimestamp {
+		return
+	}
+	// getOutputTimestamp gives the context time of the frame the audio hardware
+	// plays now, and the performance time it is played at.
+	ts := c.audioContext.Call("getOutputTimestamp")
+	performanceTime := ts.Get("performanceTime")
+	// The performance time is 0 until the audio hardware starts playing.
+	if performanceTime.Type() != js.TypeNumber || performanceTime.Float() == 0 {
+		return
+	}
+	ms := performanceTime.Float() + (contextTime-ts.Get("contextTime").Float())*1000 - js.Global().Get("performance").Call("now").Float()
+	c.mux.SetPlayed(frame, time.Now().Add(time.Duration(ms*float64(time.Millisecond))))
 }
 
 func float32SliceToTypedArray(s []float32) js.Value {
