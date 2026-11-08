@@ -21,8 +21,10 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/jfreymuth/pulse"
+	"github.com/jfreymuth/pulse/proto"
 
 	"github.com/ebitengine/oto/v3/internal/mux"
 )
@@ -34,14 +36,22 @@ type pulseContext struct {
 	suspended bool
 	cond      *sync.Cond
 
+	// frameSize is the byte size of a frame of the stream.
+	frameSize int
+
 	mux *mux.Mux
 	err atomicError
 }
 
+// pulseReportInterval is how often the PulseAudio backend asks the server which
+// frame of the stream it plays.
+const pulseReportInterval = 100 * time.Millisecond
+
 func newPulseContext(sampleRate int, channelCount int, mux *mux.Mux, bufferSizeInBytes int, applicationName string) (*pulseContext, error) {
 	c := &pulseContext{
-		cond: sync.NewCond(&sync.Mutex{}),
-		mux:  mux,
+		cond:      sync.NewCond(&sync.Mutex{}),
+		frameSize: channelCount * 4,
+		mux:       mux,
 	}
 
 	if applicationName == "" {
@@ -90,7 +100,52 @@ func newPulseContext(sampleRate int, channelCount int, mux *mux.Mux, bufferSizeI
 	c.stream = stream
 	c.stream.Start()
 
+	go c.reportPlayed()
+
 	return c, nil
+}
+
+// reportPlayed reports to the mux which frame of the stream is played, every
+// pulseReportInterval, until the stream fails.
+func (c *pulseContext) reportPlayed() {
+	t := time.NewTicker(pulseReportInterval)
+	defer t.Stop()
+
+	for range t.C {
+		if c.Err() != nil {
+			c.mux.ClearPlayed()
+			return
+		}
+
+		c.cond.L.Lock()
+		suspended := c.suspended
+		c.cond.L.Unlock()
+		if suspended {
+			continue
+		}
+
+		sent := time.Now()
+		var reply proto.GetPlaybackLatencyReply
+		err := c.client.RawRequest(&proto.GetPlaybackLatency{
+			StreamIndex: c.stream.StreamIndex(),
+			Time:        protoTime(sent),
+		}, &reply)
+		if err != nil || !reply.Running {
+			c.mux.ClearPlayed()
+			continue
+		}
+		// When the server replies, the sink takes the frame at ReadIndex next, and
+		// plays it after the sink's latency.
+		replied := sent.Add(time.Since(sent) / 2)
+		c.mux.SetPlayed(reply.ReadIndex/int64(c.frameSize), replied.Add(time.Duration(reply.Latency)*time.Microsecond))
+	}
+}
+
+func protoTime(t time.Time) proto.Time {
+	return proto.Time{
+		Seconds:      uint32(t.Unix()),
+		Microseconds: uint32(t.Nanosecond() / 1000),
+	}
 }
 
 func (c *pulseContext) read(buf []float32) (int, error) {
@@ -134,7 +189,11 @@ func (c *pulseContext) setSuspended(suspended bool) error {
 
 // Suspend stops the playback. Audio that the server has already buffered still plays.
 func (c *pulseContext) Suspend() error {
-	return c.setSuspended(true)
+	if err := c.setSuspended(true); err != nil {
+		return err
+	}
+	c.mux.ClearPlayed()
+	return nil
 }
 
 func (c *pulseContext) Resume() error {

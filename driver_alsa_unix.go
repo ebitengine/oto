@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 	"unsafe"
 
 	"github.com/ebitengine/purego"
@@ -50,6 +51,7 @@ var (
 	_snd_pcm_hw_params                      func(pcm, params uintptr) int32
 	_snd_pcm_writei                         func(pcm uintptr, buf []float32, size uint) int
 	_snd_pcm_recover                        func(pcm uintptr, err int32, silent int32) int32
+	_snd_pcm_delay                          func(pcm uintptr, delay *int) int32
 
 	_snd_device_name_hint      func(card int32, iface string, hints *unsafe.Pointer) int32
 	_snd_device_name_free_hint func(hints unsafe.Pointer) int32
@@ -99,6 +101,7 @@ func loadALSA() error {
 	purego.RegisterLibFunc(&_snd_pcm_hw_params, handle, "snd_pcm_hw_params")
 	purego.RegisterLibFunc(&_snd_pcm_writei, handle, "snd_pcm_writei")
 	purego.RegisterLibFunc(&_snd_pcm_recover, handle, "snd_pcm_recover")
+	purego.RegisterLibFunc(&_snd_pcm_delay, handle, "snd_pcm_delay")
 	purego.RegisterLibFunc(&_snd_device_name_hint, handle, "snd_device_name_hint")
 	purego.RegisterLibFunc(&_snd_device_name_free_hint, handle, "snd_device_name_free_hint")
 	purego.RegisterLibFunc(&_snd_device_name_get_hint, handle, "snd_device_name_get_hint")
@@ -115,6 +118,9 @@ type alsaContext struct {
 	suspended bool
 
 	handle uintptr
+
+	// written counts the frames written to the device.
+	written int64
 
 	cond *sync.Cond
 
@@ -258,6 +264,15 @@ func (c *alsaContext) readAndWrite(buf32 []float32) bool {
 			return false
 		}
 		buf = buf[n*c.channelCount:]
+		c.written += int64(n)
+	}
+
+	// snd_pcm_delay gives how many of the frames written are not played yet.
+	var delay int
+	if _snd_pcm_delay(c.handle, &delay) < 0 {
+		c.mux.ClearPlayed()
+	} else {
+		c.mux.SetPlayed(c.written-int64(delay), time.Now())
 	}
 	return true
 }
@@ -271,6 +286,7 @@ func (c *alsaContext) Suspend() error {
 	}
 
 	c.suspended = true
+	c.mux.ClearPlayed()
 
 	// Do not use snd_pcm_pause as not all devices support this.
 	// Do not use snd_pcm_drop as this might hang (https://github.com/libsdl-org/SDL/blob/a5c610b0a3857d3138f3f3da1f6dc3172c5ea4a8/src/audio/alsa/SDL_alsa_audio.c#L478).
