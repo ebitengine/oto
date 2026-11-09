@@ -36,6 +36,10 @@ type pulseContext struct {
 	suspended bool
 	cond      *sync.Cond
 
+	// reportGen is guarded by cond.L. It changes on every Suspend, so that a
+	// playback report measured before a Suspend is dropped.
+	reportGen int
+
 	// frameSize is the byte size of a frame of the stream.
 	frameSize int
 
@@ -117,10 +121,8 @@ func (c *pulseContext) reportPlayed() {
 			return
 		}
 
-		c.cond.L.Lock()
-		suspended := c.suspended
-		c.cond.L.Unlock()
-		if suspended {
+		gen, ok := c.reportState()
+		if !ok {
 			continue
 		}
 
@@ -137,7 +139,27 @@ func (c *pulseContext) reportPlayed() {
 		// When the server replies, the sink takes the frame at ReadIndex next, and
 		// plays it after the sink's latency.
 		replied := sent.Add(time.Since(sent) / 2)
-		c.mux.SetPlayed(reply.ReadIndex/int64(c.frameSize), replied.Add(time.Duration(reply.Latency)*time.Microsecond))
+		c.setPlayed(gen, reply.ReadIndex/int64(c.frameSize), replied.Add(time.Duration(reply.Latency)*time.Microsecond))
+	}
+}
+
+// reportState returns the current report generation, and whether a report
+// should be made, which is while the context plays.
+func (c *pulseContext) reportState() (int, bool) {
+	c.cond.L.Lock()
+	defer c.cond.L.Unlock()
+
+	return c.reportGen, !c.suspended
+}
+
+// setPlayed reports a frame and its playing time to the mux, if no Suspend has
+// come since the report generation gen.
+func (c *pulseContext) setPlayed(gen int, frame int64, at time.Time) {
+	c.cond.L.Lock()
+	defer c.cond.L.Unlock()
+
+	if gen == c.reportGen {
+		c.mux.SetPlayed(frame, at)
 	}
 }
 
@@ -168,7 +190,8 @@ func (c *pulseContext) waitUntilResumed() error {
 	return c.err.Load()
 }
 
-// setSuspended updates the suspended state and wakes up a waiting reader.
+// setSuspended updates the suspended state. Suspending clears the playback
+// report, and resuming wakes up a waiting reader.
 func (c *pulseContext) setSuspended(suspended bool) error {
 	c.cond.L.Lock()
 	defer c.cond.L.Unlock()
@@ -181,7 +204,10 @@ func (c *pulseContext) setSuspended(suspended bool) error {
 	}
 
 	c.suspended = suspended
-	if !suspended {
+	if suspended {
+		c.reportGen++
+		c.mux.ClearPlayed()
+	} else {
 		c.cond.Signal()
 	}
 	return nil
@@ -189,11 +215,7 @@ func (c *pulseContext) setSuspended(suspended bool) error {
 
 // Suspend stops the playback. Audio that the server has already buffered still plays.
 func (c *pulseContext) Suspend() error {
-	if err := c.setSuspended(true); err != nil {
-		return err
-	}
-	c.mux.ClearPlayed()
-	return nil
+	return c.setSuspended(true)
 }
 
 func (c *pulseContext) Resume() error {

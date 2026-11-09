@@ -261,6 +261,7 @@ func (c *alsaContext) readAndWrite(buf32 []float32) bool {
 		}
 		if n < 0 {
 			c.err.Join(alsaError("snd_pcm_writei or snd_pcm_recover", int32(n)))
+			c.mux.ClearPlayed()
 			return false
 		}
 		buf = buf[n*c.channelCount:]
