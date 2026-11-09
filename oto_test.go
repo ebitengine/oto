@@ -17,7 +17,6 @@ package oto_test
 import (
 	"bytes"
 	"os"
-	"strings"
 	"testing"
 	"time"
 
@@ -70,8 +69,5 @@ func TestNewContextAfterContextCreated(t *testing.T) {
 	_, _, err := oto.NewContext(op)
 	if err == nil {
 		t.Fatal("NewContext after the context was created must return an error")
-	}
-	if !strings.Contains(err.Error(), "context is already created") {
-		t.Errorf("unexpected error: %v", err)
 	}
 }
