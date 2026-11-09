@@ -17,6 +17,7 @@ package oto_test
 import (
 	"bytes"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -58,5 +59,19 @@ func TestSetBufferSize(t *testing.T) {
 		for p.IsPlaying() {
 			time.Sleep(time.Millisecond)
 		}
+	}
+}
+
+func TestNewContextAfterContextCreated(t *testing.T) {
+	// TestMain already created the context, so this call must fail.
+	op := &oto.NewContextOptions{}
+	op.SampleRate = 48000
+	op.ChannelCount = 2
+	_, _, err := oto.NewContext(op)
+	if err == nil {
+		t.Fatal("NewContext after the context was created must return an error")
+	}
+	if !strings.Contains(err.Error(), "context is already created") {
+		t.Errorf("unexpected error: %v", err)
 	}
 }

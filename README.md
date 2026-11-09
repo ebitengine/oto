@@ -123,7 +123,8 @@ func main() {
     // Format of the source. go-mp3's format is signed 16bit integers.
     op.Format = oto.FormatSignedInt16LE
 
-    // Remember that you should **not** create more than one context
+    // Remember that you should **not** create more than one context.
+    // Calling oto.NewContext more than once returns an error: reuse the context for all your players.
     otoCtx, readyChan, err := oto.NewContext(op)
     if err != nil {
         panic("oto.NewContext failed: " + err.Error())

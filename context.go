@@ -107,7 +107,7 @@ func NewContext(options *NewContextOptions) (*Context, chan struct{}, error) {
 	defer contextCreationMutex.Unlock()
 
 	if contextCreated {
-		return nil, nil, fmt.Errorf("oto: context is already created")
+		return nil, nil, fmt.Errorf("oto: context is already created (NewContext can be called only once per process; reuse the existing context instead)")
 	}
 	contextCreated = true
 
