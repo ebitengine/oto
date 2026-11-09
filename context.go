@@ -88,7 +88,7 @@ type NewContextOptions struct {
 // NewContext returns a context, a channel that closes when initialization finishes, and an error, if any.
 // After the channel closes, call Context.Err to check whether initialization succeeded.
 //
-// Creating multiple contexts is NOT supported.
+// NewContext can be called only once in a process. Any later call returns an error.
 func NewContext(options *NewContextOptions) (*Context, chan struct{}, error) {
 	if options == nil {
 		return nil, nil, fmt.Errorf("oto: options must not be nil")
