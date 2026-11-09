@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"runtime"
+	"sync/atomic"
 	"syscall/js"
 	"time"
 	"unsafe"
@@ -31,8 +32,16 @@ type context struct {
 	scriptProcessorCallback js.Func
 	err                     atomicError
 
-	// outputTimestamp reports whether the AudioContext has getOutputTimestamp.
-	outputTimestamp bool
+	// hasOutputTimestamp reports whether the AudioContext has getOutputTimestamp.
+	hasOutputTimestamp bool
+
+	// suspended is set from Suspend until Resume. Reports of played frames are
+	// dropped while it is set, as they can still arrive after Suspend.
+	suspended atomic.Bool
+
+	// workletPort is the message port of the AudioWorkletNode, when the
+	// AudioWorklet is used.
+	workletPort js.Value
 
 	mux *mux.Mux
 }
@@ -54,7 +63,7 @@ func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeI
 		audioContext: class.New(options),
 		mux:          mux.New(sampleRate, channelCount, format),
 	}
-	d.outputTimestamp = d.audioContext.Get("getOutputTimestamp").Truthy()
+	d.hasOutputTimestamp = d.audioContext.Get("getOutputTimestamp").Truthy()
 
 	if bufferSizeInBytes == 0 {
 		// 4096 was not great at least on Safari 15.
@@ -81,6 +90,11 @@ class OtoWorkletProcessor extends AudioWorkletProcessor {
 
 		// Receive data from the main thread.
 		this.port.onmessage = (event) => {
+			// After a resume, report on the next output.
+			if (event.data.reset) {
+				this.reportedTime_ = -Infinity;
+				return;
+			}
 			const buf = event.data;
 			const newBuf = new Float32Array(this.buf_.length + buf.length);
 			newBuf.set(this.buf_);
@@ -148,6 +162,7 @@ registerProcessor('oto-worklet-processor', OtoWorkletProcessor);
 				"outputChannelCount": []any{channelCount},
 			})
 			port := node.Get("port")
+			d.workletPort = port
 			// The worklet processor sends reports of the frame it outputs, and requests for more data.
 			port.Set("onmessage", js.FuncOf(func(this js.Value, arguments []js.Value) any {
 				data := arguments[0].Get("data")
@@ -200,6 +215,9 @@ registerProcessor('oto-worklet-processor', OtoWorkletProcessor);
 		sp := d.audioContext.Call("createScriptProcessor", bufferSizeInBytes/4/channelCount, 0, channelCount)
 		f := js.FuncOf(func(this js.Value, arguments []js.Value) any {
 			// The buffer filled now is output at the context time playbackTime.
+			// This reports once per buffer. A buffer that lasts longer than the
+			// mux keeps a report (reportLifetime), such as 16384 frames at
+			// 16 kHz or less, leaves gaps without a report.
 			if t := arguments[0].Get("playbackTime"); t.Type() == js.TypeNumber {
 				d.reportPlayed(frames, t.Float())
 			}
@@ -287,12 +305,17 @@ registerProcessor('oto-worklet-processor', OtoWorkletProcessor);
 }
 
 func (c *context) Suspend() error {
+	c.suspended.Store(true)
 	c.audioContext.Call("suspend")
 	c.mux.ClearPlayed()
 	return nil
 }
 
 func (c *context) Resume() error {
+	c.suspended.Store(false)
+	if c.workletPort.Truthy() {
+		c.workletPort.Call("postMessage", map[string]any{"reset": true})
+	}
 	c.audioContext.Call("resume")
 	return nil
 }
@@ -308,7 +331,7 @@ const workletReportInterval = 100 * time.Millisecond
 // reportPlayed reports to the mux that frame of the mix is output at the context
 // time contextTime, in seconds.
 func (c *context) reportPlayed(frame int64, contextTime float64) {
-	if !c.outputTimestamp {
+	if !c.hasOutputTimestamp || c.suspended.Load() {
 		return
 	}
 	// getOutputTimestamp gives the context time of the frame the audio hardware
