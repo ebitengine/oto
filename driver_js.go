@@ -39,6 +39,11 @@ type context struct {
 	// dropped while it is set, as they can still arrive after Suspend.
 	suspended atomic.Bool
 
+	// reportGen changes on every Suspend. The worklet tags its reports with the
+	// generation it last received, so that a report from before a Suspend is
+	// dropped even when it arrives after Resume.
+	reportGen atomic.Int64
+
 	// workletPort is the message port of the AudioWorkletNode, when the
 	// AudioWorklet is used.
 	workletPort js.Value
@@ -87,11 +92,17 @@ class OtoWorkletProcessor extends AudioWorkletProcessor {
 		this.frames_ = 0;
 		// reportedTime_ is the context time of the last report to the main thread.
 		this.reportedTime_ = -Infinity;
+		// reported_ is whether a report stands since the last clear.
+		this.reported_ = false;
+		// gen_ is the report generation, received from the main thread on resume.
+		this.gen_ = 0;
 
 		// Receive data from the main thread.
 		this.port.onmessage = (event) => {
-			// After a resume, report on the next output.
-			if (event.data.reset) {
+			// After a resume, tag reports with the new generation, and report on
+			// the next output.
+			if (typeof event.data.gen === 'number') {
+				this.gen_ = event.data.gen;
 				this.reportedTime_ = -Infinity;
 				return;
 			}
@@ -117,7 +128,8 @@ class OtoWorkletProcessor extends AudioWorkletProcessor {
 				output[i].fill(0);
 			}
 			// The silence delays the frames of the mix after it, so the last report no longer holds.
-			if (this.reportedTime_ !== -Infinity) {
+			if (this.reported_) {
+				this.reported_ = false;
 				this.reportedTime_ = -Infinity;
 				this.port.postMessage({clear: true});
 			}
@@ -127,7 +139,8 @@ class OtoWorkletProcessor extends AudioWorkletProcessor {
 		// Report which frame of the mix is output at which context time.
 		if (currentTime - this.reportedTime_ >= %[3]g) {
 			this.reportedTime_ = currentTime;
-			this.port.postMessage({frame: this.frames_, time: currentTime});
+			this.reported_ = true;
+			this.port.postMessage({frame: this.frames_, time: currentTime, gen: this.gen_});
 		}
 
 		// If the buffer is short, request more data.
@@ -169,6 +182,9 @@ registerProcessor('oto-worklet-processor', OtoWorkletProcessor);
 				if data.Type() == js.TypeObject {
 					if data.Get("clear").Truthy() {
 						d.mux.ClearPlayed()
+						return nil
+					}
+					if int64(data.Get("gen").Float()) != d.reportGen.Load() {
 						return nil
 					}
 					d.reportPlayed(int64(data.Get("frame").Float()), data.Get("time").Float())
@@ -306,6 +322,7 @@ registerProcessor('oto-worklet-processor', OtoWorkletProcessor);
 
 func (c *context) Suspend() error {
 	c.suspended.Store(true)
+	c.reportGen.Add(1)
 	c.audioContext.Call("suspend")
 	c.mux.ClearPlayed()
 	return nil
@@ -314,7 +331,7 @@ func (c *context) Suspend() error {
 func (c *context) Resume() error {
 	c.suspended.Store(false)
 	if c.workletPort.Truthy() {
-		c.workletPort.Call("postMessage", map[string]any{"reset": true})
+		c.workletPort.Call("postMessage", map[string]any{"gen": c.reportGen.Load()})
 	}
 	c.audioContext.Call("resume")
 	return nil
@@ -343,6 +360,12 @@ func (c *context) reportPlayed(frame int64, contextTime float64) {
 		return
 	}
 	ms := performanceTime.Float() + (contextTime-ts.Get("contextTime").Float())*1000 - js.Global().Get("performance").Call("now").Float()
+	// A frame rendered now plays in the future. A time in the past means the
+	// output timestamp is stale, as it can be right after a resume, or the
+	// report waited too long on the main thread.
+	if ms < 0 {
+		return
+	}
 	c.mux.SetPlayed(frame, time.Now().Add(time.Duration(ms*float64(time.Millisecond))))
 }
 
