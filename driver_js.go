@@ -45,8 +45,8 @@ type context struct {
 	reportGen atomic.Int64
 
 	// workletPort is the message port of the AudioWorkletNode, when the
-	// AudioWorklet is used.
-	workletPort js.Value
+	// AudioWorklet is used. It is set when the worklet module loads.
+	workletPort atomic.Pointer[js.Value]
 
 	mux *mux.Mux
 }
@@ -82,7 +82,7 @@ func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeI
 	if w := d.audioContext.Get("audioWorklet"); w.Truthy() {
 		script := fmt.Sprintf(`
 class OtoWorkletProcessor extends AudioWorkletProcessor {
-	constructor() {
+	constructor(options) {
 		super();
 		this.bufferSize_ = %[1]d;
 		this.channelCount_ = %[2]d;
@@ -95,7 +95,7 @@ class OtoWorkletProcessor extends AudioWorkletProcessor {
 		// reported_ is whether a report stands since the last clear.
 		this.reported_ = false;
 		// gen_ is the report generation, received from the main thread on resume.
-		this.gen_ = 0;
+		this.gen_ = options.processorOptions.gen;
 
 		// Receive data from the main thread.
 		this.port.onmessage = (event) => {
@@ -173,9 +173,11 @@ registerProcessor('oto-worklet-processor', OtoWorkletProcessor);
 
 			node := js.Global().Get("AudioWorkletNode").New(d.audioContext, "oto-worklet-processor", map[string]any{
 				"outputChannelCount": []any{channelCount},
+				// The generation can have changed already, by a Suspend before the module loaded.
+				"processorOptions": map[string]any{"gen": d.reportGen.Load()},
 			})
 			port := node.Get("port")
-			d.workletPort = port
+			d.workletPort.Store(&port)
 			// The worklet processor sends reports of the frame it outputs, and requests for more data.
 			port.Set("onmessage", js.FuncOf(func(this js.Value, arguments []js.Value) any {
 				data := arguments[0].Get("data")
@@ -330,8 +332,8 @@ func (c *context) Suspend() error {
 
 func (c *context) Resume() error {
 	c.suspended.Store(false)
-	if c.workletPort.Truthy() {
-		c.workletPort.Call("postMessage", map[string]any{"gen": c.reportGen.Load()})
+	if port := c.workletPort.Load(); port != nil {
+		port.Call("postMessage", map[string]any{"gen": c.reportGen.Load()})
 	}
 	c.audioContext.Call("resume")
 	return nil
@@ -344,6 +346,11 @@ func (c *context) Err() error {
 // workletReportInterval is how often, in context time, the worklet reports which
 // frame of the mix it outputs.
 const workletReportInterval = 100 * time.Millisecond
+
+// maxOutputTimestampAge is the oldest an output timestamp can be for a report.
+// While playing, getOutputTimestamp is a few milliseconds old at most. Right
+// after a resume, it can still hold its values from before the suspend.
+const maxOutputTimestampAge = 200 * time.Millisecond
 
 // reportPlayed reports to the mux that frame of the mix is output at the context
 // time contextTime, in seconds.
@@ -359,13 +366,11 @@ func (c *context) reportPlayed(frame int64, contextTime float64) {
 	if performanceTime.Type() != js.TypeNumber || performanceTime.Float() == 0 {
 		return
 	}
-	ms := performanceTime.Float() + (contextTime-ts.Get("contextTime").Float())*1000 - js.Global().Get("performance").Call("now").Float()
-	// A frame rendered now plays in the future. A time in the past means the
-	// output timestamp is stale, as it can be right after a resume, or the
-	// report waited too long on the main thread.
-	if ms < 0 {
+	now := js.Global().Get("performance").Call("now").Float()
+	if now-performanceTime.Float() > float64(maxOutputTimestampAge.Milliseconds()) {
 		return
 	}
+	ms := performanceTime.Float() + (contextTime-ts.Get("contextTime").Float())*1000 - now
 	c.mux.SetPlayed(frame, time.Now().Add(time.Duration(ms*float64(time.Millisecond))))
 }
 
