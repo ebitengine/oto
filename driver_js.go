@@ -94,7 +94,7 @@ class OtoWorkletProcessor extends AudioWorkletProcessor {
 		this.reportedTime_ = -Infinity;
 		// reported_ is whether a report stands since the last clear.
 		this.reported_ = false;
-		// gen_ is the report generation, received from the main thread on resume.
+		// gen_ is the report generation, set at creation and on every resume.
 		this.gen_ = options.processorOptions.gen;
 
 		// Receive data from the main thread.
