@@ -21,8 +21,10 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/jfreymuth/pulse"
+	"github.com/jfreymuth/pulse/proto"
 
 	"github.com/ebitengine/oto/v3/internal/mux"
 )
@@ -34,14 +36,26 @@ type pulseContext struct {
 	suspended bool
 	cond      *sync.Cond
 
+	// reportGen is guarded by cond.L. It changes on every Suspend, so that a
+	// playback report measured before a Suspend is dropped.
+	reportGen int
+
+	// frameSize is the byte size of a frame of the stream.
+	frameSize int
+
 	mux *mux.Mux
 	err atomicError
 }
 
+// pulseReportInterval is how often the PulseAudio backend asks the server which
+// frame of the stream it plays.
+const pulseReportInterval = 100 * time.Millisecond
+
 func newPulseContext(sampleRate int, channelCount int, mux *mux.Mux, bufferSizeInBytes int, applicationName string) (*pulseContext, error) {
 	c := &pulseContext{
-		cond: sync.NewCond(&sync.Mutex{}),
-		mux:  mux,
+		cond:      sync.NewCond(&sync.Mutex{}),
+		frameSize: channelCount * 4,
+		mux:       mux,
 	}
 
 	if applicationName == "" {
@@ -90,7 +104,70 @@ func newPulseContext(sampleRate int, channelCount int, mux *mux.Mux, bufferSizeI
 	c.stream = stream
 	c.stream.Start()
 
+	go c.reportPlayed()
+
 	return c, nil
+}
+
+// reportPlayed reports to the mux which frame of the stream is played, every
+// pulseReportInterval, until the stream fails.
+func (c *pulseContext) reportPlayed() {
+	t := time.NewTicker(pulseReportInterval)
+	defer t.Stop()
+
+	for range t.C {
+		if c.Err() != nil {
+			c.mux.ClearPlayed()
+			return
+		}
+
+		gen, ok := c.reportState()
+		if !ok {
+			continue
+		}
+
+		sent := time.Now()
+		var reply proto.GetPlaybackLatencyReply
+		err := c.client.RawRequest(&proto.GetPlaybackLatency{
+			StreamIndex: c.stream.StreamIndex(),
+			Time:        protoTime(sent),
+		}, &reply)
+		if err != nil || !reply.Running {
+			c.mux.ClearPlayed()
+			continue
+		}
+		// When the server replies, the sink takes the frame at ReadIndex next, and
+		// plays it after the sink's latency.
+		replied := sent.Add(time.Since(sent) / 2)
+		c.setPlayed(gen, reply.ReadIndex/int64(c.frameSize), replied.Add(time.Duration(reply.Latency)*time.Microsecond))
+	}
+}
+
+// reportState returns the current report generation, and whether a report
+// should be made, which is while the context plays.
+func (c *pulseContext) reportState() (int, bool) {
+	c.cond.L.Lock()
+	defer c.cond.L.Unlock()
+
+	return c.reportGen, !c.suspended
+}
+
+// setPlayed reports a frame and its playing time to the mux, if no Suspend has
+// come since the report generation gen.
+func (c *pulseContext) setPlayed(gen int, frame int64, at time.Time) {
+	c.cond.L.Lock()
+	defer c.cond.L.Unlock()
+
+	if gen == c.reportGen {
+		c.mux.SetPlayed(frame, at)
+	}
+}
+
+func protoTime(t time.Time) proto.Time {
+	return proto.Time{
+		Seconds:      uint32(t.Unix()),
+		Microseconds: uint32(t.Nanosecond() / 1000),
+	}
 }
 
 func (c *pulseContext) read(buf []float32) (int, error) {
@@ -113,7 +190,8 @@ func (c *pulseContext) waitUntilResumed() error {
 	return c.err.Load()
 }
 
-// setSuspended updates the suspended state and wakes up a waiting reader.
+// setSuspended updates the suspended state. Suspending clears the playback
+// report, and resuming wakes up a waiting reader.
 func (c *pulseContext) setSuspended(suspended bool) error {
 	c.cond.L.Lock()
 	defer c.cond.L.Unlock()
@@ -126,7 +204,10 @@ func (c *pulseContext) setSuspended(suspended bool) error {
 	}
 
 	c.suspended = suspended
-	if !suspended {
+	if suspended {
+		c.reportGen++
+		c.mux.ClearPlayed()
+	} else {
 		c.cond.Signal()
 	}
 	return nil
