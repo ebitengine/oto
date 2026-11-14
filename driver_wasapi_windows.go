@@ -130,6 +130,9 @@ type wasapiContext struct {
 	// streamStart is the frame of the mix at the stream's position 0.
 	streamStart int64
 
+	// filledAt is when the buffer was last filled.
+	filledAt time.Time
+
 	m sync.Mutex
 }
 
@@ -538,9 +541,13 @@ func (c *wasapiContext) writeOnRenderThread() error {
 		return err
 	}
 
-	// An empty buffer means the stream ran dry. Its position kept counting the
-	// silence played meanwhile, so start the stream again from position 0.
-	if paddingFrames == 0 && c.audioClock != nil {
+	// An empty buffer a whole buffer's time after the last fill means the stream
+	// ran dry. Its position kept counting the silence played meanwhile, so start
+	// the stream again from position 0. An empty buffer sooner than that can be
+	// the engine taking the last period just now, with no silence played yet.
+	bufferTime := time.Duration(int64(c.bufferFrames) * int64(time.Second) / int64(c.sampleRate))
+	if paddingFrames == 0 && c.audioClock != nil && time.Since(c.filledAt) >= bufferTime {
+		c.mux.ClearPlayed()
 		if _, err := c.client.Stop(); err != nil {
 			return err
 		}
@@ -585,6 +592,7 @@ func (c *wasapiContext) fill(frames uint32) error {
 	// Read the buffer from the players.
 	c.mux.ReadFloat32s(c.buf)
 	c.mixed += int64(frames)
+	c.filledAt = time.Now()
 
 	// Copy the read buf to the destination buffer.
 	copy(unsafe.Slice((*float32)(unsafe.Pointer(dstBuf)), len(c.buf)), c.buf)
@@ -606,7 +614,11 @@ func (c *wasapiContext) reportPlayed() error {
 	}
 	pos, qpc, err := c.audioClock.GetPosition()
 	if err != nil {
-		return err
+		// A lost device restarts the stream. Other errors only skip this report.
+		if isWASAPIDeviceTransientError(err) {
+			return err
+		}
+		return nil
 	}
 	// The position stays 0 until the first frame plays.
 	if pos == 0 {
@@ -614,7 +626,7 @@ func (c *wasapiContext) reportPlayed() error {
 	}
 	now, err := queryPerformanceCounter100ns()
 	if err != nil {
-		return err
+		return nil
 	}
 	frames, ok := mathutil.MulDiv(int64(pos), int64(c.sampleRate), int64(c.clockFrequency))
 	if !ok {
