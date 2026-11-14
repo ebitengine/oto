@@ -116,11 +116,22 @@ type wasapiContext struct {
 	client           *_IAudioClient2
 	bufferFrames     uint32
 	renderClient     *_IAudioRenderClient
+	audioClock       *_IAudioClock
+	clockFrequency   uint64
 	currentDeviceID  string
 	enumerator       *_IMMDeviceEnumerator
 	oomRetryCount    int
 
 	buf []float32
+
+	// mixed counts the frames of the mix read so far, across every stream.
+	mixed int64
+
+	// streamStart is the frame of the mix at the stream's position 0.
+	streamStart int64
+
+	// filledAt is when the buffer was last filled.
+	filledAt time.Time
 
 	m sync.Mutex
 }
@@ -276,8 +287,14 @@ func (c *wasapiContext) releaseOnCOMThread() {
 	if c.client != nil {
 		_, _ = c.client.Stop()
 	}
+	// The report holds only for the stream released here.
+	c.mux.ClearPlayed()
 	// The render service must be released on the thread that acquired it,
 	// before releasing the audio client that owns it.
+	if c.audioClock != nil {
+		c.audioClock.Release()
+		c.audioClock = nil
+	}
 	if c.renderClient != nil {
 		c.renderClient.Release()
 		c.renderClient = nil
@@ -403,13 +420,39 @@ func (c *wasapiContext) startOnCOMThread() (ferr error) {
 		return err
 	}
 
+	// The audio clock tells which frame of the stream is played. Without it,
+	// the stream plays and nothing is reported.
+	if audioClock, err := c.client.GetService(&uuidIAudioClock); err == nil {
+		c.audioClock = (*_IAudioClock)(audioClock)
+		freq, err := c.audioClock.GetFrequency()
+		if err != nil || freq == 0 {
+			c.audioClock.Release()
+			c.audioClock = nil
+		}
+		c.clockFrequency = freq
+	}
+
 	// TODO: Should some errors be allowed? See WASAPIManager.cpp in the official example SimpleWASAPIPlaySound.
 
-	if err := c.client.Start(); err != nil {
+	// Fill the buffer before starting, so that the stream's position 0 is a
+	// known frame of the mix.
+	c.m.Lock()
+	defer c.m.Unlock()
+	if err := c.startFilled(); err != nil {
 		return err
 	}
 
 	return nil
+}
+
+// startFilled fills the empty buffer and starts the stream from position 0.
+// c.m must be held.
+func (c *wasapiContext) startFilled() error {
+	c.streamStart = c.mixed
+	if err := c.fill(c.bufferFrames); err != nil {
+		return err
+	}
+	return c.client.Start()
 }
 
 func (c *wasapiContext) loop() error {
@@ -433,11 +476,9 @@ func (c *wasapiContext) loop() error {
 func (c *wasapiContext) loopOnRenderThread() error {
 	last := time.Now()
 	for {
-		c.suspendedCond.L.Lock()
-		for c.suspended {
-			c.suspendedCond.Wait()
+		if err := c.waitUntilResumed(); err != nil {
+			return err
 		}
-		c.suspendedCond.L.Unlock()
 
 		// Keep checking suspension and device changes even if the endpoint stops
 		// signaling its sample-ready event.
@@ -470,6 +511,27 @@ func (c *wasapiContext) loopOnRenderThread() error {
 	}
 }
 
+// waitUntilResumed blocks while the context is suspended. The stream is
+// stopped meanwhile, so that its position stays at the frame it plays.
+func (c *wasapiContext) waitUntilResumed() error {
+	c.suspendedCond.L.Lock()
+	suspended := c.suspended
+	c.suspendedCond.L.Unlock()
+	if !suspended {
+		return nil
+	}
+
+	if _, err := c.client.Stop(); err != nil {
+		return err
+	}
+	c.suspendedCond.L.Lock()
+	for c.suspended {
+		c.suspendedCond.Wait()
+	}
+	c.suspendedCond.L.Unlock()
+	return c.client.Start()
+}
+
 func (c *wasapiContext) writeOnRenderThread() error {
 	c.m.Lock()
 	defer c.m.Unlock()
@@ -479,14 +541,41 @@ func (c *wasapiContext) writeOnRenderThread() error {
 		return err
 	}
 
+	// An empty buffer a whole buffer's time after the last fill means the stream
+	// ran dry. Its position kept counting the silence played meanwhile, so start
+	// the stream again from position 0. An empty buffer sooner than that can be
+	// the engine taking the last period just now, with no silence played yet.
+	bufferTime := time.Duration(int64(c.bufferFrames) * int64(time.Second) / int64(c.sampleRate))
+	if paddingFrames == 0 && c.audioClock != nil && time.Since(c.filledAt) >= bufferTime {
+		c.mux.ClearPlayed()
+		if _, err := c.client.Stop(); err != nil {
+			return err
+		}
+		if err := c.client.Reset(); err != nil {
+			return err
+		}
+		if err := c.startFilled(); err != nil {
+			return err
+		}
+		c.oomRetryCount = 0
+		return nil
+	}
+
 	// Defensive check: WASAPI should never report more padding than the buffer size,
 	// but if it did, the uint32 subtraction below would wrap around to a huge frame
 	// count and GetBuffer would fail, so skip the write instead.
 	if paddingFrames >= c.bufferFrames {
 		return nil
 	}
-	frames := c.bufferFrames - paddingFrames
+	if err := c.fill(c.bufferFrames - paddingFrames); err != nil {
+		return err
+	}
+	c.oomRetryCount = 0
+	return c.reportPlayed()
+}
 
+// fill writes frames of the mix to the buffer. c.m must be held.
+func (c *wasapiContext) fill(frames uint32) error {
 	// Get the destination buffer.
 	dstBuf, err := c.renderClient.GetBuffer(frames)
 	if err != nil {
@@ -502,6 +591,8 @@ func (c *wasapiContext) writeOnRenderThread() error {
 
 	// Read the buffer from the players.
 	c.mux.ReadFloat32s(c.buf)
+	c.mixed += int64(frames)
+	c.filledAt = time.Now()
 
 	// Copy the read buf to the destination buffer.
 	copy(unsafe.Slice((*float32)(unsafe.Pointer(dstBuf)), len(c.buf)), c.buf)
@@ -512,13 +603,50 @@ func (c *wasapiContext) writeOnRenderThread() error {
 	}
 
 	c.buf = c.buf[:0]
-	c.oomRetryCount = 0
+	return nil
+}
+
+// reportPlayed reports to the mux which frame of the mix is played, from the
+// stream's position.
+func (c *wasapiContext) reportPlayed() error {
+	if c.audioClock == nil {
+		return nil
+	}
+	pos, qpc, err := c.audioClock.GetPosition()
+	if err != nil {
+		// A lost device restarts the stream. Other errors only skip this report.
+		if isWASAPIDeviceTransientError(err) {
+			return err
+		}
+		return nil
+	}
+	// The position stays 0 until the first frame plays.
+	if pos == 0 {
+		return nil
+	}
+	now, err := queryPerformanceCounter100ns()
+	if err != nil {
+		return nil
+	}
+	frames, ok := mathutil.MulDiv(int64(pos), int64(c.sampleRate), int64(c.clockFrequency))
+	if !ok {
+		return nil
+	}
+	at := time.Now().Add(time.Duration(int64(qpc)-now) * 100)
+
+	c.suspendedCond.L.Lock()
+	defer c.suspendedCond.L.Unlock()
+	// Suspend clears the report, so a report made since is dropped.
+	if !c.suspended {
+		c.mux.SetPlayed(c.streamStart+frames, at)
+	}
 	return nil
 }
 
 func (c *wasapiContext) Suspend() error {
 	c.suspendedCond.L.Lock()
 	c.suspended = true
+	c.mux.ClearPlayed()
 	c.suspendedCond.L.Unlock()
 	c.suspendedCond.Signal()
 
@@ -603,6 +731,7 @@ func (c *wasapiContext) restart() error {
 		}
 
 		c.mux.ReadFloat32s(buf[:framesPerRead*c.channelCount])
+		c.mixed += int64(framesPerRead)
 		time.Sleep(perRead)
 	}
 }
