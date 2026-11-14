@@ -15,6 +15,9 @@
 package oto
 
 import (
+	"fmt"
+	"structs"
+	"time"
 	"unsafe"
 
 	"github.com/ebitengine/purego"
@@ -58,9 +61,42 @@ type _AudioStreamBasicDescription struct {
 	mReserved         uint32
 }
 
+const (
+	kAudioTimeStampSampleTimeValid = 1 << 0
+	kAudioTimeStampHostTimeValid   = 1 << 1
+)
+
 type _AudioQueueRef uintptr
 
-type _AudioTimeStamp uintptr
+type _SMPTETime struct {
+	_                structs.HostLayout
+	mSubframes       int16
+	mSubframeDivisor int16
+	mCounter         uint32
+	mType            uint32
+	mFlags           uint32
+	mHours           int16
+	mMinutes         int16
+	mSeconds         int16
+	mFrames          int16
+}
+
+type _AudioTimeStamp struct {
+	_              structs.HostLayout
+	mSampleTime    float64
+	mHostTime      uint64
+	mRateScalar    float64
+	mWordClockTime uint64
+	mSMPTETime     _SMPTETime
+	mFlags         uint32
+	mReserved      uint32
+}
+
+type _mach_timebase_info_data_t struct {
+	_     structs.HostLayout
+	numer uint32
+	denom uint32
+}
 
 type _AudioStreamPacketDescription struct {
 	mStartOffset            int64
@@ -94,10 +130,34 @@ func initializeAPI() error {
 	purego.RegisterLibFunc(&_AudioQueueStart, toolbox, "AudioQueueStart")
 	purego.RegisterLibFunc(&_AudioQueuePause, toolbox, "AudioQueuePause")
 	purego.RegisterLibFunc(&_AudioQueueDispose, toolbox, "AudioQueueDispose")
+	purego.RegisterLibFunc(&_AudioQueueGetCurrentTime, toolbox, "AudioQueueGetCurrentTime")
+
+	system, err := purego.Dlopen("/usr/lib/libSystem.B.dylib", purego.RTLD_LAZY|purego.RTLD_GLOBAL)
+	if err != nil {
+		return err
+	}
+	purego.RegisterLibFunc(&_mach_absolute_time, system, "mach_absolute_time")
+	purego.RegisterLibFunc(&_mach_timebase_info, system, "mach_timebase_info")
+	if kr := _mach_timebase_info(&theTimebase); kr != 0 {
+		return fmt.Errorf("oto: mach_timebase_info failed: %d", kr)
+	}
 
 	initializeSessionAPI()
+	if err := initializeOutputLatencyAPI(); err != nil {
+		return err
+	}
 
 	return nil
+}
+
+// theTimebase is the ratio of nanoseconds to the ticks of the host time.
+var theTimebase _mach_timebase_info_data_t
+
+// hostTimeToTime converts a host time, in the ticks mach_absolute_time counts, to a time.Time.
+func hostTimeToTime(hostTime uint64) time.Time {
+	now := time.Now()
+	ticks := int64(hostTime - _mach_absolute_time())
+	return now.Add(time.Duration(ticks * int64(theTimebase.numer) / int64(theTimebase.denom)))
 }
 
 var _AudioQueueNewOutput func(inFormat *_AudioStreamBasicDescription, inCallbackProc _AudioQueueOutputCallback, inUserData unsafe.Pointer, inCallbackRunLoop uintptr, inCallbackRunLoopMod uintptr, inFlags uint32, outAQ *_AudioQueueRef) uintptr
@@ -111,3 +171,9 @@ var _AudioQueueStart func(inAQ _AudioQueueRef, inStartTime *_AudioTimeStamp) uin
 var _AudioQueuePause func(inAQ _AudioQueueRef) uintptr
 
 var _AudioQueueDispose func(inAQ _AudioQueueRef, inImmediate bool) uintptr
+
+var _AudioQueueGetCurrentTime func(inAQ _AudioQueueRef, inTimeline uintptr, outTimeStamp *_AudioTimeStamp, outTimelineDiscontinuity uintptr) uintptr
+
+var _mach_absolute_time func() uint64
+
+var _mach_timebase_info func(info *_mach_timebase_info_data_t) int32

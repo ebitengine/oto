@@ -15,6 +15,8 @@
 package oto
 
 import (
+	"runtime"
+	"time"
 	"unsafe"
 
 	"github.com/ebitengine/purego"
@@ -46,6 +48,56 @@ func initializeSessionAPI() {
 		_AVAudioSessionInterruptionTypeKey = nsStringConstant(avfoundation, "AVAudioSessionInterruptionTypeKey")
 		_AVAudioSessionMediaServicesWereResetNotification = nsStringConstant(avfoundation, "AVAudioSessionMediaServicesWereResetNotification")
 	}
+}
+
+var (
+	classAVAudioSession objc.Class
+	selSharedInstance   objc.SEL
+	selOutputLatency    objc.SEL
+)
+
+var _objc_autoreleasePoolPush func() uintptr
+
+var _objc_autoreleasePoolPop func(pool uintptr)
+
+func initializeOutputLatencyAPI() error {
+	libobjc, err := purego.Dlopen("/usr/lib/libobjc.A.dylib", purego.RTLD_LAZY|purego.RTLD_GLOBAL)
+	if err != nil {
+		return err
+	}
+	purego.RegisterLibFunc(&_objc_autoreleasePoolPush, libobjc, "objc_autoreleasePoolPush")
+	purego.RegisterLibFunc(&_objc_autoreleasePoolPop, libobjc, "objc_autoreleasePoolPop")
+
+	// AVAudioSession comes with AVFoundation, which initializeSessionAPI loads.
+	classAVAudioSession = objc.GetClass("AVAudioSession")
+	selSharedInstance = objc.RegisterName("sharedInstance")
+	selOutputLatency = objc.RegisterName("outputLatency")
+	return nil
+}
+
+// outputLatency returns how long the audio session's output takes to play a frame after the frame's output time,
+// or 0 if it is unknown.
+func outputLatency() time.Duration {
+	if classAVAudioSession == 0 {
+		return 0
+	}
+
+	// The caller's thread may have no autorelease pool, or one that is never drained. A pool releases what the
+	// session autoreleases, and is popped on the thread that pushed it.
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	pool := _objc_autoreleasePoolPush()
+	defer _objc_autoreleasePoolPop(pool)
+
+	session := objc.ID(classAVAudioSession).Send(selSharedInstance)
+	if session == 0 {
+		return 0
+	}
+	latency := objc.Send[float64](session, selOutputLatency)
+	if !(latency > 0) {
+		return 0
+	}
+	return time.Duration(latency * float64(time.Second))
 }
 
 // nsStringConstant returns the value of an exported NSString constant, or 0 if it is

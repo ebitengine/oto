@@ -75,6 +75,8 @@ func newAudioQueue(sampleRate, channelCount int, oneBufferSizeInBytes int) (_Aud
 			return 0, nil, fmt.Errorf("oto: AudioQueueAllocateBuffer failed: %d", osstatus)
 		}
 		buf.mAudioDataByteSize = uint32(oneBufferSizeInBytes)
+		// mUserData holds the count of the frames enqueued up to the end of the buffer, and 0 until it is enqueued.
+		buf.mUserData = 0
 		bufs = append(bufs, buf)
 	}
 
@@ -134,12 +136,41 @@ type context struct {
 	// stopped and cleared when the deferral is ended by another path (endDeferStart).
 	startRetryTimer *time.Timer
 
+	// readFrames counts the frames read from mux, which is the index of the frame read next.
+	readFrames int64
+
+	// enqueuedFrames counts the frames enqueued to audioQueue.
+	enqueuedFrames int64
+
+	// timelineOrigin is the count of the frames enqueued to audioQueue at the start of the queue's timeline,
+	// where its sample time is 0.
+	timelineOrigin int64
+
+	// reportDue indicates that loop is to report to mux when the frames are played.
+	reportDue bool
+
+	// latency is what outputLatency returned at latencyQueriedAt.
+	latency          time.Duration
+	latencyQueriedAt time.Time
+
 	mux *mux.Mux
 	err atomicError
 }
 
 // TODO: Convert the error code correctly.
 // See https://stackoverflow.com/questions/2196869/how-do-you-convert-an-iphone-osstatus-code-to-something-useful
+
+// outputLatencyLifetime is how long a latency queried with outputLatency is used.
+const outputLatencyLifetime = time.Second
+
+// reportInterval is how often loop reports to mux when the frames are played.
+const reportInterval = 100 * time.Millisecond
+
+// maxReturnLead is the longest a buffer comes back before the end of its frames is output.
+const maxReturnLead = 100 * time.Millisecond
+
+// timeStampValid is the flags of an AudioTimeStamp of a playing queue.
+const timeStampValid = kAudioTimeStampSampleTimeValid | kAudioTimeStampHostTimeValid
 
 var theContext *context
 
@@ -169,10 +200,6 @@ func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeI
 		channelCount:         channelCount,
 		oneBufferSizeInBytes: oneBufferSizeInBytes,
 	}
-	// TODO: Report when the frames are played with c.mux.SetPlayed, from the delay:
-	// the frames enqueued less the queue's position from
-	// AudioQueueGetCurrentTime, plus the device's latency, which on iOS
-	// AVAudioSession's outputLatency gives.
 	theContext = c
 
 	if err := initializeAPI(); err != nil {
@@ -195,6 +222,7 @@ func newContext(sampleRate int, channelCount int, format mux.Format, bufferSizeI
 
 		close(ready)
 
+		go c.requestReports()
 		c.loop()
 	}()
 
@@ -226,8 +254,8 @@ func (c *context) wait() bool {
 }
 
 // idle reports whether step has nothing to do for now: the actual queue state matches
-// the requested state and no buffer is waiting to be filled. It must be kept consistent
-// with step: whenever idle returns false, step must change some state.
+// the requested state, no buffer is waiting to be filled, and no report is due. It must be
+// kept consistent with step: whenever idle returns false, step must change some state.
 // The caller must hold c.cond.L.
 func (c *context) idle() bool {
 	if c.toRebuildQueue {
@@ -240,7 +268,7 @@ func (c *context) idle() bool {
 	case queueStateStopped:
 		return false
 	case queueStateRunning:
-		return len(c.unqueuedBuffers) == 0
+		return len(c.unqueuedBuffers) == 0 && !c.reportDue
 	default:
 		return true
 	}
@@ -301,27 +329,137 @@ func (c *context) step(buf32 []float32) {
 		return
 	}
 
+	if c.reportDue {
+		c.reportDue = false
+		c.reportPlayed()
+	}
+
 	if len(c.unqueuedBuffers) == 0 {
 		return
 	}
+	c.enqueueBuffer(buf32)
+}
 
+// takeUnqueuedBuffer removes the first unqueued buffer and returns it.
+// The caller must hold c.cond.L.
+func (c *context) takeUnqueuedBuffer() _AudioQueueBufferRef {
 	buf := c.unqueuedBuffers[0]
 	copy(c.unqueuedBuffers, c.unqueuedBuffers[1:])
 	c.unqueuedBuffers = c.unqueuedBuffers[:len(c.unqueuedBuffers)-1]
+	return buf
+}
+
+// enqueueBuffer fills an unqueued buffer with the data read from mux and enqueues it.
+// The caller must hold c.cond.L.
+func (c *context) enqueueBuffer(buf32 []float32) {
+	buf := c.takeUnqueuedBuffer()
+	if end := int64(buf.mUserData); end != 0 {
+		c.alignTimeline(end)
+	}
 
 	c.mux.ReadFloat32s(buf32)
-	copy(unsafe.Slice((*float32)(unsafe.Pointer(buf.mAudioData)), buf.mAudioDataByteSize/float32SizeInBytes), buf32)
+	frames := int64(len(buf32) / c.channelCount)
+	c.readFrames += frames
+	copy(unsafe.Slice((*float32)(unsafe.Pointer(buf.mAudioData)), len(buf32)), buf32)
+	c.enqueue(buf, frames)
+}
 
+// enqueuePrimer enqueues one silent frame, and reports whether it is enqueued.
+// The caller must hold c.cond.L.
+func (c *context) enqueuePrimer() bool {
+	buf := c.takeUnqueuedBuffer()
+	clear(unsafe.Slice((*float32)(unsafe.Pointer(buf.mAudioData)), c.channelCount))
+	return c.enqueue(buf, 1)
+}
+
+// enqueue enqueues the first frames frames of buf, and reports whether it is enqueued.
+// The caller must hold c.cond.L.
+func (c *context) enqueue(buf _AudioQueueBufferRef, frames int64) bool {
+	buf.mAudioDataByteSize = uint32(frames) * uint32(c.channelCount*float32SizeInBytes)
+	buf.mUserData = uintptr(c.enqueuedFrames + frames)
 	if osstatus := _AudioQueueEnqueueBuffer(c.audioQueue, buf, 0, nil); osstatus != noErr {
 		if osstatus == kAudioQueueErr_QueueInvalidated {
 			// The queue was invalidated (typically a mediaserverd reset).
 			// The audio just rendered into `buf` is dropped: at most one buffer of glitch.
 			c.state = queueStateStopped
 			c.toRebuildQueue = true
-			return
+			return false
 		}
 		c.err.Join(fmt.Errorf("oto: AudioQueueEnqueueBuffer failed: %d", osstatus))
+		return false
 	}
+	c.enqueuedFrames += frames
+	return true
+}
+
+// alignTimeline moves the origin of the queue's timeline to a buffer that came back long before its place on it.
+// end is the count of the frames enqueued up to the end of the buffer.
+// The caller must hold c.cond.L.
+func (c *context) alignTimeline(end int64) {
+	var ts _AudioTimeStamp
+	if osstatus := _AudioQueueGetCurrentTime(c.audioQueue, 0, &ts, 0); osstatus != noErr || ts.mFlags&timeStampValid != timeStampValid {
+		return
+	}
+	// A buffer comes back as the queue takes its frames for output, shortly before they are output, or after
+	// its place if its frames are skipped. One that comes back long before means the timeline started over
+	// while the frames were enqueued, and its frames are output about now.
+	if float64(end-c.timelineOrigin)-ts.mSampleTime <= maxReturnLead.Seconds()*float64(c.sampleRate) {
+		return
+	}
+	c.timelineOrigin = end - int64(ts.mSampleTime)
+	// The last report is from the timeline before.
+	c.mux.ClearPlayed()
+}
+
+// reportPlayed reports to mux when the frame read from it next is played.
+// The caller must hold c.cond.L.
+func (c *context) reportPlayed() {
+	// A queue that is not playing has no current time, or a current time without a host time.
+	var ts _AudioTimeStamp
+	if osstatus := _AudioQueueGetCurrentTime(c.audioQueue, 0, &ts, 0); osstatus != noErr || ts.mFlags&timeStampValid != timeStampValid {
+		c.mux.ClearPlayed()
+		return
+	}
+
+	if now := time.Now(); now.Sub(c.latencyQueriedAt) >= outputLatencyLifetime {
+		c.latency = outputLatency()
+		c.latencyQueriedAt = now
+	}
+
+	// The frames enqueued are contiguous on the queue's timeline, from timelineOrigin at its start: a frame
+	// enqueued too late for its place is skipped. So the frame read next is output when the timeline reaches
+	// its place, and is played the output latency later.
+	untilOutput := (float64(c.enqueuedFrames-c.timelineOrigin) - ts.mSampleTime) / float64(c.sampleRate)
+	at := hostTimeToTime(ts.mHostTime).Add(time.Duration(untilOutput*float64(time.Second)) + c.latency)
+	c.mux.SetPlayed(c.readFrames, at)
+}
+
+// requestReports makes loop report to mux when the frames are played every reportInterval, until the
+// context fails.
+func (c *context) requestReports() {
+	t := time.NewTicker(reportInterval)
+	defer t.Stop()
+
+	for range t.C {
+		if !c.requestReport() {
+			return
+		}
+	}
+}
+
+// requestReport makes loop report to mux when the frames are played, and reports whether the context
+// has not failed.
+func (c *context) requestReport() bool {
+	c.cond.L.Lock()
+	defer c.cond.L.Unlock()
+
+	if c.err.Load() != nil {
+		c.mux.ClearPlayed()
+		return false
+	}
+	c.reportDue = true
+	c.cond.Signal()
+	return true
 }
 
 // Suspend returns immediately. The actual AudioQueuePause runs on a
@@ -360,6 +498,8 @@ func (c *context) Resume() error {
 // pause pauses the AudioQueue and updates c.state.
 // The caller must hold c.cond.L.
 func (c *context) pause() error {
+	// Nothing is played until the queue starts again.
+	c.mux.ClearPlayed()
 	if osstatus := _AudioQueuePause(c.audioQueue); osstatus != noErr {
 		if osstatus == kAudioQueueErr_QueueInvalidated {
 			c.state = queueStateStopped
@@ -382,6 +522,11 @@ func (c *context) pause() error {
 //
 // The caller must hold c.cond.L.
 func (c *context) start() {
+	// Enqueued before the queue starts, a frame is at the start of the queue's timeline, and the frames
+	// enqueued after it follow it there.
+	if c.enqueuedFrames == 0 && !c.enqueuePrimer() {
+		return
+	}
 	osstatus := _AudioQueueStart(c.audioQueue, nil)
 	if osstatus == noErr {
 		c.state = queueStateRunning
@@ -425,6 +570,8 @@ func temporaryAudioSessionError(status uintptr) bool {
 // The caller must hold c.cond.L.
 func (c *context) deferStart() {
 	c.state = queueStateStartDeferred
+	// Nothing is played until a start succeeds.
+	c.mux.ClearPlayed()
 	d := startRetryDelay(c.startRetries)
 	c.startRetries++
 	var t *time.Timer
@@ -492,6 +639,8 @@ func (c *context) restartFromNotification(rebuild bool) {
 //
 // The caller must hold c.cond.L.
 func (c *context) rebuildAudioQueue() error {
+	// The data the current queue holds is never played.
+	c.mux.ClearPlayed()
 	if c.audioQueue != 0 {
 		// kAudioQueueErr_QueueInvalidated is expected here: that is the very case
 		// being recovered from. Anything else is unexpected and worth surfacing.
@@ -510,6 +659,8 @@ func (c *context) rebuildAudioQueue() error {
 	}
 	c.audioQueue = q
 	c.unqueuedBuffers = bs
+	c.enqueuedFrames = 0
+	c.timelineOrigin = 0
 	return nil
 }
 

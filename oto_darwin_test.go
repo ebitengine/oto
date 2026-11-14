@@ -15,7 +15,9 @@
 package oto_test
 
 import (
+	"bytes"
 	"testing"
+	"time"
 )
 
 // Suspend and Resume return before the audio device is actually paused or resumed,
@@ -39,5 +41,29 @@ func TestSuspendResumeOrder(t *testing.T) {
 	}
 	if got, want := theContext.SuspendRequestedForTesting(), false; got != want {
 		t.Errorf("suspend requested after Suspend and Resume: got %t, want %t", got, want)
+	}
+}
+
+// While playing, UnplayedSize counts the data sent to the audio device and not played yet.
+func TestUnplayedSizeCountsWhatIsSent(t *testing.T) {
+	// Five seconds of silence, which keeps playing throughout the test.
+	p := theContext.NewPlayer(bytes.NewReader(make([]byte, 5*48000*2*4)))
+	p.Play()
+	defer p.Pause()
+
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		// BufferedSize is taken first: the data mixed in between counts in UnplayedSize only while the driver
+		// reports that it is not played yet.
+		buffered := p.BufferedSize()
+		unplayed := p.UnplayedSize()
+		if unplayed > buffered {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Errorf("UnplayedSize() = %d; want more than BufferedSize(), %d", unplayed, buffered)
+			return
+		}
+		time.Sleep(time.Millisecond)
 	}
 }
