@@ -21,6 +21,8 @@ import (
 	"unsafe"
 
 	"golang.org/x/sys/windows"
+
+	"github.com/ebitengine/oto/v3/internal/mathutil"
 )
 
 var (
@@ -29,11 +31,16 @@ var (
 
 var (
 	procCoCreateInstance = ole32.NewProc("CoCreateInstance")
+
+	kernel32                      = windows.NewLazySystemDLL("kernel32")
+	procQueryPerformanceCounter   = kernel32.NewProc("QueryPerformanceCounter")
+	procQueryPerformanceFrequency = kernel32.NewProc("QueryPerformanceFrequency")
 )
 
 type _REFERENCE_TIME int64
 
 var (
+	uuidIAudioClock         = windows.GUID{0xcd63314f, 0x3fba, 0x4a1b, [...]byte{0x81, 0x2c, 0xef, 0x96, 0x35, 0x87, 0x28, 0xe7}}
 	uuidIAudioClient2       = windows.GUID{0x726778cd, 0xf60a, 0x4eda, [...]byte{0x82, 0xde, 0xe4, 0x76, 0x10, 0xcd, 0x78, 0xaa}}
 	uuidIAudioRenderClient  = windows.GUID{0xf294acfc, 0x3146, 0x4483, [...]byte{0xa7, 0xbf, 0xad, 0xdc, 0xa7, 0xc2, 0x60, 0xe2}}
 	uuidIMMDeviceEnumerator = windows.GUID{0xa95664d2, 0x9614, 0x4f35, [...]byte{0xa7, 0x46, 0xde, 0x8d, 0xb6, 0x36, 0x17, 0xe6}}
@@ -385,6 +392,78 @@ func (i *_IAudioClient2) Stop() (bool, error) {
 		return false, fmt.Errorf("oto: IAudioClient2::Stop failed: HRESULT(%d)", uint32(r))
 	}
 	return uint32(r) == uint32(windows.S_OK), nil
+}
+
+func (i *_IAudioClient2) Reset() error {
+	r, _, _ := syscall.Syscall(i.vtbl.Reset, 1, uintptr(unsafe.Pointer(i)), 0, 0)
+	if uint32(r) != uint32(windows.S_OK) && uint32(r) != uint32(windows.S_FALSE) {
+		if isAudclntErr(uint32(r)) {
+			return fmt.Errorf("oto: IAudioClient2::Reset failed: %w", _AUDCLNT_ERR(r))
+		}
+		return fmt.Errorf("oto: IAudioClient2::Reset failed: HRESULT(%d)", uint32(r))
+	}
+	return nil
+}
+
+type _IAudioClock struct {
+	vtbl *_IAudioClock_Vtbl
+}
+
+type _IAudioClock_Vtbl struct {
+	QueryInterface uintptr
+	AddRef         uintptr
+	Release        uintptr
+
+	GetFrequency       uintptr
+	GetPosition        uintptr
+	GetCharacteristics uintptr
+}
+
+func (i *_IAudioClock) GetFrequency() (uint64, error) {
+	var freq uint64
+	r, _, _ := syscall.Syscall(i.vtbl.GetFrequency, 2, uintptr(unsafe.Pointer(i)), uintptr(unsafe.Pointer(&freq)), 0)
+	if uint32(r) != uint32(windows.S_OK) {
+		if isAudclntErr(uint32(r)) {
+			return 0, fmt.Errorf("oto: IAudioClock::GetFrequency failed: %w", _AUDCLNT_ERR(r))
+		}
+		return 0, fmt.Errorf("oto: IAudioClock::GetFrequency failed: HRESULT(%d)", uint32(r))
+	}
+	return freq, nil
+}
+
+// GetPosition returns the device position, and the performance counter in 100-nanosecond units at that position.
+func (i *_IAudioClock) GetPosition() (uint64, uint64, error) {
+	var pos, qpc uint64
+	r, _, _ := syscall.Syscall(i.vtbl.GetPosition, 3, uintptr(unsafe.Pointer(i)), uintptr(unsafe.Pointer(&pos)), uintptr(unsafe.Pointer(&qpc)))
+	// S_FALSE means the position is less accurate, which is still usable.
+	if uint32(r) != uint32(windows.S_OK) && uint32(r) != uint32(windows.S_FALSE) {
+		if isAudclntErr(uint32(r)) {
+			return 0, 0, fmt.Errorf("oto: IAudioClock::GetPosition failed: %w", _AUDCLNT_ERR(r))
+		}
+		return 0, 0, fmt.Errorf("oto: IAudioClock::GetPosition failed: HRESULT(%d)", uint32(r))
+	}
+	return pos, qpc, nil
+}
+
+func (i *_IAudioClock) Release() uint32 {
+	r, _, _ := syscall.Syscall(i.vtbl.Release, 1, uintptr(unsafe.Pointer(i)), 0, 0)
+	return uint32(r)
+}
+
+// queryPerformanceCounter100ns returns the performance counter in 100-nanosecond units, as IAudioClock::GetPosition does.
+func queryPerformanceCounter100ns() (int64, error) {
+	var counter, freq int64
+	if r, _, err := procQueryPerformanceFrequency.Call(uintptr(unsafe.Pointer(&freq))); r == 0 {
+		return 0, fmt.Errorf("oto: QueryPerformanceFrequency failed: %w", err)
+	}
+	if r, _, err := procQueryPerformanceCounter.Call(uintptr(unsafe.Pointer(&counter))); r == 0 {
+		return 0, fmt.Errorf("oto: QueryPerformanceCounter failed: %w", err)
+	}
+	v, ok := mathutil.MulDiv(counter, 1e7, freq)
+	if !ok {
+		return 0, fmt.Errorf("oto: the performance counter is unrepresentable")
+	}
+	return v, nil
 }
 
 type _IAudioRenderClient struct {
